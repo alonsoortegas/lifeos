@@ -19,9 +19,10 @@ export async function GET(req: NextRequest) {
     return html('<h2>WHOOP_CLIENT_ID / WHOOP_CLIENT_SECRET not set in .env.local</h2>', 500)
   }
 
-  // Derive redirect_uri from the incoming request so the same code works on
-  // localhost and on Vercel without needing a separate env var.
-  const redirectUri = `${reqUrl.protocol}//${reqUrl.host}/callback`
+  // Use x-forwarded headers when behind Vercel's proxy (where req.url uses http).
+  const proto = req.headers.get('x-forwarded-proto') ?? reqUrl.protocol.replace(':', '')
+  const host = req.headers.get('x-forwarded-host') ?? reqUrl.host
+  const redirectUri = `${proto}://${host}/callback`
 
   const tokenRes = await fetch(WHOOP_TOKEN_URL, {
     method: 'POST',
@@ -69,6 +70,7 @@ export async function GET(req: NextRequest) {
   return html(`
     <h2>Whoop connected</h2>
     <p>Tokens stored. You can close this tab.</p>
+    <p style="color:#888;font-size:.85rem">redirect_uri used: ${redirectUri}</p>
     ${!tokens.refresh_token ? '<p><strong>Note:</strong> No refresh token returned — whoop-sync will use the access token until it expires.</p>' : ''}
   `)
 }
