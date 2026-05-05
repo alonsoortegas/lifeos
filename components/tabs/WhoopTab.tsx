@@ -235,7 +235,7 @@ export default function WhoopTab() {
           <div className="space-y-2">
             {workouts.map(w => {
               const zones = [w.zone0_min, w.zone1_min, w.zone2_min, w.zone3_min, w.zone4_min, w.zone5_min]
-              const totalMin = zones.reduce((s, z) => s + (z ?? 0), 0)
+              const totalMin = zones.reduce((s: number, z) => s + (z ?? 0), 0)
               const date = new Date(w.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
               return (
                 <Card key={w.id} className="p-4 space-y-2">
