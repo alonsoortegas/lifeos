@@ -12,8 +12,28 @@ export interface WhoopSnapshot {
   sleep_rem_pct: number | null
   sleep_light_pct: number | null
   sleep_awake_pct: number | null
+  sleep_consistency_pct: number | null
+  respiratory_rate: number | null
+  kilojoule: number | null
   raw_json: Record<string, unknown> | null
   created_at: string
+}
+
+export interface WhoopWorkout {
+  id: number
+  workout_id: number
+  cycle_id: number | null
+  started_at: string
+  sport_name: string | null
+  strain: number | null
+  avg_hr: number | null
+  max_hr: number | null
+  zone0_min: number | null
+  zone1_min: number | null
+  zone2_min: number | null
+  zone3_min: number | null
+  zone4_min: number | null
+  zone5_min: number | null
 }
 
 export interface WorkoutLog {
