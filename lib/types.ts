@@ -22,8 +22,31 @@ export interface WorkoutLog {
   exercise_name: string
   set_number: number | null
   weight_lbs: number | null
+  weight_unit: string
   reps: number | null
   rpe: number | null
+  notes: string | null
+}
+
+export interface WorkoutSession {
+  id: number
+  week_number: number
+  day_of_week: string
+  title: string
+  session_type: string
+  notes: string | null
+}
+
+export interface WorkoutExercise {
+  id: number
+  session_id: number
+  order_index: number
+  exercise_name: string
+  prescribed_sets: number | null
+  prescribed_reps: string | null
+  prescribed_weight: number | null
+  weight_unit: string
+  target_rpe: string | null
   notes: string | null
 }
 
