@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 
   if (!serviceKey) {
-    return html(`<h2>Tokens received (no service key to store)</h2><pre>${JSON.stringify(tokens, null, 2)}</pre>`)
+    return html('<h2>SUPABASE_SERVICE_ROLE_KEY not configured</h2>', 500)
   }
 
   const supabase = createClient(supabaseUrl, serviceKey)
