@@ -31,12 +31,23 @@ function avg(arr: number[]): number {
 const ZONE_COLORS = ['#1e293b', '#3b82f6', '#22c55e', '#f59e0b', '#f97316', '#ef4444']
 const ZONE_LABELS = ['Z0', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5']
 
+const WHOOP_CLIENT_ID = 'aeb5a295-3c6a-42a9-9657-57227bb0adb7'
+const WHOOP_SCOPES = 'read:recovery read:sleep read:workout read:cycles read:body_measurement'
+
+function whoopAuthUrl(host: string): string {
+  const redirectUri = encodeURIComponent(`${host}/callback`)
+  const scope = encodeURIComponent(WHOOP_SCOPES)
+  return `https://api.prod.whoop.com/oauth/oauth2/auth?client_id=${WHOOP_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=lifeos26`
+}
+
 export default function WhoopTab() {
   const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
   const [history, setHistory] = useState<WhoopSnapshot[]>([])
   const [workouts, setWorkouts] = useState<WhoopWorkout[]>([])
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
 
-  useEffect(() => {
+  function load() {
     supabase
       .from('whoop_snapshots')
       .select('*')
@@ -58,7 +69,28 @@ export default function WhoopTab() {
       .order('started_at', { ascending: false })
       .limit(10)
       .then(({ data }) => { if (data) setWorkouts(data as WhoopWorkout[]) })
-  }, [])
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function syncNow() {
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const res = await fetch('/api/whoop-sync', { method: 'POST' })
+      const data = await res.json()
+      if (data.ok) {
+        setSyncMsg(`synced · recovery ${data.recovery_score}% · ${data.workouts_synced ?? 0} workouts`)
+        load()
+      } else {
+        setSyncMsg(data.error ?? 'sync failed')
+      }
+    } catch {
+      setSyncMsg('network error')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const recovery = snap?.recovery_score ?? 0
   const ringColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
@@ -93,6 +125,11 @@ export default function WhoopTab() {
 
   const hasHistory = history.length > 1
 
+  const tokenAge = snap?.recorded_at
+    ? Math.floor((Date.now() - new Date(snap.recorded_at).getTime()) / 60000)
+    : null
+  const tokenExpired = tokenAge != null && tokenAge > 55
+
   return (
     <div className="px-4 space-y-5">
       <div className="pt-2">
@@ -101,6 +138,35 @@ export default function WhoopTab() {
           {recordedDate}{snap?.cycle_id ? ` · CYCLE ${snap.cycle_id}` : ''}
         </div>
       </div>
+
+      {/* Connect / Sync card */}
+      <Card className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[#888] text-[11px] uppercase tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>Whoop</div>
+            {syncMsg && (
+              <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>{syncMsg}</div>
+            )}
+          </div>
+          <button
+            onClick={syncNow}
+            disabled={syncing}
+            className="bg-[#2a2a2a] text-[#ededed] text-[12px] px-4 py-2 rounded-lg disabled:opacity-40"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            {syncing ? 'syncing…' : 'sync now'}
+          </button>
+        </div>
+        {tokenExpired && (
+          <a
+            href={typeof window !== 'undefined' ? whoopAuthUrl(window.location.origin) : '#'}
+            className="block w-full text-center bg-[#00d26a] text-[#0e0e0e] text-[12px] font-bold py-2 rounded-lg"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            reconnect whoop →
+          </a>
+        )}
+      </Card>
 
       {/* Recovery ring + HRV / RHR / Strain */}
       <Card className="p-5">
