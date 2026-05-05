@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const WHOOP_TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token'
-const REDIRECT_URI = 'http://localhost:3001/callback' // must match Whoop app registration exactly
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url)
+  const reqUrl = new URL(req.url)
+  const { searchParams } = reqUrl
   const code = searchParams.get('code')
   const error = searchParams.get('error')
 
@@ -19,6 +19,10 @@ export async function GET(req: NextRequest) {
     return html('<h2>WHOOP_CLIENT_ID / WHOOP_CLIENT_SECRET not set in .env.local</h2>', 500)
   }
 
+  // Derive redirect_uri from the incoming request so the same code works on
+  // localhost and on Vercel without needing a separate env var.
+  const redirectUri = `${reqUrl.protocol}//${reqUrl.host}/callback`
+
   const tokenRes = await fetch(WHOOP_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -27,7 +31,7 @@ export async function GET(req: NextRequest) {
       code,
       client_id: clientId,
       client_secret: clientSecret,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: redirectUri,
     }),
   })
 
