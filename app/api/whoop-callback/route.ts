@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 const WHOOP_TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token'
-const REDIRECT_URI = 'http://localhost:3000/api/whoop-callback'
+
+function getRedirectUri(req: NextRequest): string {
+  const proto = req.headers.get('x-forwarded-proto') ?? 'http'
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? 'localhost:3000'
+  return `${proto}://${host}/api/whoop-callback`
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -28,7 +33,7 @@ export async function GET(req: NextRequest) {
       code,
       client_id: clientId,
       client_secret: clientSecret,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: getRedirectUri(req),
     }),
   })
 
@@ -38,10 +43,6 @@ export async function GET(req: NextRequest) {
   }
 
   const tokens = await tokenRes.json()
-
-  if (!tokens.refresh_token) {
-    return html(`<h2>No refresh token in response</h2><pre>${JSON.stringify(tokens, null, 2)}</pre>`, 500)
-  }
 
   // Store in whoop_tokens using service role key to bypass RLS
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''

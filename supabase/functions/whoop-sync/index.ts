@@ -1,6 +1,7 @@
 // Whoop data poller — runs on cron every 30 minutes via Supabase scheduler.
 // Reads refresh_token from whoop_tokens table, gets a fresh access_token,
 // fetches recovery + sleep + cycle + workouts, and upserts into whoop_snapshots + whoop_workouts.
+// Pass { days: 7 } in the POST body to backfill multiple days at once.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -31,7 +32,7 @@ const SPORT_NAMES: Record<number, string> = {
   233: "barry's",
 }
 
-serve(async (_req) => {
+serve(async (req) => {
   try {
     const clientId = Deno.env.get('WHOOP_CLIENT_ID')
     const clientSecret = Deno.env.get('WHOOP_CLIENT_SECRET')
@@ -41,6 +42,13 @@ serve(async (_req) => {
     if (!clientId || !clientSecret || !supabaseUrl || !supabaseKey) {
       return json({ error: 'Missing required environment variables' }, 500)
     }
+
+    // Optional: pass { days: 7 } to backfill multiple cycles
+    let days = 1
+    try {
+      const body = await req.json()
+      if (typeof body?.days === 'number') days = Math.min(Math.max(1, body.days), 25)
+    } catch { /* no body or not JSON — default to 1 */ }
 
     const supabase = createClient(supabaseUrl, supabaseKey)
 
@@ -57,7 +65,7 @@ serve(async (_req) => {
 
     let accessToken = tokenRow.access_token as string
 
-    // 2. Refresh access token if we have a refresh token, otherwise use stored one
+    // 2. Refresh access token if we have a refresh token
     if (tokenRow.refresh_token) {
       const tokenRes = await fetch(WHOOP_TOKEN_URL, {
         method: 'POST',
@@ -86,86 +94,97 @@ serve(async (_req) => {
       }
     }
 
-    // 3. Fetch recovery, sleep, cycle, and workouts in parallel
+    // 3. Fetch recovery, sleep, cycle, and workouts
+    const workoutLimit = Math.max(days * 3, 10)
     const [recoveryData, sleepData, cycleData, workoutData] = await Promise.all([
-      whoopGet(accessToken, '/recovery?limit=1'),
-      whoopGet(accessToken, '/activity/sleep?limit=1').catch((e) => { console.warn('sleep fetch failed:', e); return null }),
-      whoopGet(accessToken, '/cycle?limit=1').catch((e) => { console.warn('cycle fetch failed:', e); return null }),
-      whoopGet(accessToken, '/activity/workout?limit=10').catch((e) => { console.warn('workout fetch failed:', e); return null }),
+      whoopGet(accessToken, `/recovery?limit=${days}`),
+      whoopGet(accessToken, `/activity/sleep?limit=${days}`).catch((e) => { console.warn('sleep fetch failed:', e); return null }),
+      whoopGet(accessToken, `/cycle?limit=${days}`).catch((e) => { console.warn('cycle fetch failed:', e); return null }),
+      whoopGet(accessToken, `/activity/workout?limit=${workoutLimit}`).catch((e) => { console.warn('workout fetch failed:', e); return null }),
     ])
 
-    const recovery = (recoveryData?.records ?? [])[0]
-    if (!recovery) return json({ error: 'No recovery records returned' }, 500)
+    const recoveries: Record<string, unknown>[] = recoveryData?.records ?? []
+    if (!recoveries.length) return json({ error: 'No recovery records returned' }, 500)
 
-    const sleep = (sleepData?.records ?? [])[0] ?? null
-    const cycle = (cycleData?.records ?? [])[0] ?? null
+    const sleepRecords: Record<string, unknown>[] = sleepData?.records ?? []
+    const cycleRecords: Record<string, unknown>[] = cycleData?.records ?? []
 
-    // 4. Compute sleep stage percentages + extract new daily fields
-    let sleep_score: number | null = null
-    let sleep_duration_ms: number | null = null
-    let sleep_deep_pct: number | null = null
-    let sleep_rem_pct: number | null = null
-    let sleep_light_pct: number | null = null
-    let sleep_awake_pct: number | null = null
-    let sleep_consistency_pct: number | null = null
-    let respiratory_rate: number | null = null
+    // 4. Upsert one snapshot row per recovery record
+    let snapshotsUpserted = 0
 
-    if (sleep?.score) {
-      sleep_score = sleep.score.sleep_performance_percentage ?? null
-      sleep_consistency_pct = sleep.score.sleep_consistency_percentage ?? null
-      respiratory_rate = sleep.score.respiratory_rate ?? null
-      const s = sleep.score.stage_summary ?? {}
-      const total = s.total_in_bed_time_milli ?? 0
-      sleep_duration_ms = total || null
-      if (total > 0) {
-        sleep_deep_pct = ((s.total_slow_wave_sleep_time_milli ?? 0) / total) * 100
-        sleep_rem_pct = ((s.total_rem_sleep_time_milli ?? 0) / total) * 100
-        sleep_light_pct = ((s.total_light_sleep_time_milli ?? 0) / total) * 100
-        sleep_awake_pct = ((s.total_awake_time_milli ?? 0) / total) * 100
+    for (const recovery of recoveries) {
+      const cycleId = recovery.cycle_id as number
+      const cycle = cycleRecords.find((c) => (c.id as number) === cycleId) ?? null
+      const sleep = sleepRecords.find((s) => (s.cycle_id as number) === cycleId) ?? null
+
+      let sleep_score: number | null = null
+      let sleep_duration_ms: number | null = null
+      let sleep_deep_pct: number | null = null
+      let sleep_rem_pct: number | null = null
+      let sleep_light_pct: number | null = null
+      let sleep_awake_pct: number | null = null
+      let sleep_consistency_pct: number | null = null
+      let respiratory_rate: number | null = null
+
+      const sleepScore = (sleep as Record<string, unknown> | null)?.score as Record<string, unknown> | null
+      if (sleepScore) {
+        sleep_score = sleepScore.sleep_performance_percentage as number ?? null
+        sleep_consistency_pct = sleepScore.sleep_consistency_percentage as number ?? null
+        respiratory_rate = sleepScore.respiratory_rate as number ?? null
+        const s = sleepScore.stage_summary as Record<string, number> ?? {}
+        const total = s.total_in_bed_time_milli ?? 0
+        sleep_duration_ms = total || null
+        if (total > 0) {
+          sleep_deep_pct = ((s.total_slow_wave_sleep_time_milli ?? 0) / total) * 100
+          sleep_rem_pct = ((s.total_rem_sleep_time_milli ?? 0) / total) * 100
+          sleep_light_pct = ((s.total_light_sleep_time_milli ?? 0) / total) * 100
+          sleep_awake_pct = ((s.total_awake_time_milli ?? 0) / total) * 100
+        }
       }
+
+      const cycleScore = (cycle as Record<string, unknown> | null)?.score as Record<string, unknown> | null
+      const recoveryScore = (recovery.score as Record<string, unknown> | null)
+
+      const row = {
+        cycle_id: cycleId,
+        recorded_at: recovery.created_at,
+        recovery_score: recoveryScore?.recovery_score ?? null,
+        rhr: recoveryScore?.resting_heart_rate ?? null,
+        hrv_rmssd: recoveryScore?.hrv_rmssd_milli ?? null,
+        strain: cycleScore?.strain ?? null,
+        kilojoule: cycleScore?.kilojoule ?? null,
+        sleep_score,
+        sleep_duration_ms,
+        sleep_deep_pct,
+        sleep_rem_pct,
+        sleep_light_pct,
+        sleep_awake_pct,
+        sleep_consistency_pct,
+        respiratory_rate,
+        raw_json: { recovery, sleep, cycle },
+      }
+
+      const { error: upsertErr } = await supabase
+        .from('whoop_snapshots')
+        .upsert(row, { onConflict: 'cycle_id' })
+
+      if (upsertErr) console.warn(`snapshot upsert error (cycle ${cycleId}):`, upsertErr.message)
+      else snapshotsUpserted++
     }
 
-    const kilojoule: number | null = cycle?.score?.kilojoule ?? null
-
-    // 5. Upsert into whoop_snapshots
-    const row = {
-      cycle_id: recovery.cycle_id,
-      recorded_at: recovery.created_at,
-      recovery_score: recovery.score?.recovery_score ?? null,
-      rhr: recovery.score?.resting_heart_rate ?? null,
-      hrv_rmssd: recovery.score?.hrv_rmssd_milli ?? null,
-      strain: cycle?.score?.strain ?? null,
-      sleep_score,
-      sleep_duration_ms,
-      sleep_deep_pct,
-      sleep_rem_pct,
-      sleep_light_pct,
-      sleep_awake_pct,
-      sleep_consistency_pct,
-      respiratory_rate,
-      kilojoule,
-      raw_json: { recovery, sleep, cycle },
-    }
-
-    const { error: upsertErr } = await supabase
-      .from('whoop_snapshots')
-      .upsert(row, { onConflict: 'cycle_id' })
-
-    if (upsertErr) return json({ error: `Supabase upsert error: ${upsertErr.message}` }, 500)
-
-    // 6. Upsert workouts
+    // 5. Upsert workouts
     let workoutCount = 0
     for (const w of workoutData?.records ?? []) {
       if (!w?.id || !w?.start) continue
-      const zd = w.score?.zone_duration ?? {}
+      const zd = (w.score as Record<string, unknown> | null)?.zone_duration as Record<string, number> ?? {}
       const wRow = {
         workout_id: w.id,
         cycle_id: w.cycle_id ?? null,
         started_at: w.start,
         sport_name: SPORT_NAMES[w.sport_id as number] ?? `sport_${w.sport_id}`,
-        strain: w.score?.strain ?? null,
-        avg_hr: w.score?.average_heart_rate ?? null,
-        max_hr: w.score?.max_heart_rate ?? null,
+        strain: (w.score as Record<string, unknown> | null)?.strain ?? null,
+        avg_hr: (w.score as Record<string, unknown> | null)?.average_heart_rate ?? null,
+        max_hr: (w.score as Record<string, unknown> | null)?.max_heart_rate ?? null,
         zone0_min: zd.zone_zero_milli != null ? zd.zone_zero_milli / 60000 : null,
         zone1_min: zd.zone_one_milli != null ? zd.zone_one_milli / 60000 : null,
         zone2_min: zd.zone_two_milli != null ? zd.zone_two_milli / 60000 : null,
@@ -181,13 +200,15 @@ serve(async (_req) => {
       else workoutCount++
     }
 
+    const latest = recoveries[0]
+    const latestScore = (latest.score as Record<string, unknown> | null)
+
     return json({
       ok: true,
-      cycle_id: recovery.cycle_id,
-      recovery_score: recovery.score?.recovery_score,
-      sleep_score,
-      strain: row.strain,
+      days_requested: days,
+      snapshots_synced: snapshotsUpserted,
       workouts_synced: workoutCount,
+      recovery_score: latestScore?.recovery_score,
       synced_at: new Date().toISOString(),
     })
   } catch (err) {

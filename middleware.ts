@@ -6,8 +6,8 @@ const LOGIN = '/login'
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Let login page and auth endpoint through
-  if (pathname === LOGIN || pathname.startsWith('/api/auth')) {
+  // Let login page, auth endpoint, and Whoop OAuth callback through
+  if (pathname === LOGIN || pathname.startsWith('/api/auth') || pathname === '/api/whoop-callback' || pathname === '/callback') {
     return NextResponse.next()
   }
 

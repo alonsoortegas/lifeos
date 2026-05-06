@@ -107,22 +107,36 @@ Todos reset by querying `day_date = current_date`. The 6 AM reset is handled cli
 
 ## Whoop data pipeline
 
-The frontend **never** calls the Whoop API directly. Flow:
+OAuth2 authorization code flow. The access token lasts 1 hour; there is no refresh token until Whoop approves the app for the `offline` scope (pending review).
 
 ```
-Whoop API → supabase/functions/whoop-sync (cron every 30 min) → whoop_snapshots → frontend
+User → "reconnect whoop" button → Whoop OAuth → /api/whoop-callback → stores token in whoop_tokens
+"sync now" button → /api/whoop-sync → supabase/functions/whoop-sync → whoop_snapshots + whoop_workouts
 ```
 
-**To deploy:**
+**To reconnect when the token expires:** click "reconnect whoop →" in the Whoop tab (shown when last sync is >55 min old).
+
+**To deploy the Edge Function:**
 ```bash
 supabase functions deploy whoop-sync
-supabase secrets set WHOOP_CLIENT_ID=... WHOOP_CLIENT_SECRET=...
-# Add cron trigger: */30 * * * * → whoop-sync
+supabase secrets set WHOOP_CLIENT_ID=aeb5a295-3c6a-42a9-9657-57227bb0adb7 WHOOP_CLIENT_SECRET=<secret>
+# Optional cron: */30 * * * * → whoop-sync
 ```
 
-The Edge Function handles OAuth2 `client_credentials` grant, fetches `?limit=1` from `/developer/v1/recovery`, and upserts on `cycle_id`.
+**Whoop developer app redirect URIs (must be whitelisted in dashboard):**
+```
+http://localhost:3000/api/whoop-callback
+https://lifeos-zeta-three.vercel.app/api/whoop-callback
+```
 
-Note: Whoop's API uses `client_credentials` per their developer docs, but if the account requires user-level OAuth2 (authorization code flow), the token fetch will need to change.
+**Adding `offline` scope (once Whoop approves the app):**
+1. Add `offline` to `WHOOP_SCOPES` in `components/tabs/WhoopTab.tsx`
+2. The Edge Function already handles `refresh_token` grant — no other changes needed
+3. Users will need to reconnect once to get a refresh token issued
+
+**Chart visibility:**
+- Recovery/HRV/Strain sparklines: appear after 2+ days of synced data (`whoop_snapshots` needs ≥ 2 rows)
+- Workouts section: appears immediately after first sync if any workouts are returned
 
 ## Tab reference
 

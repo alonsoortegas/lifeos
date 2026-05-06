@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# supabase temp files
+supabase/.temp/
+
+# local data dumps
+whoop-data-dump.json
+whoop-viz.html
+.env*.local

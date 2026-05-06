@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import Ring from '@/components/ui/Ring'
-import Sparkline from '@/components/ui/Sparkline'
 import Card from '@/components/ui/Card'
 import type { WhoopSnapshot, WhoopWorkout } from '@/lib/types'
 
@@ -23,11 +21,6 @@ function fmt(n: number | null, decimals = 0): string {
   return decimals > 0 ? n.toFixed(decimals) : String(Math.round(n))
 }
 
-function avg(arr: number[]): number {
-  if (!arr.length) return 0
-  return arr.reduce((a, b) => a + b, 0) / arr.length
-}
-
 const ZONE_COLORS = ['#1e293b', '#3b82f6', '#22c55e', '#f59e0b', '#f97316', '#ef4444']
 const ZONE_LABELS = ['Z0', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5']
 
@@ -35,11 +28,256 @@ const WHOOP_CLIENT_ID = 'aeb5a295-3c6a-42a9-9657-57227bb0adb7'
 const WHOOP_SCOPES = 'read:recovery read:sleep read:workout read:cycles read:body_measurement'
 
 function whoopAuthUrl(host: string): string {
-  const redirectUri = encodeURIComponent(`${host}/callback`)
+  const redirectUri = encodeURIComponent(`${host}/api/whoop-callback`)
   const scope = encodeURIComponent(WHOOP_SCOPES)
   return `https://api.prod.whoop.com/oauth/oauth2/auth?client_id=${WHOOP_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=lifeos26`
 }
 
+// ─── Style constants ──────────────────────────────────────────────────────────
+const C = {
+  bg: '#0e0e0e', card: '#1a1a1a', border: '#2a2a2a', borderHi: '#3a3a3a',
+  text: '#ededed', dim: '#888', faint: '#555', accent: '#00d26a',
+}
+const mono = 'var(--font-jetbrains-mono, monospace)'
+const sans = 'var(--font-inter-tight, sans-serif)'
+
+// ─── Sport color map ─────────────────────────────────────────────────────────
+const SPORT_COLORS: Record<string, string> = {
+  functional: '#f97316', yoga: '#10b981', running: '#8b5cf6',
+  walking: '#6b7280', lifting: '#06b6d4', default: '#a78bfa',
+}
+
+function sportColor(name: string | null): string {
+  if (!name) return SPORT_COLORS.default
+  const key = name.toLowerCase()
+  return SPORT_COLORS[key] ?? SPORT_COLORS.default
+}
+
+// ─── Primitive components ─────────────────────────────────────────────────────
+function MiniStat({ label, value, unit, color }: { label: string; value: string; unit?: string; color: string }) {
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 10 }}>
+      <div style={{ fontFamily: mono, fontSize: 9, color: C.dim, textTransform: 'uppercase', letterSpacing: 1 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, marginTop: 4 }}>
+        <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color, lineHeight: 1 }}>{value}</span>
+        {unit && <span style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>{unit}</span>}
+      </div>
+    </div>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 2, color: C.faint, borderBottom: `1px solid ${C.border}`, paddingBottom: 6, marginBottom: 10 }}>
+      {children}
+    </div>
+  )
+}
+
+function ChartTitle({ title, right }: { title: string; right?: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
+      <span style={{ fontFamily: mono, fontSize: 10, color: C.dim, textTransform: 'uppercase', letterSpacing: 1 }}>{title}</span>
+      {right}
+    </div>
+  )
+}
+
+function AxisRow({ first, last }: { first: string; last: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontFamily: mono, fontSize: 9, color: C.faint }}>
+      <span>{first}</span><span>{last}</span>
+    </div>
+  )
+}
+
+// ─── BigSpark ─────────────────────────────────────────────────────────────────
+// Full-width SVG polyline. colorByValue=true: dots colored by zone, dashed threshold lines.
+function BigSpark({
+  data,
+  color = C.accent,
+  colorByValue = false,
+  height = 80,
+}: {
+  data: number[]
+  color?: string
+  colorByValue?: boolean
+  height?: number
+}) {
+  if (data.length < 2) return <div style={{ height }} />
+
+  const W = 320
+  const H = height
+  const pad = { t: 8, r: 8, b: 8, l: 8 }
+  const iW = W - pad.l - pad.r
+  const iH = H - pad.t - pad.b
+
+  const min = Math.min(...data)
+  const max = Math.max(...data)
+  const range = max - min || 1
+
+  const pts = data.map((v, i) => {
+    const x = pad.l + (i / (data.length - 1)) * iW
+    const y = pad.t + (1 - (v - min) / range) * iH
+    return [x, y] as [number, number]
+  })
+
+  const polylinePoints = pts.map(([x, y]) => `${x},${y}`).join(' ')
+
+  // Fill polygon: close down to bottom corners
+  const fillPoints = [
+    `${pts[0][0]},${pad.t + iH}`,
+    ...pts.map(([x, y]) => `${x},${y}`),
+    `${pts[pts.length - 1][0]},${pad.t + iH}`,
+  ].join(' ')
+
+  function dotColor(v: number): string {
+    if (v >= 67) return '#00d26a'
+    if (v >= 34) return '#f59e0b'
+    return '#ef4444'
+  }
+
+  // Threshold y positions for 34 and 67
+  const y34 = pad.t + (1 - (34 - min) / range) * iH
+  const y67 = pad.t + (1 - (67 - min) / range) * iH
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: 'block', overflow: 'visible' }}>
+      {/* Fill */}
+      <polygon
+        points={fillPoints}
+        fill={colorByValue ? 'rgba(255,255,255,0.05)' : color}
+        fillOpacity={colorByValue ? 1 : 0.08}
+      />
+      {/* Threshold lines */}
+      {colorByValue && min < 67 && max > 34 && (
+        <>
+          {y34 >= pad.t && y34 <= pad.t + iH && (
+            <line x1={pad.l} y1={y34} x2={pad.l + iW} y2={y34} stroke="#f59e0b" strokeWidth={0.8} strokeDasharray="4 3" opacity={0.5} />
+          )}
+          {y67 >= pad.t && y67 <= pad.t + iH && (
+            <line x1={pad.l} y1={y67} x2={pad.l + iW} y2={y67} stroke="#00d26a" strokeWidth={0.8} strokeDasharray="4 3" opacity={0.5} />
+          )}
+        </>
+      )}
+      {/* Line */}
+      <polyline
+        points={polylinePoints}
+        fill="none"
+        stroke={colorByValue ? C.dim : color}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {/* Dots */}
+      {pts.map(([x, y], i) => (
+        <circle
+          key={i}
+          cx={x}
+          cy={y}
+          r={3}
+          fill={colorByValue ? dotColor(data[i]) : color}
+          stroke={C.card}
+          strokeWidth={1}
+        />
+      ))}
+    </svg>
+  )
+}
+
+// ─── DualSpark ────────────────────────────────────────────────────────────────
+// Two polylines, each normalized to its own min/max.
+function DualSpark({
+  dataA,
+  dataB,
+  colorA = '#3b82f6',
+  colorB = '#f97316',
+  height = 80,
+}: {
+  dataA: number[]
+  dataB: number[]
+  colorA?: string
+  colorB?: string
+  height?: number
+}) {
+  const len = Math.min(dataA.length, dataB.length)
+  if (len < 2) return <div style={{ height }} />
+
+  const W = 320
+  const H = height
+  const pad = { t: 8, r: 8, b: 8, l: 8 }
+  const iW = W - pad.l - pad.r
+  const iH = H - pad.t - pad.b
+
+  function normalize(arr: number[]) {
+    const mn = Math.min(...arr)
+    const mx = Math.max(...arr)
+    const rng = mx - mn || 1
+    return arr.map((v, i) => {
+      const x = pad.l + (i / (arr.length - 1)) * iW
+      const y = pad.t + (1 - (v - mn) / rng) * iH
+      return [x, y] as [number, number]
+    })
+  }
+
+  const ptsA = normalize(dataA.slice(0, len))
+  const ptsB = normalize(dataB.slice(0, len))
+
+  function toPolyline(pts: [number, number][]) {
+    return pts.map(([x, y]) => `${x},${y}`).join(' ')
+  }
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: 'block' }}>
+      <polyline points={toPolyline(ptsA)} fill="none" stroke={colorA} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+      <polyline points={toPolyline(ptsB)} fill="none" stroke={colorB} strokeWidth={1.5} strokeDasharray="5 3" strokeLinejoin="round" strokeLinecap="round" />
+      {ptsA.map(([x, y], i) => (
+        <circle key={`a${i}`} cx={x} cy={y} r={2.5} fill={colorA} stroke={C.card} strokeWidth={1} />
+      ))}
+      {ptsB.map(([x, y], i) => (
+        <circle key={`b${i}`} cx={x} cy={y} r={2.5} fill={colorB} stroke={C.card} strokeWidth={1} />
+      ))}
+    </svg>
+  )
+}
+
+// ─── BarChart ─────────────────────────────────────────────────────────────────
+function BarChart({
+  data,
+  color = '#a78bfa',
+  height = 80,
+  maxVal,
+}: {
+  data: number[]
+  color?: string
+  height?: number
+  maxVal?: number
+}) {
+  if (data.length === 0) return <div style={{ height }} />
+  const mx = maxVal ?? Math.max(...data, 1)
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', height, gap: 2 }}>
+      {data.map((v, i) => {
+        const pct = Math.min(v / mx, 1) * 100
+        return (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              height: `${Math.max(pct, 2)}%`,
+              backgroundColor: color,
+              borderRadius: '3px 3px 0 0',
+              opacity: 0.8,
+            }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function WhoopTab() {
   const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
   const [history, setHistory] = useState<WhoopSnapshot[]>([])
@@ -60,7 +298,7 @@ export default function WhoopTab() {
       .from('whoop_snapshots')
       .select('*')
       .order('recorded_at', { ascending: false })
-      .limit(14)
+      .limit(30)
       .then(({ data }) => { if (data) setHistory([...(data as WhoopSnapshot[])].reverse()) })
 
     supabase
@@ -93,286 +331,296 @@ export default function WhoopTab() {
   }
 
   const recovery = snap?.recovery_score ?? 0
-  const ringColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
-
-  const recoveryHistory = history.map(h => h.recovery_score ?? 0)
-  const hrvHistory = history.map(h => Number(h.hrv_rmssd ?? 0))
-  const strainHistory = history.map(h => Number(h.strain ?? 0))
-  const caloriesHistory = history.map(h => h.kilojoule != null ? Math.round(h.kilojoule / 4.184) : 0)
-  const consistencyHistory = history.map(h => Number(h.sleep_consistency_pct ?? 0))
-  const respHistory = history.map(h => Number(h.respiratory_rate ?? 0))
-
-  const recordedDate = snap?.recorded_at
-    ? new Date(snap.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()
-    : '—'
-
-  const sleepStages = snap
-    ? [
-        { label: 'Deep', pct: snap.sleep_deep_pct ?? 0, color: '#3b5bdb' },
-        { label: 'REM', pct: snap.sleep_rem_pct ?? 0, color: '#9c36b5' },
-        { label: 'Light', pct: snap.sleep_light_pct ?? 0, color: '#0ca678' },
-        { label: 'Awake', pct: snap.sleep_awake_pct ?? 0, color: '#555' },
-      ]
-    : []
-
-  const raw = snap?.raw_json as Record<string, unknown> | null
-  const recoveryScore = (raw?.recovery as Record<string, unknown> | null)?.score as Record<string, unknown> | null
-  const spo2 = recoveryScore?.spo2_percentage != null ? `${Number(recoveryScore.spo2_percentage).toFixed(1)}%` : '—'
-  const skinTemp = recoveryScore?.skin_temp_celsius != null ? `${Number(recoveryScore.skin_temp_celsius).toFixed(1)} °C` : '—'
-  const scoreState = (snap?.raw_json as Record<string, unknown> | null)
-    ? ((((snap?.raw_json as Record<string, unknown>)?.recovery as Record<string, unknown>)?.score_state as string) ?? '—')
-    : '—'
-
-  const hasHistory = history.length > 1
+  const recoveryColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
 
   const tokenAge = snap?.recorded_at
     ? Math.floor((Date.now() - new Date(snap.recorded_at).getTime()) / 60000)
     : null
   const tokenExpired = tokenAge != null && tokenAge > 55
 
-  return (
-    <div className="px-4 space-y-5">
-      <div className="pt-2">
-        <h1 className="text-[22px] font-bold text-[#ededed]">Recovery Breakdown</h1>
-        <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-          {recordedDate}{snap?.cycle_id ? ` · CYCLE ${snap.cycle_id}` : ''}
-        </div>
-      </div>
+  const hasHistory = history.length > 1
 
-      {/* Connect / Sync card */}
-      <Card className="p-4 space-y-3">
-        <div className="flex items-center justify-between">
+  // Derived history arrays
+  const recoveryHistory = history.map(h => h.recovery_score ?? 0)
+  const hrvHistory = history.map(h => Number(h.hrv_rmssd ?? 0))
+  const rhrHistory = history.map(h => Number(h.rhr ?? 0))
+  const strainHistory = history.map(h => Number(h.strain ?? 0))
+  const sleepPerfHistory = history.map(h => h.sleep_score ?? 0)
+
+  // Axis labels from history
+  function axisDate(iso: string) {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+  const axisFirst = history.length > 0 ? axisDate(history[0].recorded_at) : ''
+  const axisLast = history.length > 0 ? axisDate(history[history.length - 1].recorded_at) : ''
+
+  // AT A GLANCE values
+  const kcal = snap?.kilojoule != null ? String(Math.round(snap.kilojoule / 4.184)) : '—'
+
+  // Sleep stages for stacked bar
+  const sleepStages = [
+    { name: 'rem', color: '#6366f1', pct: snap?.sleep_rem_pct ?? 0 },
+    { name: 'deep', color: '#0ea5e9', pct: snap?.sleep_deep_pct ?? 0 },
+    { name: 'light', color: '#5a8a8a', pct: snap?.sleep_light_pct ?? 0 },
+    { name: 'awake', color: '#555', pct: snap?.sleep_awake_pct ?? 0 },
+  ]
+
+  function stageHours(pct: number | null): string {
+    if (!pct || !snap?.sleep_duration_ms) return '0h 0m'
+    const ms = snap.sleep_duration_ms * (pct / 100)
+    const totalMin = Math.round(ms / 60000)
+    return `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`
+  }
+
+  const hasSleepStages = sleepStages.some(s => s.pct > 0)
+
+  // Most recent workout HR zones
+  const latestWorkout = workouts[0] ?? null
+  const hrZones = latestWorkout
+    ? [
+        latestWorkout.zone0_min, latestWorkout.zone1_min, latestWorkout.zone2_min,
+        latestWorkout.zone3_min, latestWorkout.zone4_min, latestWorkout.zone5_min,
+      ]
+    : []
+
+  return (
+    <div className="px-4 pb-24 pt-2" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+      {/* 1. Header */}
+      <h1 style={{ fontFamily: sans, fontSize: 22, fontWeight: 700, color: C.text, margin: 0 }}>Whoop</h1>
+
+      {/* 2. Connect / Sync card */}
+      <Card className="p-4">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <div className="text-[#888] text-[11px] uppercase tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>Whoop</div>
+            <div style={{ fontFamily: mono, fontSize: 11, color: C.dim, textTransform: 'uppercase', letterSpacing: 4 }}>Whoop</div>
             {syncMsg && (
-              <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>{syncMsg}</div>
+              <div style={{ fontFamily: mono, fontSize: 11, color: C.faint, marginTop: 2 }}>{syncMsg}</div>
             )}
           </div>
           <button
             onClick={syncNow}
             disabled={syncing}
-            className="bg-[#2a2a2a] text-[#ededed] text-[12px] px-4 py-2 rounded-lg disabled:opacity-40"
-            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+            style={{
+              fontFamily: mono, fontSize: 12, background: C.border, color: C.text,
+              border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', opacity: syncing ? 0.4 : 1,
+            }}
           >
-            {syncing ? 'syncing…' : 'sync now'}
+            {syncing ? 'syncing...' : 'sync now'}
           </button>
         </div>
         {tokenExpired && (
           <a
             href={typeof window !== 'undefined' ? whoopAuthUrl(window.location.origin) : '#'}
-            className="block w-full text-center bg-[#00d26a] text-[#0e0e0e] text-[12px] font-bold py-2 rounded-lg"
-            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+            style={{
+              display: 'block', textAlign: 'center', background: C.accent, color: C.bg,
+              fontFamily: mono, fontSize: 12, fontWeight: 700, borderRadius: 8,
+              padding: '8px 0', marginTop: 10, textDecoration: 'none',
+            }}
           >
             reconnect whoop →
           </a>
         )}
       </Card>
 
-      {/* Recovery ring + HRV / RHR / Strain */}
-      <Card className="p-5">
-        <div className="flex items-center gap-5">
-          <Ring value={snap ? recovery : 0} size={130} thickness={12} color={snap ? ringColor : '#2a2a2a'} />
-          <div className="flex-1 space-y-4">
-            <div>
-              <div className="text-[#555] uppercase text-[10px] tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>HRV</div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-[28px] font-bold text-[#ededed] leading-none" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                  {fmt(snap?.hrv_rmssd ?? null, 1)}
-                </span>
-                {snap?.hrv_rmssd != null && <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>ms</span>}
-              </div>
-            </div>
-            <div>
-              <div className="text-[#555] uppercase text-[10px] tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>RHR</div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-[28px] font-bold text-[#ededed] leading-none" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                  {fmt(snap?.rhr ?? null)}
-                </span>
-                {snap?.rhr != null && <span className="text-[#555] text-xs" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>bpm</span>}
-              </div>
-            </div>
-            <div>
-              <div className="text-[#555] uppercase text-[10px] tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>Strain</div>
-              <div className="text-[22px] font-bold leading-none" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: snap?.strain != null ? '#ededed' : '#555' }}>
-                {fmt(snap?.strain ?? null, 1)}
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Sleep */}
-      <div>
-        <div className="text-[#555] text-[11px] tracking-widest uppercase mb-2" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>· sleep ·</div>
-        <Card className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[#ededed] text-2xl font-bold" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-              {sleepHM(snap?.sleep_duration_ms ?? null)}
-            </span>
-            <span className="text-[#00d26a] text-sm font-bold" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-              {snap?.sleep_score != null ? `${snap.sleep_score}%` : '—'}
-            </span>
-          </div>
-
-          {sleepStages.length > 0 && sleepStages.some(s => s.pct > 0) ? (
-            <>
-              <div className="flex h-3 rounded-full overflow-hidden gap-px">
-                {sleepStages.map(stage => (
-                  <div key={stage.label} style={{ width: `${stage.pct}%`, backgroundColor: stage.color }} />
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                {sleepStages.map(stage => (
-                  <div key={stage.label} className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: stage.color }} />
-                    <span className="text-[#888] text-[11px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                      {stage.label} {stage.pct.toFixed(0)}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-              sleep stages not available
-            </div>
-          )}
-        </Card>
+      {/* 3. AT A GLANCE */}
+      <SectionLabel>At a Glance</SectionLabel>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+        <MiniStat label="Recovery" value={snap?.recovery_score != null ? `${snap.recovery_score}` : '—'} unit="%" color={recoveryColor} />
+        <MiniStat label="HRV" value={snap?.hrv_rmssd?.toFixed(1) ?? '—'} unit="ms" color="#3b82f6" />
+        <MiniStat label="RHR" value={snap?.rhr != null ? String(snap.rhr) : '—'} unit="bpm" color="#f97316" />
+        <MiniStat label="Strain" value={snap?.strain?.toFixed(1) ?? '—'} color="#a78bfa" />
+        <MiniStat label="Sleep" value={snap?.sleep_score != null ? `${snap.sleep_score}` : '—'} unit="%" color="#06b6d4" />
+        <MiniStat label="kcal" value={kcal} color="#f43f5e" />
       </div>
 
-      {/* 14-day trends */}
-      {hasHistory && (
-        <div>
-          <div className="text-[#555] text-[11px] tracking-widest uppercase mb-2" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>· trends ·</div>
+      {/* 4–6. RECOVERY section */}
+      <SectionLabel>Recovery</SectionLabel>
 
-          {/* Row 1: Recovery + HRV */}
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <SparkCard label="Recovery %" value={`${recoveryHistory[recoveryHistory.length - 1]}`} data={recoveryHistory} color="#00d26a" avgStr={`avg ${Math.round(avg(recoveryHistory))}`} />
-            <SparkCard label="HRV ms" value={hrvHistory[hrvHistory.length - 1].toFixed(1)} data={hrvHistory} color="#888" avgStr={`avg ${avg(hrvHistory).toFixed(1)}`} />
-          </div>
+      {hasHistory ? (
+        <>
+          {/* Recovery sparkline */}
+          <Card className="p-4">
+            <ChartTitle title="Recovery Score" />
+            <BigSpark data={recoveryHistory} colorByValue height={80} />
+            <AxisRow first={axisFirst} last={axisLast} />
+          </Card>
 
-          {/* Row 2: Strain + Calories */}
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <SparkCard label="Strain" value={strainHistory[strainHistory.length - 1].toFixed(1)} data={strainHistory} color="#a78bfa" avgStr={`avg ${avg(strainHistory).toFixed(1)}`} />
-            <SparkCard
-              label="Calories kcal"
-              value={caloriesHistory[caloriesHistory.length - 1] > 0 ? String(caloriesHistory[caloriesHistory.length - 1]) : '—'}
-              data={caloriesHistory}
-              color="#f43f5e"
-              avgStr={caloriesHistory.some(v => v > 0) ? `avg ${Math.round(avg(caloriesHistory.filter(v => v > 0)))}` : ''}
-            />
-          </div>
-
-          {/* Row 3: Sleep Consistency + Respiratory Rate */}
-          {(consistencyHistory.some(v => v > 0) || respHistory.some(v => v > 0)) && (
-            <div className="grid grid-cols-2 gap-3">
-              {consistencyHistory.some(v => v > 0) && (
-                <SparkCard label="Consistency %" value={`${consistencyHistory[consistencyHistory.length - 1]}`} data={consistencyHistory} color="#a78bfa" avgStr={`avg ${Math.round(avg(consistencyHistory.filter(v => v > 0)))}`} />
-              )}
-              {respHistory.some(v => v > 0) && (
-                <SparkCard label="Resp Rate" value={`${respHistory[respHistory.length - 1].toFixed(1)}`} data={respHistory} color="#34d399" avgStr={`avg ${avg(respHistory.filter(v => v > 0)).toFixed(1)} brpm`} />
-              )}
+          {/* HRV & RHR dual-line */}
+          <Card className="p-4">
+            <ChartTitle title="HRV & RHR" />
+            <DualSpark dataA={hrvHistory} dataB={rhrHistory} colorA="#3b82f6" colorB="#f97316" height={80} />
+            <AxisRow first={axisFirst} last={axisLast} />
+            <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <div style={{ width: 20, height: 2, background: '#3b82f6', borderRadius: 1 }} />
+                <span style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>HRV ms</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <div style={{ width: 20, height: 0, border: '1px dashed #f97316', borderRadius: 1 }} />
+                <span style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>RHR bpm</span>
+              </div>
             </div>
-          )}
+          </Card>
+        </>
+      ) : (
+        <div style={{ fontFamily: mono, fontSize: 11, color: C.faint, padding: '8px 0' }}>
+          sync at least 2 days to see charts
         </div>
       )}
 
-      {/* Metrics */}
-      <div>
-        <div className="text-[#555] text-[11px] tracking-widest uppercase mb-2" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>· metrics ·</div>
-        <Card className="divide-y divide-[#2a2a2a]">
-          {[
-            { label: 'SpO2', value: spo2 },
-            { label: 'Skin Temp', value: skinTemp },
-            { label: 'Score State', value: scoreState },
-          ].map(m => (
-            <div key={m.label} className="flex items-center justify-between px-4 py-3">
-              <span className="text-[#888] text-sm">{m.label}</span>
-              <span className="text-[#ededed] text-sm font-bold" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>{m.value}</span>
-            </div>
-          ))}
-        </Card>
-      </div>
+      {/* 7–9. SLEEP section */}
+      <SectionLabel>Sleep</SectionLabel>
 
-      {/* Workouts */}
+      {/* Last-night sleep stages */}
+      <Card className="p-4">
+        <ChartTitle
+          title="Last Night"
+          right={<span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.text }}>{sleepHM(snap?.sleep_duration_ms ?? null)}</span>}
+        />
+        {hasSleepStages ? (
+          <>
+            {/* Stacked bar */}
+            <div style={{ display: 'flex', height: 10, borderRadius: 5, overflow: 'hidden', gap: 1, marginBottom: 10 }}>
+              {sleepStages.map(s => (
+                <div key={s.name} style={{ flex: s.pct, background: s.color, minWidth: s.pct > 0 ? 2 : 0 }} />
+              ))}
+            </div>
+            {/* 4-col grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
+              {sleepStages.map(s => (
+                <div key={s.name} style={{ textAlign: 'center' }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 2, background: s.color, margin: '0 auto 4px' }} />
+                  <div style={{ fontFamily: mono, fontSize: 9, color: C.dim, textTransform: 'uppercase' }}>{s.name}</div>
+                  <div style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: C.text, marginTop: 2 }}>{stageHours(s.pct)}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontFamily: mono, fontSize: 11, color: C.faint }}>sleep stages not available</div>
+        )}
+      </Card>
+
+      {/* Sleep performance sparkline */}
+      {hasHistory && (
+        <Card className="p-4">
+          <ChartTitle title="Sleep Performance" />
+          <BigSpark data={sleepPerfHistory} color="#06b6d4" height={80} />
+          <AxisRow first={axisFirst} last={axisLast} />
+        </Card>
+      )}
+
+      {/* 10–13. STRAIN & ACTIVITY section */}
+      <SectionLabel>Strain & Activity</SectionLabel>
+
+      {/* Strain bar chart */}
+      {hasHistory && (
+        <Card className="p-4">
+          <ChartTitle title="Daily Strain" />
+          <BarChart data={strainHistory} color="#a78bfa" height={80} maxVal={21} />
+          <AxisRow first={axisFirst} last={axisLast} />
+        </Card>
+      )}
+
+      {/* Recent workouts list */}
       {workouts.length > 0 && (
-        <div>
-          <div className="text-[#555] text-[11px] tracking-widest uppercase mb-2" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>· workouts ·</div>
-          <div className="space-y-2">
-            {workouts.map(w => {
-              const zones = [w.zone0_min, w.zone1_min, w.zone2_min, w.zone3_min, w.zone4_min, w.zone5_min]
-              const totalMin = zones.reduce((s: number, z) => s + (z ?? 0), 0)
+        <Card className="p-4">
+          <ChartTitle title="Recent Workouts" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {workouts.slice(0, 5).map(w => {
               const date = new Date(w.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+              const sc = sportColor(w.sport_name)
+              const strainPct = w.strain != null ? Math.min(w.strain / 21, 1) * 100 : 0
               return (
-                <Card key={w.id} className="p-4 space-y-2">
-                  <div className="flex items-start justify-between">
-                    <span className="text-[#ededed] text-sm font-bold capitalize">{w.sport_name ?? 'workout'}</span>
-                    <div className="text-right">
-                      <span className="text-[#555] text-[11px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>{date}</span>
-                      {w.strain != null && (
-                        <span className="text-[#a78bfa] text-[11px] ml-2 font-bold" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                          {w.strain.toFixed(1)}
-                        </span>
-                      )}
-                    </div>
+                <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontFamily: mono, fontSize: 10, color: C.faint, width: 48, flexShrink: 0 }}>{date}</span>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: sc, flexShrink: 0 }} />
+                  <span style={{ fontFamily: mono, fontSize: 11, color: C.text, flex: 1, textTransform: 'capitalize' }}>
+                    {w.sport_name ?? 'workout'}
+                  </span>
+                  {/* Mini strain bar */}
+                  <div style={{ width: 60, height: 4, background: C.border, borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ width: `${strainPct}%`, height: '100%', background: sc, borderRadius: 2 }} />
                   </div>
-                  {(w.avg_hr != null || w.max_hr != null) && (
-                    <div className="text-[#888] text-[11px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                      HR {w.avg_hr != null ? `${w.avg_hr} avg` : '—'}{w.max_hr != null ? ` / ${w.max_hr} max` : ''}
-                    </div>
-                  )}
-                  {totalMin > 1 && (
-                    <div className="space-y-1">
-                      <div className="flex h-2 rounded overflow-hidden gap-px">
-                        {zones.map((z, i) => {
-                          const pct = ((z ?? 0) / totalMin) * 100
-                          if (pct < 0.5) return null
-                          return <div key={i} style={{ width: `${pct}%`, backgroundColor: ZONE_COLORS[i] }} />
-                        })}
-                      </div>
-                      <div className="flex gap-2 flex-wrap">
-                        {zones.map((z, i) => {
-                          if (!z || z < 0.5) return null
-                          return (
-                            <span key={i} className="text-[10px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: ZONE_COLORS[i] === '#1e293b' ? '#555' : ZONE_COLORS[i] }}>
-                              {ZONE_LABELS[i]} {z.toFixed(0)}m
-                            </span>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </Card>
+                  <span style={{ fontFamily: mono, fontSize: 10, color: sc, width: 28, textAlign: 'right' }}>
+                    {w.strain != null ? w.strain.toFixed(1) : '—'}
+                  </span>
+                </div>
               )
             })}
           </div>
-        </div>
+        </Card>
       )}
 
-      <div className="h-4" />
+      {/* HR zones for most recent workout */}
+      {latestWorkout && hrZones.some(z => (z ?? 0) > 0) && (
+        <Card className="p-4">
+          <ChartTitle
+            title="HR Zones (latest)"
+            right={
+              <span style={{ fontFamily: mono, fontSize: 10, color: C.faint, textTransform: 'capitalize' }}>
+                {latestWorkout.sport_name ?? 'workout'} · {new Date(latestWorkout.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </span>
+            }
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {hrZones.map((z, i) => {
+              const val = z ?? 0
+              const barPct = Math.min(val / 60, 1) * 100
+              return (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontFamily: mono, fontSize: 9, color: ZONE_COLORS[i] === '#1e293b' ? C.faint : ZONE_COLORS[i], width: 18 }}>
+                    {ZONE_LABELS[i]}
+                  </span>
+                  <div style={{ flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${barPct}%`, height: '100%',
+                        background: ZONE_COLORS[i] === '#1e293b' ? C.borderHi : ZONE_COLORS[i],
+                        borderRadius: 3,
+                      }}
+                    />
+                  </div>
+                  <span style={{ fontFamily: mono, fontSize: 9, color: C.faint, width: 32, textAlign: 'right' }}>
+                    {val > 0 ? `${val.toFixed(0)}m` : '—'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* 14–15. PROFILE section */}
+      <SectionLabel>Profile</SectionLabel>
+
+      <Card className="p-4">
+        <ChartTitle title="Body Stats" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {[
+            { label: 'Height', value: '180', unit: 'cm' },
+            { label: 'Weight', value: '71.3', unit: 'kg' },
+            { label: 'Max HR', value: '187', unit: 'bpm' },
+          ].map((stat, i, arr) => (
+            <div
+              key={stat.label}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '10px 0',
+                borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : 'none',
+              }}
+            >
+              <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>{stat.label}</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                <span style={{ fontFamily: mono, fontSize: 16, fontWeight: 700, color: C.text }}>{stat.value}</span>
+                <span style={{ fontFamily: mono, fontSize: 9, color: C.faint }}>{stat.unit}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
     </div>
-  )
-}
-
-function SparkCard({ label, value, data, color, avgStr }: {
-  label: string
-  value: string
-  data: number[]
-  color: string
-  avgStr: string
-}) {
-  return (
-    <Card className="p-4 space-y-2">
-      <div className="text-[#888] uppercase text-[10px] tracking-widest">{label}</div>
-      <div className="text-[#ededed] text-xl font-bold" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-        {value}
-      </div>
-      <Sparkline data={data} width={120} height={36} color={color} />
-      {avgStr && (
-        <div className="text-[#555] text-[10px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-          {avgStr}
-        </div>
-      )}
-    </Card>
   )
 }
