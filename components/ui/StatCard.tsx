@@ -4,6 +4,7 @@ interface StatCardProps {
   unit?: string
   sub?: string
   accent?: boolean
+  color?: string
 }
 
 export default function StatCard({
@@ -12,6 +13,7 @@ export default function StatCard({
   unit,
   sub,
   accent = false,
+  color,
 }: StatCardProps) {
   return (
     <div
@@ -27,8 +29,8 @@ export default function StatCard({
       </div>
       <div className="flex items-baseline gap-1">
         <span
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-          className="text-[28px] font-bold text-[#ededed] leading-none"
+          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: color ?? '#ededed' }}
+          className="text-[28px] font-bold leading-none"
         >
           {value}
         </span>

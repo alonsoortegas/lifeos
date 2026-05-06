@@ -66,23 +66,27 @@ export default function TodayTab() {
           unit={snap ? 'ms' : undefined}
           sub="rmssd · last night"
           accent={!!snap}
+          color="#3b82f6"
         />
         <StatCard
           label="RHR"
           value={snap?.rhr ?? '—'}
           unit={snap?.rhr != null ? 'bpm' : undefined}
           sub="resting heart rate"
+          color="#f97316"
         />
         <StatCard
           label="Strain"
           value={snap?.strain != null ? snap.strain.toFixed(1) : '—'}
           sub={snap?.strain != null ? 'daily strain' : 'no activity logged'}
+          color="#a78bfa"
         />
         <StatCard
           label="Sleep"
           value={snap?.sleep_score ?? '—'}
           unit={snap?.sleep_score != null ? '%' : undefined}
           sub={snap?.sleep_duration_ms ? sleepHM(snap.sleep_duration_ms) + ' · last night' : 'last night'}
+          color="#06b6d4"
         />
       </div>
 
