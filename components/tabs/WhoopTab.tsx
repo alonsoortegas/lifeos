@@ -21,11 +21,18 @@ function fmt(n: number | null, decimals = 0): string {
   return decimals > 0 ? n.toFixed(decimals) : String(Math.round(n))
 }
 
+function avg(arr: (number | null)[], decimals = 0): string {
+  const vals = arr.filter((v): v is number => v != null)
+  if (!vals.length) return '—'
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length
+  return decimals > 0 ? mean.toFixed(decimals) : String(Math.round(mean))
+}
+
 const ZONE_COLORS = ['#1e293b', '#3b82f6', '#22c55e', '#f59e0b', '#f97316', '#ef4444']
 const ZONE_LABELS = ['Z0', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5']
 
 const WHOOP_CLIENT_ID = 'aeb5a295-3c6a-42a9-9657-57227bb0adb7'
-const WHOOP_SCOPES = 'read:recovery read:sleep read:workout read:cycles read:body_measurement'
+const WHOOP_SCOPES = 'offline read:recovery read:sleep read:workout read:cycles read:body_measurement'
 
 function whoopAuthUrl(host: string): string {
   const redirectUri = encodeURIComponent(`${host}/api/whoop-callback`)
@@ -43,7 +50,7 @@ const sans = 'var(--font-inter-tight, sans-serif)'
 
 // ─── Sport color map ─────────────────────────────────────────────────────────
 const SPORT_COLORS: Record<string, string> = {
-  functional: '#f97316', yoga: '#10b981', running: '#8b5cf6',
+  'functional-fitness': '#f97316', yoga: '#10b981', running: '#8b5cf6',
   walking: '#6b7280', lifting: '#06b6d4', default: '#a78bfa',
 }
 
@@ -54,7 +61,7 @@ function sportColor(name: string | null): string {
 }
 
 // ─── Primitive components ─────────────────────────────────────────────────────
-function MiniStat({ label, value, unit, color }: { label: string; value: string; unit?: string; color: string }) {
+function MiniStat({ label, value, unit, color, sub }: { label: string; value: string; unit?: string; color: string; sub?: string }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 10 }}>
       <div style={{ fontFamily: mono, fontSize: 9, color: C.dim, textTransform: 'uppercase', letterSpacing: 1 }}>{label}</div>
@@ -62,6 +69,7 @@ function MiniStat({ label, value, unit, color }: { label: string; value: string;
         <span style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color, lineHeight: 1 }}>{value}</span>
         {unit && <span style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>{unit}</span>}
       </div>
+      {sub && <div style={{ fontFamily: mono, fontSize: 8, color: C.faint, marginTop: 3 }}>{sub}</div>}
     </div>
   )
 }
@@ -92,7 +100,6 @@ function AxisRow({ first, last }: { first: string; last: string }) {
 }
 
 // ─── BigSpark ─────────────────────────────────────────────────────────────────
-// Full-width SVG polyline. colorByValue=true: dots colored by zone, dashed threshold lines.
 function BigSpark({
   data,
   color = C.accent,
@@ -124,7 +131,6 @@ function BigSpark({
 
   const polylinePoints = pts.map(([x, y]) => `${x},${y}`).join(' ')
 
-  // Fill polygon: close down to bottom corners
   const fillPoints = [
     `${pts[0][0]},${pad.t + iH}`,
     ...pts.map(([x, y]) => `${x},${y}`),
@@ -137,19 +143,16 @@ function BigSpark({
     return '#ef4444'
   }
 
-  // Threshold y positions for 34 and 67
   const y34 = pad.t + (1 - (34 - min) / range) * iH
   const y67 = pad.t + (1 - (67 - min) / range) * iH
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: 'block', overflow: 'visible' }}>
-      {/* Fill */}
       <polygon
         points={fillPoints}
         fill={colorByValue ? 'rgba(255,255,255,0.05)' : color}
         fillOpacity={colorByValue ? 1 : 0.08}
       />
-      {/* Threshold lines */}
       {colorByValue && min < 67 && max > 34 && (
         <>
           {y34 >= pad.t && y34 <= pad.t + iH && (
@@ -160,7 +163,6 @@ function BigSpark({
           )}
         </>
       )}
-      {/* Line */}
       <polyline
         points={polylinePoints}
         fill="none"
@@ -169,7 +171,6 @@ function BigSpark({
         strokeLinejoin="round"
         strokeLinecap="round"
       />
-      {/* Dots */}
       {pts.map(([x, y], i) => (
         <circle
           key={i}
@@ -186,7 +187,6 @@ function BigSpark({
 }
 
 // ─── DualSpark ────────────────────────────────────────────────────────────────
-// Two polylines, each normalized to its own min/max.
 function DualSpark({
   dataA,
   dataB,
@@ -245,11 +245,13 @@ function DualSpark({
 function BarChart({
   data,
   color = '#a78bfa',
+  colors,
   height = 80,
   maxVal,
 }: {
   data: number[]
   color?: string
+  colors?: string[]
   height?: number
   maxVal?: number
 }) {
@@ -260,19 +262,37 @@ function BarChart({
     <div style={{ display: 'flex', alignItems: 'flex-end', height, gap: 2 }}>
       {data.map((v, i) => {
         const pct = Math.min(v / mx, 1) * 100
+        const bg = colors ? colors[i] : color
         return (
           <div
             key={i}
             style={{
               flex: 1,
               height: `${Math.max(pct, 2)}%`,
-              backgroundColor: color,
+              backgroundColor: bg,
               borderRadius: '3px 3px 0 0',
-              opacity: 0.8,
+              opacity: 0.85,
             }}
           />
         )
       })}
+    </div>
+  )
+}
+
+// ─── Legend ───────────────────────────────────────────────────────────────────
+function Legend({ items }: { items: { label: string; color: string; dashed?: boolean }[] }) {
+  return (
+    <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
+      {items.map(item => (
+        <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          {item.dashed
+            ? <div style={{ width: 20, height: 0, border: `1px dashed ${item.color}`, borderRadius: 1 }} />
+            : <div style={{ width: 20, height: 2, background: item.color, borderRadius: 1 }} />
+          }
+          <span style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>{item.label}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -284,6 +304,8 @@ export default function WhoopTab() {
   const [workouts, setWorkouts] = useState<WhoopWorkout[]>([])
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const [reauthRequired, setReauthRequired] = useState(false)
+  const [hasOffline, setHasOffline] = useState(true)
 
   function load() {
     supabase
@@ -305,11 +327,20 @@ export default function WhoopTab() {
       .from('whoop_workouts')
       .select('*')
       .order('started_at', { ascending: false })
-      .limit(10)
+      .limit(25)
       .then(({ data }) => { if (data) setWorkouts(data as WhoopWorkout[]) })
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    fetch('/api/whoop-status')
+      .then(r => r.json())
+      .then(d => {
+        setReauthRequired(d.reauth_required ?? false)
+        setHasOffline(d.has_offline ?? true)
+      })
+      .catch(() => { /* non-critical */ })
+  }, [])
 
   async function syncNow() {
     setSyncing(true)
@@ -320,6 +351,9 @@ export default function WhoopTab() {
       if (data.ok) {
         setSyncMsg(`synced · recovery ${data.recovery_score}% · ${data.workouts_synced ?? 0} workouts`)
         load()
+      } else if (data.error === 'reauth_required') {
+        setReauthRequired(true)
+        setSyncMsg(null)
       } else {
         setSyncMsg(data.error ?? 'sync failed')
       }
@@ -340,24 +374,33 @@ export default function WhoopTab() {
 
   const hasHistory = history.length > 1
 
-  // Derived history arrays
-  const recoveryHistory = history.map(h => h.recovery_score ?? 0)
-  const hrvHistory = history.map(h => Number(h.hrv_rmssd ?? 0))
-  const rhrHistory = history.map(h => Number(h.rhr ?? 0))
-  const strainHistory = history.map(h => Number(h.strain ?? 0))
-  const sleepPerfHistory = history.map(h => h.sleep_score ?? 0)
-
-  // Axis labels from history
+  // Period label from actual data
   function axisDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
   const axisFirst = history.length > 0 ? axisDate(history[0].recorded_at) : ''
   const axisLast = history.length > 0 ? axisDate(history[history.length - 1].recorded_at) : ''
+  const periodLabel = axisFirst && axisLast ? `${axisFirst} – ${axisLast}` : ''
 
-  // AT A GLANCE values
-  const kcal = snap?.kilojoule != null ? String(Math.round(snap.kilojoule / 4.184)) : '—'
+  // Derived history arrays (chronological)
+  const recoveryHistory = history.map(h => h.recovery_score ?? 0)
+  const hrvHistory = history.map(h => Number(h.hrv_rmssd ?? 0))
+  const rhrHistory = history.map(h => Number(h.rhr ?? 0))
+  const strainHistory = history.map(h => Number(h.strain ?? 0))
+  const sleepPerfHistory = history.map(h => h.sleep_score ?? 0)
+  const sleepConsistencyHistory = history.map(h => h.sleep_consistency_pct ?? 0)
+  const kcalHistory = history.map(h => h.kilojoule != null ? Math.round(h.kilojoule / 4.184) : 0)
 
-  // Sleep stages for stacked bar
+  // 25-day averages
+  const avgRecovery = avg(history.map(h => h.recovery_score))
+  const avgHrv = avg(history.map(h => h.hrv_rmssd), 1)
+  const avgRhr = avg(history.map(h => h.rhr))
+  const avgStrain = avg(history.map(h => h.strain), 1)
+  const avgSleep = avg(history.map(h => h.sleep_score))
+  const avgKcal = avg(history.map(h => h.kilojoule != null ? h.kilojoule / 4.184 : null))
+  const avgSleepConsistency = avg(history.map(h => h.sleep_consistency_pct))
+
+  // Sleep stages for last night
   const sleepStages = [
     { name: 'rem', color: '#6366f1', pct: snap?.sleep_rem_pct ?? 0 },
     { name: 'deep', color: '#0ea5e9', pct: snap?.sleep_deep_pct ?? 0 },
@@ -374,6 +417,14 @@ export default function WhoopTab() {
 
   const hasSleepStages = sleepStages.some(s => s.pct > 0)
 
+  // Workouts — most recent first for list; reversed for charts
+  const workoutList = workouts.slice(0, 8)
+  const workoutsChron = [...workouts].reverse()
+  const workoutStrains = workoutsChron.map(w => w.strain ?? 0)
+  const workoutAvgHr = workoutsChron.map(w => w.avg_hr ?? 0)
+  const workoutMaxHr = workoutsChron.map(w => w.max_hr ?? 0)
+  const workoutColors = workoutsChron.map(w => sportColor(w.sport_name))
+
   // Most recent workout HR zones
   const latestWorkout = workouts[0] ?? null
   const hrZones = latestWorkout
@@ -383,84 +434,51 @@ export default function WhoopTab() {
       ]
     : []
 
+  const hasWorkoutCharts = workoutsChron.length >= 2
+
   return (
-    <div className="px-4 pb-24 pt-2" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="px-4 pb-32 pt-2" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
       {/* 1. Header */}
-      <h1 style={{ fontFamily: sans, fontSize: 22, fontWeight: 700, color: C.text, margin: 0 }}>Whoop</h1>
-
-      {/* 2. Connect / Sync card */}
-      <Card className="p-4">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <div>
-            <div style={{ fontFamily: mono, fontSize: 11, color: C.dim, textTransform: 'uppercase', letterSpacing: 4 }}>Whoop</div>
-            {syncMsg && (
-              <div style={{ fontFamily: mono, fontSize: 11, color: C.faint, marginTop: 2 }}>{syncMsg}</div>
-            )}
-          </div>
-          <button
-            onClick={syncNow}
-            disabled={syncing}
-            style={{
-              fontFamily: mono, fontSize: 12, background: C.border, color: C.text,
-              border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', opacity: syncing ? 0.4 : 1,
-            }}
-          >
-            {syncing ? 'syncing...' : 'sync now'}
-          </button>
-        </div>
-        {tokenExpired && (
-          <a
-            href={typeof window !== 'undefined' ? whoopAuthUrl(window.location.origin) : '#'}
-            style={{
-              display: 'block', textAlign: 'center', background: C.accent, color: C.bg,
-              fontFamily: mono, fontSize: 12, fontWeight: 700, borderRadius: 8,
-              padding: '8px 0', marginTop: 10, textDecoration: 'none',
-            }}
-          >
-            reconnect whoop →
-          </a>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <h1 style={{ fontFamily: sans, fontSize: 22, fontWeight: 700, color: C.text, margin: 0 }}>Whoop</h1>
+        {periodLabel && (
+          <span style={{ fontFamily: mono, fontSize: 10, color: C.faint }}>{periodLabel}</span>
         )}
-      </Card>
-
-      {/* 3. AT A GLANCE */}
-      <SectionLabel>At a Glance</SectionLabel>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-        <MiniStat label="Recovery" value={snap?.recovery_score != null ? `${snap.recovery_score}` : '—'} unit="%" color={recoveryColor} />
-        <MiniStat label="HRV" value={snap?.hrv_rmssd?.toFixed(1) ?? '—'} unit="ms" color="#3b82f6" />
-        <MiniStat label="RHR" value={snap?.rhr != null ? String(snap.rhr) : '—'} unit="bpm" color="#f97316" />
-        <MiniStat label="Strain" value={snap?.strain?.toFixed(1) ?? '—'} color="#a78bfa" />
-        <MiniStat label="Sleep" value={snap?.sleep_score != null ? `${snap.sleep_score}` : '—'} unit="%" color="#06b6d4" />
-        <MiniStat label="kcal" value={kcal} color="#f43f5e" />
       </div>
 
-      {/* 4–6. RECOVERY section */}
+      {/* 2. AVERAGES */}
+      <SectionLabel>{history.length > 0 ? `${history.length}-day averages` : 'averages'}</SectionLabel>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+        <MiniStat label="Recovery" value={avgRecovery} unit="%" color={recoveryColor} />
+        <MiniStat label="HRV" value={avgHrv} unit="ms" color="#3b82f6" />
+        <MiniStat label="RHR" value={avgRhr} unit="bpm" color="#f97316" />
+        <MiniStat label="Strain" value={avgStrain} color="#a78bfa" />
+        <MiniStat label="Sleep" value={avgSleep} unit="%" color="#06b6d4" />
+        <MiniStat label="kcal" value={avgKcal} color="#f43f5e" />
+      </div>
+      {history.length === 0 && (
+        <div style={{ fontFamily: mono, fontSize: 11, color: C.faint, padding: '4px 0' }}>
+          sync data to see averages
+        </div>
+      )}
+
+      {/* 3. RECOVERY section */}
       <SectionLabel>Recovery</SectionLabel>
 
       {hasHistory ? (
         <>
-          {/* Recovery sparkline */}
           <Card className="p-4">
             <ChartTitle title="Recovery Score" />
             <BigSpark data={recoveryHistory} colorByValue height={80} />
             <AxisRow first={axisFirst} last={axisLast} />
           </Card>
 
-          {/* HRV & RHR dual-line */}
           <Card className="p-4">
             <ChartTitle title="HRV & RHR" />
             <DualSpark dataA={hrvHistory} dataB={rhrHistory} colorA="#3b82f6" colorB="#f97316" height={80} />
             <AxisRow first={axisFirst} last={axisLast} />
-            <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <div style={{ width: 20, height: 2, background: '#3b82f6', borderRadius: 1 }} />
-                <span style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>HRV ms</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <div style={{ width: 20, height: 0, border: '1px dashed #f97316', borderRadius: 1 }} />
-                <span style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>RHR bpm</span>
-              </div>
-            </div>
+            <Legend items={[{ label: 'HRV ms', color: '#3b82f6' }, { label: 'RHR bpm', color: '#f97316', dashed: true }]} />
           </Card>
         </>
       ) : (
@@ -469,7 +487,7 @@ export default function WhoopTab() {
         </div>
       )}
 
-      {/* 7–9. SLEEP section */}
+      {/* 4. SLEEP section */}
       <SectionLabel>Sleep</SectionLabel>
 
       {/* Last-night sleep stages */}
@@ -480,13 +498,11 @@ export default function WhoopTab() {
         />
         {hasSleepStages ? (
           <>
-            {/* Stacked bar */}
             <div style={{ display: 'flex', height: 10, borderRadius: 5, overflow: 'hidden', gap: 1, marginBottom: 10 }}>
               {sleepStages.map(s => (
                 <div key={s.name} style={{ flex: s.pct, background: s.color, minWidth: s.pct > 0 ? 2 : 0 }} />
               ))}
             </div>
-            {/* 4-col grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
               {sleepStages.map(s => (
                 <div key={s.name} style={{ textAlign: 'center' }}>
@@ -502,33 +518,79 @@ export default function WhoopTab() {
         )}
       </Card>
 
-      {/* Sleep performance sparkline */}
       {hasHistory && (
-        <Card className="p-4">
-          <ChartTitle title="Sleep Performance" />
-          <BigSpark data={sleepPerfHistory} color="#06b6d4" height={80} />
-          <AxisRow first={axisFirst} last={axisLast} />
-        </Card>
+        <>
+          <Card className="p-4">
+            <ChartTitle title="Sleep Performance" />
+            <BigSpark data={sleepPerfHistory} color="#06b6d4" height={80} />
+            <AxisRow first={axisFirst} last={axisLast} />
+          </Card>
+
+          <Card className="p-4">
+            <ChartTitle
+              title="Sleep Consistency"
+              right={<span style={{ fontFamily: mono, fontSize: 10, color: C.faint }}>avg {avgSleepConsistency}%</span>}
+            />
+            <BigSpark data={sleepConsistencyHistory} color="#818cf8" height={80} />
+            <AxisRow first={axisFirst} last={axisLast} />
+          </Card>
+        </>
       )}
 
-      {/* 10–13. STRAIN & ACTIVITY section */}
+      {/* 5. STRAIN & ACTIVITY section */}
       <SectionLabel>Strain & Activity</SectionLabel>
 
-      {/* Strain bar chart */}
       {hasHistory && (
-        <Card className="p-4">
-          <ChartTitle title="Daily Strain" />
-          <BarChart data={strainHistory} color="#a78bfa" height={80} maxVal={21} />
-          <AxisRow first={axisFirst} last={axisLast} />
-        </Card>
+        <>
+          <Card className="p-4">
+            <ChartTitle title="Daily Strain" />
+            <BarChart data={strainHistory} color="#a78bfa" height={80} maxVal={21} />
+            <AxisRow first={axisFirst} last={axisLast} />
+          </Card>
+
+          <Card className="p-4">
+            <ChartTitle
+              title="Daily Calories"
+              right={<span style={{ fontFamily: mono, fontSize: 10, color: C.faint }}>avg {avgKcal} kcal</span>}
+            />
+            <BarChart data={kcalHistory} color="#f43f5e" height={80} />
+            <AxisRow first={axisFirst} last={axisLast} />
+          </Card>
+        </>
+      )}
+
+      {/* 6. WORKOUTS section */}
+      <SectionLabel>Workouts</SectionLabel>
+
+      {hasWorkoutCharts && (
+        <>
+          <Card className="p-4">
+            <ChartTitle title="Strain by Session" />
+            <BarChart data={workoutStrains} colors={workoutColors} height={80} maxVal={21} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontFamily: mono, fontSize: 9, color: C.faint }}>
+              <span>{axisDate(workoutsChron[0].started_at)}</span>
+              <span>{axisDate(workoutsChron[workoutsChron.length - 1].started_at)}</span>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <ChartTitle title="Avg & Max HR per Workout" />
+            <DualSpark dataA={workoutAvgHr} dataB={workoutMaxHr} colorA="#f97316" colorB="#ef4444" height={80} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontFamily: mono, fontSize: 9, color: C.faint }}>
+              <span>{axisDate(workoutsChron[0].started_at)}</span>
+              <span>{axisDate(workoutsChron[workoutsChron.length - 1].started_at)}</span>
+            </div>
+            <Legend items={[{ label: 'Avg HR bpm', color: '#f97316' }, { label: 'Max HR bpm', color: '#ef4444', dashed: true }]} />
+          </Card>
+        </>
       )}
 
       {/* Recent workouts list */}
-      {workouts.length > 0 && (
+      {workoutList.length > 0 && (
         <Card className="p-4">
           <ChartTitle title="Recent Workouts" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {workouts.slice(0, 5).map(w => {
+            {workoutList.map(w => {
               const date = new Date(w.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
               const sc = sportColor(w.sport_name)
               const strainPct = w.strain != null ? Math.min(w.strain / 21, 1) * 100 : 0
@@ -537,9 +599,13 @@ export default function WhoopTab() {
                   <span style={{ fontFamily: mono, fontSize: 10, color: C.faint, width: 48, flexShrink: 0 }}>{date}</span>
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: sc, flexShrink: 0 }} />
                   <span style={{ fontFamily: mono, fontSize: 11, color: C.text, flex: 1, textTransform: 'capitalize' }}>
-                    {w.sport_name ?? 'workout'}
+                    {w.sport_name?.replace(/-/g, ' ') ?? 'workout'}
                   </span>
-                  {/* Mini strain bar */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {w.avg_hr != null && (
+                      <span style={{ fontFamily: mono, fontSize: 9, color: C.faint }}>{w.avg_hr}/{w.max_hr ?? '—'}</span>
+                    )}
+                  </div>
                   <div style={{ width: 60, height: 4, background: C.border, borderRadius: 2, overflow: 'hidden' }}>
                     <div style={{ width: `${strainPct}%`, height: '100%', background: sc, borderRadius: 2 }} />
                   </div>
@@ -560,7 +626,7 @@ export default function WhoopTab() {
             title="HR Zones (latest)"
             right={
               <span style={{ fontFamily: mono, fontSize: 10, color: C.faint, textTransform: 'capitalize' }}>
-                {latestWorkout.sport_name ?? 'workout'} · {new Date(latestWorkout.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {latestWorkout.sport_name?.replace(/-/g, ' ') ?? 'workout'} · {new Date(latestWorkout.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </span>
             }
           />
@@ -592,7 +658,7 @@ export default function WhoopTab() {
         </Card>
       )}
 
-      {/* 14–15. PROFILE section */}
+      {/* 7. PROFILE section */}
       <SectionLabel>Profile</SectionLabel>
 
       <Card className="p-4">
@@ -619,6 +685,47 @@ export default function WhoopTab() {
             </div>
           ))}
         </div>
+      </Card>
+
+      {/* 8. SYNC — bottom */}
+      <SectionLabel>Sync</SectionLabel>
+
+      <Card className="p-4">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: mono, fontSize: 11, color: C.dim, textTransform: 'uppercase', letterSpacing: 4 }}>Whoop</div>
+            {syncMsg && (
+              <div style={{ fontFamily: mono, fontSize: 11, color: C.faint, marginTop: 2 }}>{syncMsg}</div>
+            )}
+          </div>
+          <button
+            onClick={syncNow}
+            disabled={syncing}
+            style={{
+              fontFamily: mono, fontSize: 12, background: C.border, color: C.text,
+              border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', opacity: syncing ? 0.4 : 1,
+            }}
+          >
+            {syncing ? 'syncing...' : 'sync now'}
+          </button>
+        </div>
+        {(reauthRequired || tokenExpired) && (
+          <a
+            href={typeof window !== 'undefined' ? whoopAuthUrl(window.location.origin) : '#'}
+            style={{
+              display: 'block', textAlign: 'center', background: C.accent, color: C.bg,
+              fontFamily: mono, fontSize: 12, fontWeight: 700, borderRadius: 8,
+              padding: '8px 0', marginTop: 10, textDecoration: 'none',
+            }}
+          >
+            reconnect whoop →
+          </a>
+        )}
+        {!reauthRequired && !tokenExpired && !hasOffline && (
+          <div style={{ fontFamily: mono, fontSize: 10, color: C.dim, marginTop: 8, textAlign: 'center' }}>
+            reconnect once to enable automatic token refresh
+          </div>
+        )}
       </Card>
 
     </div>

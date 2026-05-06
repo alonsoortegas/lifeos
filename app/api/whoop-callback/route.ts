@@ -54,12 +54,16 @@ export async function GET(req: NextRequest) {
 
   const supabase = createClient(supabaseUrl, serviceKey)
   const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString()
+  const hasOffline = !!tokens.refresh_token
 
   const { error: dbError } = await supabase.from('whoop_tokens').upsert({
     id: 1,
     access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
+    refresh_token: tokens.refresh_token ?? null,
     expires_at: expiresAt,
+    token_type: tokens.token_type ?? 'Bearer',
+    scope: tokens.scope ?? null,
+    reauth_required: false,
     updated_at: new Date().toISOString(),
   })
 
@@ -67,9 +71,14 @@ export async function GET(req: NextRequest) {
     return html(`<h2>DB error</h2><pre>${dbError.message}</pre>`, 500)
   }
 
+  const offlineNote = hasOffline
+    ? '<p>Offline access enabled — tokens will refresh automatically.</p>'
+    : '<p><strong>Note:</strong> No refresh token returned. Offline access is pending WHOOP app approval. You will need to reconnect when the token expires.</p>'
+
   return html(`
     <h2>Whoop connected</h2>
     <p>Tokens stored in Supabase. You can close this tab.</p>
+    ${offlineNote}
     <p>Run <code>whoop-sync</code> to pull your first data snapshot.</p>
   `)
 }

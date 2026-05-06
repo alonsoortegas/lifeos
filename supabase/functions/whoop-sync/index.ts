@@ -55,7 +55,7 @@ serve(async (req) => {
     // 1. Load stored tokens
     const { data: tokenRow, error: tokenErr } = await supabase
       .from('whoop_tokens')
-      .select('access_token, refresh_token, expires_at')
+      .select('access_token, refresh_token, expires_at, reauth_required')
       .eq('id', 1)
       .single()
 
@@ -63,10 +63,17 @@ serve(async (req) => {
       return json({ error: 'No tokens found — complete Whoop OAuth first via /whoop-auth' }, 400)
     }
 
+    if (tokenRow.reauth_required) {
+      return json({ error: 'reauth_required', message: 'Please reconnect WHOOP in the dashboard' }, 401)
+    }
+
     let accessToken = tokenRow.access_token as string
 
-    // 2. Refresh access token if we have a refresh token
-    if (tokenRow.refresh_token) {
+    // 2. Refresh access token when expired or within 5 minutes of expiry
+    const expiresAt = tokenRow.expires_at ? new Date(tokenRow.expires_at).getTime() : 0
+    const needsRefresh = expiresAt - Date.now() <= 5 * 60 * 1000
+
+    if (needsRefresh && tokenRow.refresh_token) {
       const tokenRes = await fetch(WHOOP_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -75,32 +82,71 @@ serve(async (req) => {
           refresh_token: tokenRow.refresh_token,
           client_id: clientId,
           client_secret: clientSecret,
+          scope: 'offline',
         }),
       })
 
       if (tokenRes.ok) {
         const tokens = await tokenRes.json()
         accessToken = tokens.access_token
-        const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString()
+        const newExpiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString()
+        // WHOOP rotates tokens — store both new access and refresh tokens
         await supabase.from('whoop_tokens').upsert({
           id: 1,
           access_token: accessToken,
-          refresh_token: tokens.refresh_token ?? tokenRow.refresh_token,
-          expires_at: expiresAt,
+          refresh_token: tokens.refresh_token,
+          expires_at: newExpiresAt,
+          token_type: tokens.token_type ?? 'Bearer',
+          scope: tokens.scope ?? null,
+          reauth_required: false,
           updated_at: new Date().toISOString(),
         })
       } else {
-        console.warn('Token refresh failed, using stored access token')
+        const body = await tokenRes.text()
+        const isAuthFailure = tokenRes.status === 401 || body.includes('invalid_grant')
+        if (isAuthFailure) {
+          await supabase.from('whoop_tokens').update({ reauth_required: true }).eq('id', 1)
+          return json({ error: 'reauth_required', message: 'WHOOP token expired — please reconnect WHOOP in the dashboard' }, 401)
+        }
+        console.warn('Token refresh failed, proceeding with stored access token:', body)
       }
+    } else if (needsRefresh && !tokenRow.refresh_token) {
+      // No refresh token — mark as needing reauth and return error
+      await supabase.from('whoop_tokens').update({ reauth_required: true }).eq('id', 1)
+      return json({ error: 'reauth_required', message: 'WHOOP token expired and no refresh token — please reconnect WHOOP in the dashboard' }, 401)
     }
 
     // 3. Fetch recovery, sleep, cycle, and workouts
     const workoutLimit = Math.max(days * 3, 10)
-    const [recoveryData, sleepData, cycleData, workoutData] = await Promise.all([
-      whoopGet(accessToken, `/recovery?limit=${days}`),
-      whoopGet(accessToken, `/activity/sleep?limit=${days}`).catch((e) => { console.warn('sleep fetch failed:', e); return null }),
-      whoopGet(accessToken, `/cycle?limit=${days}`).catch((e) => { console.warn('cycle fetch failed:', e); return null }),
-      whoopGet(accessToken, `/activity/workout?limit=${workoutLimit}`).catch((e) => { console.warn('workout fetch failed:', e); return null }),
+
+    async function whoopGetGuarded(token: string, path: string, optional = false) {
+      try {
+        return await whoopGet(token, path)
+      } catch (e: unknown) {
+        const status = (e as { status?: number }).status
+        if (status === 401) {
+          await supabase.from('whoop_tokens').update({ reauth_required: true }).eq('id', 1)
+          throw Object.assign(new Error('reauth_required'), { reauth: true })
+        }
+        if (optional) { console.warn(`optional fetch failed (${path}):`, e); return null }
+        throw e
+      }
+    }
+
+    let recoveryData: Record<string, unknown> | null = null
+    try {
+      recoveryData = await whoopGetGuarded(accessToken, `/recovery?limit=${days}`)
+    } catch (e: unknown) {
+      if ((e as { reauth?: boolean }).reauth) {
+        return json({ error: 'reauth_required', message: 'WHOOP returned 401 — please reconnect WHOOP in the dashboard' }, 401)
+      }
+      throw e
+    }
+
+    const [sleepData, cycleData, workoutData] = await Promise.all([
+      whoopGetGuarded(accessToken, `/activity/sleep?limit=${days}`, true),
+      whoopGetGuarded(accessToken, `/cycle?limit=${days}`, true),
+      whoopGetGuarded(accessToken, `/activity/workout?limit=${workoutLimit}`, true),
     ])
 
     const recoveries: Record<string, unknown>[] = recoveryData?.records ?? []
@@ -221,7 +267,10 @@ async function whoopGet(token: string, path: string) {
   const res = await fetch(`${WHOOP_BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error(`Whoop ${path} error ${res.status}: ${await res.text()}`)
+  if (!res.ok) {
+    const body = await res.text()
+    throw Object.assign(new Error(`Whoop ${path} error ${res.status}: ${body}`), { status: res.status })
+  }
   return res.json()
 }
 
