@@ -21,13 +21,23 @@ export default function TodayTab() {
   const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
 
   useEffect(() => {
-    supabase
-      .from('whoop_snapshots')
-      .select('*')
-      .order('recorded_at', { ascending: false })
-      .limit(1)
-      .single()
-      .then(({ data }) => { if (data) setSnap(data as WhoopSnapshot) })
+    const load = () =>
+      supabase
+        .from('whoop_snapshots')
+        .select('*')
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+        .single()
+        .then(({ data }) => { if (data) setSnap(data as WhoopSnapshot) })
+
+    load()
+
+    const channel = supabase
+      .channel('whoop_snapshots_today')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'whoop_snapshots' }, load)
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
   const now = new Date()
