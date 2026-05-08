@@ -56,7 +56,15 @@ interface ExerciseState {
   weight: number
   selectedReps: number
   selectedRpe: number
-  loggedSets: { setNum: number; weight: number; reps: number; rpe: number }[]
+  loggedSets: { id?: number; setNum: number; weight: number; reps: number; rpe: number; loggedAt?: string }[]
+}
+
+function todayRange() {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 1)
+  return { start: start.toISOString(), end: end.toISOString() }
 }
 
 export default function WorkoutTab() {
@@ -101,6 +109,7 @@ export default function WorkoutTab() {
     // Load last logged set per exercise
     if (exList.length > 0) {
       const names = exList.map(e => e.exercise_name)
+      const { start, end } = todayRange()
       const { data: logData } = await supabase
         .from('workout_logs')
         .select('*')
@@ -113,12 +122,41 @@ export default function WorkoutTab() {
       }
       setLastSets(last)
 
+      const { data: scopedLogData, error: scopedLogError } = await supabase
+        .from('workout_logs')
+        .select('*')
+        .eq('workout_session_id', sessionData.id)
+        .order('logged_at', { ascending: true })
+
+      let scopedLogs = (scopedLogData ?? []) as WorkoutLog[]
+
+      if (scopedLogError) {
+        const { data: fallbackLogData } = await supabase
+          .from('workout_logs')
+          .select('*')
+          .in('exercise_name', names)
+          .gte('logged_at', start)
+          .lt('logged_at', end)
+          .order('logged_at', { ascending: true })
+
+        scopedLogs = (fallbackLogData ?? []) as WorkoutLog[]
+      }
+
       setExerciseStates(exList.map(ex => ({
         expanded: false,
         weight: ex.prescribed_weight ?? last[ex.exercise_name]?.weight_lbs ?? 0,
         selectedReps: parseReps(ex.prescribed_reps),
         selectedRpe: parseRpe(ex.target_rpe),
-        loggedSets: [],
+        loggedSets: scopedLogs
+          .filter(log => log.workout_exercise_id === ex.id || (!log.workout_exercise_id && log.exercise_name === ex.exercise_name))
+          .map((log, idx) => ({
+            id: log.id,
+            setNum: log.set_number ?? idx + 1,
+            weight: log.weight_lbs ?? 0,
+            reps: log.reps ?? 0,
+            rpe: log.rpe ?? 0,
+            loggedAt: log.logged_at,
+          })),
       })))
     }
 
@@ -131,20 +169,52 @@ export default function WorkoutTab() {
     setExerciseStates(prev => prev.map((s, idx) => idx === i ? { ...s, ...patch } : s))
 
   const logSet = (i: number) => {
+    if (!session) return
     const s = exerciseStates[i]
     const ex = exercises[i]
     const setNum = s.loggedSets.length + 1
-    updateState(i, {
-      loggedSets: [...s.loggedSets, { setNum, weight: s.weight, reps: s.selectedReps, rpe: s.selectedRpe }],
-    })
-    supabase.from('workout_logs').insert({
+    const payload = {
+      workout_session_id: session.id,
+      workout_exercise_id: ex.id,
       exercise_name: ex.exercise_name,
       set_number: setNum,
       weight_lbs: s.weight,
       weight_unit: 'kg',
       reps: s.selectedReps,
       rpe: s.selectedRpe,
-    }).then(({ error }) => { if (error) console.error('workout log insert failed:', error.message) })
+    }
+
+    supabase.from('workout_logs').insert(payload).select('*').single().then(async ({ data, error }) => {
+      if (error && error.message.includes('workout_session_id')) {
+        const { workout_session_id, workout_exercise_id, ...legacyPayload } = payload
+        void workout_session_id
+        void workout_exercise_id
+        const legacyResult = await supabase.from('workout_logs').insert(legacyPayload).select('*').single()
+        data = legacyResult.data
+        error = legacyResult.error
+      }
+
+      if (error) {
+        console.error('workout log insert failed:', error.message)
+        return
+      }
+
+      const log = data as WorkoutLog
+      updateState(i, {
+        loggedSets: [
+          ...s.loggedSets,
+          {
+            id: log.id,
+            setNum: log.set_number ?? setNum,
+            weight: log.weight_lbs ?? s.weight,
+            reps: log.reps ?? s.selectedReps,
+            rpe: log.rpe ?? s.selectedRpe,
+            loggedAt: log.logged_at,
+          },
+        ],
+      })
+      setLastSets(prev => ({ ...prev, [ex.exercise_name]: log }))
+    })
   }
 
   const totalSets = exerciseStates.reduce((acc, s) => acc + s.loggedSets.length, 0)

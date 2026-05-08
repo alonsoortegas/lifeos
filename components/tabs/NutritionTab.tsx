@@ -1,212 +1,453 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Card from '@/components/ui/Card'
 import ProgressBar from '@/components/ui/ProgressBar'
+import { createClient } from '@/lib/supabase'
+import {
+  calculateConsumed,
+  calculateRemaining,
+  generateDefaultMeals,
+  getDailyTargets,
+  getSubstitutions,
+  MEAL_LABELS,
+  scaleFood,
+  suggestNextFood,
+  type DefaultMealItem,
+  type MacroTotals,
+} from '@/lib/nutrition'
+import type {
+  FoodItem,
+  FoodSubstitutionGroup,
+  FoodSubstitutionGroupItem,
+  MealLog,
+  MealTemplateName,
+  NutritionDay,
+  NutritionDayType,
+} from '@/lib/types'
 
-type DayType = 'Hard' | 'Moderate' | 'Rest'
+const supabase = createClient()
 
-const TARGETS: Record<DayType, { cal: number; protein: number; carbs: number; fat: number }> = {
-  Hard: { cal: 3200, protein: 200, carbs: 380, fat: 90 },
-  Moderate: { cal: 2600, protein: 185, carbs: 280, fat: 80 },
-  Rest: { cal: 2100, protein: 170, carbs: 180, fat: 70 },
-}
-
-const LOGGED = { cal: 1840, protein: 118, carbs: 215, fat: 52 }
-
-const MEALS = [
-  {
-    name: 'Breakfast',
-    time: '07:30',
-    items: ['Oats 80g', 'Protein shake 40g', 'Banana 1x', 'Blueberries 100g'],
-    cal: 520,
-    protein: 38,
-  },
-  {
-    name: 'Lunch',
-    time: '12:15',
-    items: ['Chicken breast 200g', 'White rice 150g', 'Broccoli 200g', 'Olive oil 15ml'],
-    cal: 680,
-    protein: 52,
-  },
-  {
-    name: 'Pre-workout',
-    time: '15:45',
-    items: ['Rice cakes 3x', 'Peanut butter 30g', 'Apple 1x'],
-    cal: 380,
-    protein: 10,
-  },
-  {
-    name: 'Dinner',
-    time: '19:00',
-    items: ['Salmon 180g', 'Sweet potato 200g', 'Asparagus 150g'],
-    cal: 260,
-    protein: 18,
-  },
+const DAY_TYPES: { value: NutritionDayType; label: string }[] = [
+  { value: 'hard', label: 'Hard' },
+  { value: 'moderate', label: 'Moderate' },
+  { value: 'rest', label: 'Rest' },
 ]
 
+interface SubstitutionRow extends FoodSubstitutionGroupItem {
+  food_substitution_group?: FoodSubstitutionGroup
+}
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function macroValue(value: number): string {
+  return `${Math.round(value)}`
+}
+
+function foodKey(mealName: MealTemplateName, foodItemId: number, label: string): string {
+  return `${mealName}:${foodItemId}:${label}`
+}
+
+function findLoggedItem(logs: MealLog[], mealName: MealTemplateName, foodItemId: number, loggedMarker: string) {
+  const log = logs.find((candidate) => candidate.meal_name === mealName)
+  return log?.meal_log_item?.find(
+    (item) =>
+      item.substitution_group === loggedMarker ||
+      (item.food_item_id === foodItemId && (item.substitution_group ?? '') === loggedMarker)
+  )
+}
+
 export default function NutritionTab() {
-  const [dayType, setDayType] = useState<DayType>('Hard')
-  const [expanded, setExpanded] = useState<number | null>(null)
-  const [quickFood, setQuickFood] = useState('')
-  const [quickProtein, setQuickProtein] = useState('')
-  const [quickCarbs, setQuickCarbs] = useState('')
+  const [dayType, setDayType] = useState<NutritionDayType>('hard')
+  const [nutritionDay, setNutritionDay] = useState<NutritionDay | null>(null)
+  const [foods, setFoods] = useState<FoodItem[]>([])
+  const [substitutionRows, setSubstitutionRows] = useState<SubstitutionRow[]>([])
+  const [mealLogs, setMealLogs] = useState<MealLog[]>([])
+  const [expandedMeal, setExpandedMeal] = useState<MealTemplateName>('breakfast')
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const target = TARGETS[dayType]
+  const targets = useMemo(() => getDailyTargets(dayType, 'cut'), [dayType])
+  const defaultMeals = useMemo(() => generateDefaultMeals(dayType), [dayType])
+  const consumed = useMemo(() => calculateConsumed(mealLogs), [mealLogs])
+  const remaining = useMemo(() => calculateRemaining(targets, consumed), [targets, consumed])
+  const suggestion = useMemo(() => suggestNextFood(remaining, dayType), [remaining, dayType])
 
-  const macros = [
-    { label: 'Calories', logged: LOGGED.cal, target: target.cal, unit: 'kcal', color: '#00d26a' },
-    { label: 'Protein', logged: LOGGED.protein, target: target.protein, unit: 'g', color: '#00d26a' },
-    { label: 'Carbs', logged: LOGGED.carbs, target: target.carbs, unit: 'g', color: '#888' },
-    { label: 'Fat', logged: LOGGED.fat, target: target.fat, unit: 'g', color: '#555' },
+  const foodsByName = useMemo(() => {
+    const map = new Map<string, FoodItem>()
+    for (const food of foods) map.set(food.name, food)
+    return map
+  }, [foods])
+
+  const substitutionIndex = useMemo(
+    () =>
+      substitutionRows
+        .map((row) => ({
+          groupName: row.food_substitution_group?.name ?? '',
+          foodItemId: row.food_item_id,
+          quantity: Number(row.quantity),
+          label: row.label,
+        }))
+        .filter((row) => row.groupName),
+    [substitutionRows]
+  )
+
+  const loadMealLogs = useCallback(async (dayId: number) => {
+    const { data, error } = await supabase
+      .from('meal_log')
+      .select('*, meal_log_item(*, food_item(*))')
+      .eq('nutrition_day_id', dayId)
+      .order('logged_at', { ascending: true })
+
+    if (error) {
+      console.error('nutrition meal log load failed:', error.message)
+      return
+    }
+
+    setMealLogs((data ?? []) as MealLog[])
+  }, [])
+
+  const ensureDay = useCallback(async (nextDayType: NutritionDayType) => {
+    const nextTargets = getDailyTargets(nextDayType, 'cut')
+    const payload = {
+      date: todayISO(),
+      day_type: nextDayType,
+      goal: 'cut',
+      calories_target: nextTargets.calories,
+      protein_target: nextTargets.protein_g,
+      carbs_target: nextTargets.carbs_g,
+      fat_target: nextTargets.fat_g,
+    }
+
+    const { data, error } = await supabase
+      .from('nutrition_day')
+      .upsert(payload, { onConflict: 'date' })
+      .select('*')
+      .single()
+
+    if (error) {
+      console.error('nutrition day upsert failed:', error.message)
+      return null
+    }
+
+    const day = data as NutritionDay
+    setNutritionDay(day)
+    return day
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      setLoading(true)
+      const [foodResult, substitutionResult, day] = await Promise.all([
+        supabase.from('food_item').select('*').order('category').order('name'),
+        supabase
+          .from('food_substitution_group_item')
+          .select('*, food_substitution_group(*)')
+          .order('label'),
+        ensureDay(dayType),
+      ])
+
+      if (cancelled) return
+
+      if (foodResult.error) console.error('nutrition food load failed:', foodResult.error.message)
+      if (substitutionResult.error) console.error('nutrition substitution load failed:', substitutionResult.error.message)
+
+      setFoods((foodResult.data ?? []) as FoodItem[])
+      setSubstitutionRows((substitutionResult.data ?? []) as SubstitutionRow[])
+      if (day) await loadMealLogs(day.id)
+      setLoading(false)
+    }
+
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [dayType, ensureDay, loadMealLogs])
+
+  const changeDayType = async (nextDayType: NutritionDayType) => {
+    setDayType(nextDayType)
+    setExpandedMeal(generateDefaultMeals(nextDayType)[0]?.name ?? 'breakfast')
+  }
+
+  const logTemplateItem = async (
+    mealName: MealTemplateName,
+    item: DefaultMealItem,
+    override?: {
+      food: FoodItem
+      quantity: number
+      label: string
+      groupName?: string
+    }
+  ) => {
+    const day = nutritionDay ?? (await ensureDay(dayType))
+    if (!day) return
+
+    const food = override?.food ?? foodsByName.get(item.foodName)
+    if (!food) return
+
+    const label = override?.label ?? item.label
+    const key = foodKey(mealName, food.id, label)
+    setSavingKey(key)
+
+    let mealLog = mealLogs.find((log) => log.meal_name === mealName)
+    if (!mealLog) {
+      const { data, error } = await supabase
+        .from('meal_log')
+        .insert({ nutrition_day_id: day.id, meal_name: mealName })
+        .select('*')
+        .single()
+
+      if (error) {
+        console.error('meal log create failed:', error.message)
+        setSavingKey(null)
+        return
+      }
+      mealLog = { ...(data as MealLog), meal_log_item: [] }
+    }
+
+    const scaled = scaleFood(food, override?.quantity ?? item.quantity)
+    const { error } = await supabase.from('meal_log_item').insert({
+      meal_log_id: mealLog.id,
+      food_item_id: food.id,
+      quantity: scaled.quantity,
+      calories: scaled.calories,
+      protein_g: scaled.protein_g,
+      carbs_g: scaled.carbs_g,
+      fat_g: scaled.fat_g,
+      substitution_group: override?.groupName ?? item.substitutionGroup ?? label,
+    })
+
+    if (error) console.error('meal item insert failed:', error.message)
+    await loadMealLogs(day.id)
+    setSavingKey(null)
+  }
+
+  const removeLoggedItem = async (itemId: number) => {
+    if (!nutritionDay) return
+    setSavingKey(`remove:${itemId}`)
+    const { error } = await supabase.from('meal_log_item').delete().eq('id', itemId)
+    if (error) console.error('meal item delete failed:', error.message)
+    await loadMealLogs(nutritionDay.id)
+    setSavingKey(null)
+  }
+
+  const macroCards: { label: string; consumed: number; remaining: number; target: number; unit: string; color: string }[] = [
+    { label: 'Calories', consumed: consumed.calories, remaining: remaining.calories, target: targets.calories, unit: 'kcal', color: '#00d26a' },
+    { label: 'Protein', consumed: consumed.protein_g, remaining: remaining.protein_g, target: targets.protein_g, unit: 'g', color: '#2dd4bf' },
+    { label: 'Carbs', consumed: consumed.carbs_g, remaining: remaining.carbs_g, target: targets.carbs_g, unit: 'g', color: '#f59e0b' },
+    { label: 'Fat', consumed: consumed.fat_g, remaining: remaining.fat_g, target: targets.fat_g, unit: 'g', color: '#a78bfa' },
   ]
 
   return (
     <div className="px-4 space-y-5">
-      {/* Header */}
       <div className="pt-2">
         <h1 className="text-[22px] font-bold text-[#ededed]">Nutrition</h1>
-        <div
-          className="text-[#555] text-[11px] mt-0.5"
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-        >
-          DAILY FUEL PLAN
+        <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+          DAILY FUEL · TEMPLATES · SWAPS
         </div>
       </div>
 
-      {/* Day type selector */}
       <div className="flex gap-2">
-        {(['Hard', 'Moderate', 'Rest'] as DayType[]).map((dt) => (
+        {DAY_TYPES.map((type) => (
           <button
-            key={dt}
-            onClick={() => setDayType(dt)}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-medium border min-h-[44px] transition-colors ${
-              dayType === dt
-                ? 'bg-[#00d26a] border-[#00d26a] text-[#0e0e0e] font-bold'
-                : 'bg-[#1a1a1a] border-[#2a2a2a] text-[#555]'
+            key={type.value}
+            onClick={() => changeDayType(type.value)}
+            className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-bold transition-colors ${
+              dayType === type.value
+                ? 'border-[#00d26a] bg-[#00d26a] text-[#0e0e0e]'
+                : 'border-[#2a2a2a] bg-[#1a1a1a] text-[#888]'
             }`}
           >
-            {dt}
+            {type.label}
           </button>
         ))}
       </div>
 
-      {/* Macro grid */}
       <div className="grid grid-cols-2 gap-3">
-        {macros.map((m) => (
-          <Card key={m.label} className="p-4 space-y-2">
-            <div className="text-[#888] uppercase text-[11px] tracking-widest">
-              {m.label}
-            </div>
+        {macroCards.map((macro) => (
+          <Card key={macro.label} className="p-4 space-y-2">
+            <div className="text-[#888] uppercase text-[11px] tracking-widest">{macro.label}</div>
             <div className="flex items-baseline gap-1">
-              <span
-                className="text-[24px] font-bold text-[#ededed] leading-none"
-                style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-              >
-                {m.logged}
+              <span className="text-[24px] font-bold leading-none text-[#ededed]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                {macroValue(macro.consumed)}
               </span>
-              <span
-                className="text-[#555] text-xs"
-                style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-              >
-                /{m.target}{m.unit}
+              <span className="text-xs text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                /{macro.target}{macro.unit}
               </span>
             </div>
-            <ProgressBar value={m.logged} max={m.target} color={m.color} />
+            <ProgressBar value={macro.consumed} max={macro.target} color={macro.color} />
+            <div className="text-[11px] text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+              {macro.remaining >= 0 ? `${macroValue(macro.remaining)}${macro.unit} left` : `${macroValue(Math.abs(macro.remaining))}${macro.unit} over`}
+            </div>
           </Card>
         ))}
       </div>
 
-      {/* Meal cards */}
-      <div className="space-y-2">
-        <div
-          className="text-[#555] text-[11px] tracking-widest uppercase"
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-        >
-          · meals ·
+      <Card className="p-4">
+        <div className="text-[#555] text-[11px] uppercase tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+          · next move ·
         </div>
-        {MEALS.map((meal, i) => (
-          <Card key={meal.name} className="overflow-hidden">
-            <button
-              onClick={() => setExpanded(expanded === i ? null : i)}
-              className="w-full flex items-center justify-between px-4 py-3.5 min-h-[52px]"
-            >
-              <div className="text-left">
-                <div className="text-[#ededed] text-sm font-medium">
-                  {meal.name}
-                </div>
-                <div
-                  className="text-[#555] text-[11px] mt-0.5"
-                  style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+        <div className="mt-1 text-sm text-[#ededed]">{suggestion}</div>
+      </Card>
+
+      {loading && (
+        <div className="py-8 text-center text-sm text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+          loading fuel plan…
+        </div>
+      )}
+
+      {!loading && (
+        <div className="space-y-2">
+          <div className="text-[#555] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+            · meals ·
+          </div>
+
+          {defaultMeals.map((meal) => {
+            const mealLog = mealLogs.find((log) => log.meal_name === meal.name)
+            const mealTotals = calculateConsumed(mealLog ? [mealLog] : [])
+            const isExpanded = expandedMeal === meal.name
+
+            return (
+              <Card key={meal.name} className="overflow-hidden">
+                <button
+                  onClick={() => setExpandedMeal(isExpanded ? 'snack' : meal.name)}
+                  className="flex min-h-[58px] w-full items-center justify-between px-4 py-3.5"
                 >
-                  {meal.time} · {meal.cal}kcal · {meal.protein}g protein
-                </div>
-              </div>
-              <span className="text-[#555] text-lg leading-none">
-                {expanded === i ? '−' : '+'}
-              </span>
-            </button>
-            {expanded === i && (
-              <div className="border-t border-[#2a2a2a] px-4 py-3 space-y-1.5">
-                {meal.items.map((item) => (
-                  <div
-                    key={item}
-                    className="text-[#888] text-sm"
-                    style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-                  >
-                    · {item}
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-[#ededed]">{meal.label}</div>
+                    <div className="mt-0.5 text-[11px] text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                      {meal.defaultTime} · {macroValue(mealTotals.calories)}kcal · {macroValue(mealTotals.protein_g)}p · {macroValue(mealTotals.carbs_g)}c
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        ))}
-      </div>
+                  <span className="text-lg leading-none text-[#555]">{isExpanded ? '-' : '+'}</span>
+                </button>
 
-      {/* Quick log */}
-      <div className="space-y-2">
-        <div
-          className="text-[#555] text-[11px] tracking-widest uppercase"
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-        >
-          · quick log ·
-        </div>
-        <input
-          type="text"
-          value={quickFood}
-          onChange={(e) => setQuickFood(e.target.value)}
-          placeholder="food name..."
-          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#ededed] rounded-xl px-4 py-3 text-sm placeholder:text-[#555] focus:outline-none focus:border-[#3a3a3a] min-h-[44px]"
-        />
-        <div className="flex gap-2">
-          <input
-            type="number"
-            value={quickProtein}
-            onChange={(e) => setQuickProtein(e.target.value)}
-            placeholder="protein g"
-            className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-[#ededed] rounded-xl px-3 py-3 text-sm placeholder:text-[#555] focus:outline-none focus:border-[#3a3a3a] min-h-[44px]"
-          />
-          <input
-            type="number"
-            value={quickCarbs}
-            onChange={(e) => setQuickCarbs(e.target.value)}
-            placeholder="carbs g"
-            className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-[#ededed] rounded-xl px-3 py-3 text-sm placeholder:text-[#555] focus:outline-none focus:border-[#3a3a3a] min-h-[44px]"
-          />
-          <button
-            onClick={() => {
-              setQuickFood('')
-              setQuickProtein('')
-              setQuickCarbs('')
-            }}
-            className="bg-[#00d26a] text-[#0e0e0e] rounded-xl px-5 py-3 text-sm font-bold min-h-[44px] active:opacity-80 transition-opacity"
-          >
-            Add
-          </button>
-        </div>
-      </div>
+                {isExpanded && (
+                  <div className="space-y-3 border-t border-[#2a2a2a] px-4 py-3">
+                    {meal.items.length === 0 && (
+                      <div className="rounded-lg border border-[#2a2a2a] bg-[#151515] p-3 text-sm text-[#555]">
+                        No default fuel here for this day type.
+                      </div>
+                    )}
+                    {meal.items.map((item) => {
+                      const food = foodsByName.get(item.foodName)
+                      if (!food) return null
 
+                      const logged = findLoggedItem(mealLogs, meal.name, food.id, item.substitutionGroup ?? item.label)
+                      const scaled = scaleFood(food, item.quantity)
+                      const substitutions = getSubstitutions(food.id, foods, substitutionIndex)
+                      const key = foodKey(meal.name, food.id, item.label)
+
+                      return (
+                        <div key={`${meal.name}-${item.label}`} className="rounded-lg border border-[#2a2a2a] bg-[#151515] p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm text-[#ededed]">{item.label}</div>
+                              <div className="mt-0.5 text-[11px] text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                                {scaled.calories}kcal · {scaled.protein_g}p · {scaled.carbs_g}c · {scaled.fat_g}f
+                              </div>
+                            </div>
+
+                            {logged ? (
+                              <button
+                                onClick={() => removeLoggedItem(logged.id)}
+                                className="rounded-md border border-[#2a2a2a] px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[#888]"
+                                style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+                              >
+                                ate
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => logTemplateItem(meal.name, item)}
+                                disabled={savingKey === key}
+                                className="rounded-md bg-[#00d26a] px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[#0e0e0e] disabled:opacity-50"
+                                style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+                              >
+                                ate this
+                              </button>
+                            )}
+                          </div>
+
+                          {substitutions.length > 0 && !logged && (
+                            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                              {substitutions.slice(0, 5).map((sub) => {
+                                const subFood = foods.find((candidate) => candidate.id === sub.foodItemId)
+                                if (!subFood) return null
+                                return (
+                                  <button
+                                    key={`${sub.groupName}-${sub.foodItemId}-${sub.label}`}
+                                    onClick={() =>
+                                      logTemplateItem(meal.name, item, {
+                                        food: subFood,
+                                        quantity: sub.quantity,
+                                        label: sub.label,
+                                        groupName: sub.groupName,
+                                      })
+                                    }
+                                    className="flex-shrink-0 rounded-md border border-[#2a2a2a] px-2.5 py-1.5 text-left text-[11px] text-[#888]"
+                                    style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+                                  >
+                                    swap: {sub.label}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      <LoggedSummary mealLogs={mealLogs} totals={consumed} />
       <div className="h-4" />
+    </div>
+  )
+}
+
+function LoggedSummary({ mealLogs, totals }: { mealLogs: MealLog[]; totals: MacroTotals }) {
+  const loggedItems = mealLogs.flatMap((log) =>
+    (log.meal_log_item ?? []).map((item) => ({
+      ...item,
+      mealName: MEAL_LABELS[log.meal_name],
+    }))
+  )
+
+  if (loggedItems.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[#555] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+        · consumed ·
+      </div>
+      <Card className="p-4">
+        <div className="text-sm text-[#ededed]">
+          {macroValue(totals.calories)}kcal · {macroValue(totals.protein_g)}g protein · {macroValue(totals.carbs_g)}g carbs · {macroValue(totals.fat_g)}g fat
+        </div>
+        <div className="mt-3 space-y-1.5">
+          {loggedItems.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center justify-between gap-3 text-[11px] text-[#555]"
+              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+            >
+              <span className="truncate">
+                {item.mealName} · {item.food_item?.name ?? 'food'}
+              </span>
+              <span className="flex-shrink-0">{macroValue(Number(item.protein_g))}p/{macroValue(Number(item.carbs_g))}c</span>
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   )
 }
