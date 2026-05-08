@@ -12,7 +12,7 @@ export async function GET() {
   const supabase = createClient(supabaseUrl, serviceKey)
   const { data: row } = await supabase
     .from('whoop_tokens')
-    .select('access_token, refresh_token, reauth_required, scope')
+    .select('access_token, refresh_token, expires_at, updated_at, reauth_required, scope')
     .eq('id', 1)
     .single()
 
@@ -25,5 +25,7 @@ export async function GET() {
     reauth_required: row.reauth_required ?? false,
     // has_offline is true only when a refresh_token is present (requires offline scope)
     has_offline: !!row.refresh_token,
+    expires_at: row.expires_at ?? null,
+    updated_at: row.updated_at ?? null,
   })
 }

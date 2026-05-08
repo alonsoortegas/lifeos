@@ -222,15 +222,16 @@ serve(async (req) => {
     let workoutCount = 0
     for (const w of workoutData?.records ?? []) {
       if (!w?.id || !w?.start) continue
-      const zd = (w.score as Record<string, unknown> | null)?.zone_duration as Record<string, number> ?? {}
+      const workoutScore = w.score as Record<string, unknown> | null
+      const zd = (workoutScore?.zone_durations ?? workoutScore?.zone_duration ?? {}) as Record<string, number>
       const wRow = {
         workout_id: w.id,
         cycle_id: w.cycle_id ?? null,
         started_at: w.start,
-        sport_name: SPORT_NAMES[w.sport_id as number] ?? `sport_${w.sport_id}`,
-        strain: (w.score as Record<string, unknown> | null)?.strain ?? null,
-        avg_hr: (w.score as Record<string, unknown> | null)?.average_heart_rate ?? null,
-        max_hr: (w.score as Record<string, unknown> | null)?.max_heart_rate ?? null,
+        sport_name: w.sport_name ?? SPORT_NAMES[w.sport_id as number] ?? `sport_${w.sport_id}`,
+        strain: workoutScore?.strain ?? null,
+        avg_hr: workoutScore?.average_heart_rate ?? null,
+        max_hr: workoutScore?.max_heart_rate ?? null,
         zone0_min: zd.zone_zero_milli != null ? zd.zone_zero_milli / 60000 : null,
         zone1_min: zd.zone_one_milli != null ? zd.zone_one_milli / 60000 : null,
         zone2_min: zd.zone_two_milli != null ? zd.zone_two_milli / 60000 : null,

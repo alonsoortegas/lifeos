@@ -11,14 +11,30 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 )
 
+const WHOOP_CLIENT_ID = 'aeb5a295-3c6a-42a9-9657-57227bb0adb7'
+const WHOOP_SCOPES = 'offline read:recovery read:sleep read:workout read:cycles read:body_measurement'
+
 function sleepHM(ms: number | null): string {
   if (!ms) return '—'
   const totalMin = Math.round(ms / 60000)
   return `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`
 }
 
+function whoopAuthUrl(host: string): string {
+  const redirectUri = encodeURIComponent(`${host}/api/whoop-callback`)
+  const scope = encodeURIComponent(WHOOP_SCOPES)
+  return `https://api.prod.whoop.com/oauth/oauth2/auth?client_id=${WHOOP_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=lifeos26`
+}
+
+function strainValue(strain: number | null | undefined): string {
+  if (strain == null) return '—'
+  if (strain > 0 && strain < 0.05) return '<0.1'
+  return strain.toFixed(1)
+}
+
 export default function TodayTab() {
   const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
+  const [reauthRequired, setReauthRequired] = useState(false)
 
   useEffect(() => {
     const load = () =>
@@ -31,6 +47,10 @@ export default function TodayTab() {
         .then(({ data }) => { if (data) setSnap(data as WhoopSnapshot) })
 
     load()
+    fetch('/api/whoop-status')
+      .then(r => r.json())
+      .then(d => setReauthRequired(d.reauth_required ?? false))
+      .catch(() => { /* non-critical */ })
 
     const channel = supabase
       .channel('whoop_snapshots_today')
@@ -87,8 +107,8 @@ export default function TodayTab() {
         />
         <StatCard
           label="Strain"
-          value={snap?.strain != null ? snap.strain.toFixed(1) : '—'}
-          sub={snap?.strain != null ? 'daily strain' : 'no activity logged'}
+          value={reauthRequired ? '—' : strainValue(snap?.strain)}
+          sub={reauthRequired ? 'sync paused · reconnect' : snap?.strain != null ? 'daily strain' : 'no activity logged'}
           color="#a78bfa"
         />
         <StatCard
@@ -99,6 +119,16 @@ export default function TodayTab() {
           color="#06b6d4"
         />
       </div>
+
+      {reauthRequired && (
+        <a
+          href={typeof window !== 'undefined' ? whoopAuthUrl(window.location.origin) : '#'}
+          className="block rounded-lg bg-[#00d26a] py-3 text-center text-[12px] font-bold text-[#0e0e0e] no-underline"
+          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+        >
+          reconnect whoop
+        </a>
+      )}
 
       <div className="h-4" />
     </div>

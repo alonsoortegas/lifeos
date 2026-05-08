@@ -306,6 +306,7 @@ export default function WhoopTab() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const [reauthRequired, setReauthRequired] = useState(false)
   const [hasOffline, setHasOffline] = useState(true)
+  const [tokenExpired, setTokenExpired] = useState(false)
 
   function load() {
     supabase
@@ -338,6 +339,7 @@ export default function WhoopTab() {
       .then(d => {
         setReauthRequired(d.reauth_required ?? false)
         setHasOffline(d.has_offline ?? true)
+        setTokenExpired(d.expires_at ? new Date(d.expires_at).getTime() <= Date.now() : false)
       })
       .catch(() => { /* non-critical */ })
   }, [])
@@ -366,11 +368,6 @@ export default function WhoopTab() {
 
   const recovery = snap?.recovery_score ?? 0
   const recoveryColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
-
-  const tokenAge = snap?.recorded_at
-    ? Math.floor((Date.now() - new Date(snap.recorded_at).getTime()) / 60000)
-    : null
-  const tokenExpired = tokenAge != null && tokenAge > 55
 
   const hasHistory = history.length > 1
 
