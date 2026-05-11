@@ -195,8 +195,7 @@ function formatRemaining(hoursLeft: number): string {
   return h > 0 ? `${h}h ${m}m left` : `${m}m left`
 }
 
-function getDayRingState() {
-  const now = new Date()
+function getDayRingState(now = new Date()) {
   const h = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600
   const WAKE = 8, SLEEP = 24
   const C = 2 * Math.PI * 50
@@ -219,13 +218,27 @@ function getDayRingState() {
   }
 }
 
+const INITIAL_DAY_RING_STATE = {
+  percent: 0,
+  stroke: 'rgba(255,255,255,0.08)',
+  dashOffset: 2 * Math.PI * 50,
+  phase: 'DAY',
+  display: '—',
+  remaining: null as string | null,
+}
+
 function DayRing() {
-  const [state, setState] = useState(getDayRingState)
+  const [state, setState] = useState(INITIAL_DAY_RING_STATE)
   const C = 2 * Math.PI * 50
 
   useEffect(() => {
+    const tick = () => setState(getDayRingState())
+    const immediateId = window.setTimeout(tick, 0)
     const id = setInterval(() => setState(getDayRingState()), 60_000)
-    return () => clearInterval(id)
+    return () => {
+      window.clearTimeout(immediateId)
+      clearInterval(id)
+    }
   }, [])
 
   return (
@@ -280,7 +293,7 @@ function DayRing() {
 export default function TodayTab() {
   const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
   const [reauthRequired, setReauthRequired] = useState(false)
-  const [greeting, setGreeting] = useState(getGreeting)
+  const [now, setNow] = useState<Date | null>(null)
 
   useEffect(() => {
     const load = () =>
@@ -307,14 +320,19 @@ export default function TodayTab() {
   }, [])
 
   useEffect(() => {
-    const id = setInterval(() => setGreeting(getGreeting()), 60_000)
-    return () => clearInterval(id)
+    const tick = () => setNow(new Date())
+    const immediateId = window.setTimeout(tick, 0)
+    const id = setInterval(tick, 60_000)
+    return () => {
+      window.clearTimeout(immediateId)
+      clearInterval(id)
+    }
   }, [])
 
-  const now = new Date()
-  const dayName = now.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase()
-  const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()
-  const weekNum = Math.ceil(now.getDate() / 7)
+  const dayName = now ? now.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() : 'TODAY'
+  const dateStr = now ? now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase() : '—'
+  const weekNum = now ? Math.ceil(now.getDate() / 7) : '—'
+  const greeting = now ? getGreeting() : 'Welcome back'
 
   const recovery = snap?.recovery_score ?? 0
   const ringColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'

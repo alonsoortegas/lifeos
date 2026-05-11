@@ -18,6 +18,16 @@ export const metadata: Metadata = {
   title: 'LifeOS',
   description: 'Personal life operating system',
   manifest: '/manifest.json',
+  icons: {
+    icon: [
+      { url: '/lifeos-icon.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    shortcut: '/favicon.ico',
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',

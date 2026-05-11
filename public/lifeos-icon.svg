@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="LifeOS icon">
+  <rect width="512" height="512" rx="112" fill="#0e0e0e"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M147 338a157 157 0 0 1 105-239" stroke="#ededed" stroke-width="16"/>
+    <path d="M205 397a157 157 0 0 0 216-107" stroke="#ededed" stroke-width="16"/>
+    <path d="M282 98a157 157 0 0 1 131 126" stroke="#b7ff1c" stroke-width="16"/>
+    <g stroke="#ededed" stroke-width="13">
+      <path d="M256 158v196"/>
+      <path d="M158 256h196"/>
+      <path d="M187 187l138 138"/>
+      <path d="M325 187 187 325"/>
+      <path d="M256 256 211 147"/>
+      <path d="M256 256 301 147"/>
+      <path d="M256 256 211 365"/>
+      <path d="M256 256 301 365"/>
+    </g>
+    <g fill="#0e0e0e" stroke="#ededed" stroke-width="13">
+      <circle cx="256" cy="256" r="35"/>
+      <circle cx="256" cy="137" r="21"/>
+      <circle cx="256" cy="375" r="21"/>
+      <circle cx="137" cy="256" r="21"/>
+      <circle cx="375" cy="256" r="21"/>
+      <circle cx="172" cy="172" r="21"/>
+      <circle cx="340" cy="172" r="21"/>
+      <circle cx="172" cy="340" r="21"/>
+      <circle cx="340" cy="340" r="21"/>
+    </g>
+  </g>
+</svg>

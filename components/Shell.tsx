@@ -53,10 +53,16 @@ function MobileShell() {
         <div className="h-14" aria-hidden="true" />
         <div className="h-14 flex items-center px-4">
           <span
-            className="text-[#00d26a] text-sm font-bold tracking-widest"
-            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+            role="img"
+            aria-label="LifeOS"
+            className="h-8 w-8 rounded-[7px] bg-cover bg-center"
+            style={{ backgroundImage: 'url(/lifeos-icon.svg)' }}
+          />
+          <span
+            className="ml-2 text-[15px] text-[#ededed] tracking-[0.03em]"
+            style={{ fontFamily: 'var(--font-inter-tight, sans-serif)' }}
           >
-            LIFEOS
+            LifeOS
           </span>
           <span
             className="ml-3 text-[#555] text-[11px] uppercase tracking-widest"

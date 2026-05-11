@@ -244,10 +244,12 @@ export default function DesktopShell() {
         >
           {/* Brand */}
           <div className="flex items-center gap-2 px-2 pb-4">
-            <div
-              className="w-6 h-6 rounded-md flex items-center justify-center text-[#00d26a] text-xs font-mono"
-              style={{ border: '1.25px solid #00d26a' }}
-            >L</div>
+            <span
+              role="img"
+              aria-label="LifeOS"
+              className="h-7 w-7 rounded-[7px] bg-cover bg-center"
+              style={{ backgroundImage: 'url(/lifeos-icon.svg)' }}
+            />
             <span className="text-[15px] text-[#ededed] tracking-[0.03em]" style={{ fontFamily: 'var(--font-inter-tight, sans-serif)' }}>
               LifeOS
             </span>
