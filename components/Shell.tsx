@@ -33,29 +33,32 @@ export default function Shell() {
   return (
     <div className="min-h-screen bg-[#0e0e0e] relative">
       {/* Status bar spacer / top header */}
-      <header className="fixed top-0 left-0 right-0 z-10 h-14 flex items-center px-4 border-b border-[#2a2a2a]"
+      <header className="fixed top-0 left-0 right-0 z-10 h-28 border-b border-[#2a2a2a]"
         style={{
           background: 'rgba(14,14,14,0.92)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
         }}
       >
-        <span
-          className="text-[#00d26a] text-sm font-bold tracking-widest"
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-        >
-          LIFEOS
-        </span>
-        <span
-          className="ml-3 text-[#555] text-[11px] uppercase tracking-widest"
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-        >
-          · {TAB_LABELS[activeTab]}
-        </span>
+        <div className="h-14" aria-hidden="true" />
+        <div className="h-14 flex items-center px-4">
+          <span
+            className="text-[#00d26a] text-sm font-bold tracking-widest"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            LIFEOS
+          </span>
+          <span
+            className="ml-3 text-[#555] text-[11px] uppercase tracking-widest"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            · {TAB_LABELS[activeTab]}
+          </span>
+        </div>
       </header>
 
       {/* Main scrollable content */}
-      <main className="overflow-y-auto pt-14 pb-24">
+      <main className="overflow-y-auto pt-28 pb-24">
         {renderTab()}
       </main>
 
