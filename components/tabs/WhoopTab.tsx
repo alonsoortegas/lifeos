@@ -16,11 +16,6 @@ function sleepHM(ms: number | null): string {
   return `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`
 }
 
-function fmt(n: number | null, decimals = 0): string {
-  if (n == null) return '—'
-  return decimals > 0 ? n.toFixed(decimals) : String(Math.round(n))
-}
-
 function avg(arr: (number | null)[], decimals = 0): string {
   const vals = arr.filter((v): v is number => v != null)
   if (!vals.length) return '—'

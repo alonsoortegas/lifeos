@@ -163,7 +163,13 @@ export default function WorkoutTab() {
     setLoading(false)
   }, [currentWeek])
 
-  useEffect(() => { loadSession(selectedDay) }, [selectedDay, loadSession])
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void loadSession(selectedDay)
+    }, 0)
+
+    return () => window.clearTimeout(id)
+  }, [selectedDay, loadSession])
 
   const updateState = (i: number, patch: Partial<ExerciseState>) =>
     setExerciseStates(prev => prev.map((s, idx) => idx === i ? { ...s, ...patch } : s))

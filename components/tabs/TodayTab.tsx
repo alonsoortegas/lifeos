@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import Ring from '@/components/ui/Ring'
 import StatCard from '@/components/ui/StatCard'
-import type { WhoopSnapshot } from '@/lib/types'
+import type { WhoopSnapshot, Todo } from '@/lib/types'
+import { getCurrentGoalDate, getMillisecondsUntilNextGoalReset } from '@/lib/goal-dates'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -32,6 +33,226 @@ function strainValue(strain: number | null | undefined): string {
   return strain.toFixed(1)
 }
 
+// ---------------------------------------------------------------------------
+// GoalTicker
+// ---------------------------------------------------------------------------
+function GoalTicker() {
+  const [todos, setTodos] = useState<Todo[]>([])
+  const [idx, setIdx] = useState(0)
+  const [animKey, setAnimKey] = useState(0)
+
+  const loadTodos = useCallback(async () => {
+    try {
+      const today = getCurrentGoalDate()
+      const { data } = await supabase
+        .from('todos')
+        .select('*')
+        .eq('day_date', today)
+        .order('created_at', { ascending: true })
+      setTodos(data ?? [])
+      setIdx(0)
+      setAnimKey(k => k + 1)
+    } catch { /* non-critical */ }
+  }, [])
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void loadTodos()
+    }, 0)
+    let resetId: number
+
+    const refreshAtReset = () => {
+      void loadTodos()
+      resetId = window.setTimeout(refreshAtReset, getMillisecondsUntilNextGoalReset() + 1000)
+    }
+
+    resetId = window.setTimeout(refreshAtReset, getMillisecondsUntilNextGoalReset() + 1000)
+
+    const channel = supabase
+      .channel('ticker_todos')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, loadTodos)
+      .subscribe()
+
+    const handleGoalsChanged = () => loadTodos()
+    window.addEventListener('goals-changed', handleGoalsChanged)
+
+    return () => {
+      window.clearTimeout(id)
+      window.clearTimeout(resetId)
+      supabase.removeChannel(channel)
+      window.removeEventListener('goals-changed', handleGoalsChanged)
+    }
+  }, [loadTodos])
+
+  const pending = todos.filter(t => !t.done)
+  const done = todos.filter(t => t.done).length
+  const total = todos.length
+
+  useEffect(() => {
+    if (pending.length <= 1) return
+    const id = setInterval(() => {
+      setAnimKey(k => k + 1)
+      setIdx(i => (i + 1) % pending.length)
+    }, 5000)
+    return () => clearInterval(id)
+  }, [pending.length])
+
+  let text: string
+  let textColor: string
+  if (total === 0) {
+    text = 'No goals set yet — add one in Focus.'
+    textColor = '#555'
+  } else if (pending.length === 0) {
+    text = 'All goals complete.'
+    textColor = '#00d26a'
+  } else {
+    text = pending[idx % pending.length]?.text ?? ''
+    textColor = '#ededed'
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-[6px] rounded-[10px] bg-[#1a1a1a] border border-[#2a2a2a]">
+      <style>{`
+        @keyframes tickerPulse { 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:0.4; transform:scale(0.85);} }
+        @keyframes tickerSlideIn { from{ transform:translateY(100%); opacity:0;} to{ transform:translateY(0); opacity:1;} }
+      `}</style>
+      <div
+        className="w-[7px] h-[7px] rounded-full flex-shrink-0"
+        style={{ background: '#00d26a', animation: 'tickerPulse 1.6s ease-in-out infinite' }}
+      />
+      <div
+        className="text-[9px] font-bold tracking-[0.18em] uppercase flex-shrink-0"
+        style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: '#555' }}
+      >
+        GOALS
+      </div>
+      <div className="flex-1 h-5 overflow-hidden flex items-center">
+        <span
+          key={animKey}
+          className="block text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis w-full tabular-nums"
+          style={{
+            fontFamily: 'var(--font-jetbrains-mono, monospace)',
+            color: textColor,
+            animation: total > 0 && pending.length > 0 ? 'tickerSlideIn 0.38s cubic-bezier(0.22,1,0.36,1) forwards' : 'none',
+          }}
+        >
+          {text}
+        </span>
+      </div>
+      <div
+        className="text-[11px] px-[7px] py-[2px] rounded-full flex-shrink-0"
+        style={{
+          fontFamily: 'var(--font-jetbrains-mono, monospace)',
+          color: '#888',
+          background: 'rgba(255,255,255,0.04)',
+        }}
+      >
+        {done}/{total}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// DayRing
+// ---------------------------------------------------------------------------
+const DAY_STOPS: [number, [number, number, number]][] = [
+  [0,    [255, 216, 158]],
+  [12.5, [255, 205, 121]],
+  [25,   [255, 227, 143]],
+  [37.5, [255, 183, 106]],
+  [50,   [255, 149,  89]],
+  [62.5, [243, 111,  79]],
+  [75,   [226,  93, 122]],
+  [87.5, [123,  91, 176]],
+  [100,  [ 47,  58, 102]],
+]
+
+function lerpDayColor(p: number): string {
+  for (let i = 0; i < DAY_STOPS.length - 1; i++) {
+    const [pa, a] = DAY_STOPS[i]
+    const [pb, b] = DAY_STOPS[i + 1]
+    if (p >= pa && p <= pb) {
+      const t = (p - pa) / (pb - pa)
+      return `rgb(${Math.round(a[0]+(b[0]-a[0])*t)},${Math.round(a[1]+(b[1]-a[1])*t)},${Math.round(a[2]+(b[2]-a[2])*t)})`
+    }
+  }
+  return 'rgb(47,58,102)'
+}
+
+function getDayRingState() {
+  const now = new Date()
+  const h = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600
+  const WAKE = 8, SLEEP = 24
+  const C = 2 * Math.PI * 50
+
+  if (h < WAKE) {
+    return { percent: 0, stroke: 'rgba(255,255,255,0.08)', dashOffset: C, phase: 'SLEEPING', display: '—' }
+  }
+  if (h >= SLEEP) {
+    return { percent: 100, stroke: '#2e3a66', dashOffset: 0, phase: 'PAST MIDNIGHT', display: '100%' }
+  }
+  const percent = ((h - WAKE) / (SLEEP - WAKE)) * 100
+  const phase = percent < 25 ? 'MORNING' : percent < 50 ? 'MIDDAY' : percent < 75 ? 'AFTERNOON' : percent < 90 ? 'EVENING' : 'BEDTIME'
+  return {
+    percent,
+    stroke: lerpDayColor(percent),
+    dashOffset: C * (1 - percent / 100),
+    phase,
+    display: `${Math.round(percent)}%`,
+  }
+}
+
+function DayRing() {
+  const [state, setState] = useState(getDayRingState)
+  const C = 2 * Math.PI * 50
+
+  useEffect(() => {
+    const id = setInterval(() => setState(getDayRingState()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <div className="flex flex-col items-center gap-[6px]">
+      <div className="relative" style={{ width: 140, height: 140 }}>
+        <svg width="140" height="140" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+          <circle
+            cx="60" cy="60" r="50" fill="none"
+            stroke={state.stroke} strokeWidth="8" strokeLinecap="round"
+            strokeDasharray={C} strokeDashoffset={state.dashOffset}
+            transform="rotate(-90 60 60)"
+            style={{ transition: 'stroke-dashoffset 0.7s cubic-bezier(0.22,1,0.36,1), stroke 0.7s ease' }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span
+            className="text-[32px] font-extrabold leading-none tracking-[-0.04em] tabular-nums text-[#ededed]"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            {state.display}
+          </span>
+          <span
+            className="text-[8px] font-bold uppercase tracking-[0.16em] text-[#555] mt-[3px]"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            {state.phase}
+          </span>
+        </div>
+      </div>
+      <div
+        className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#555]"
+        style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+      >
+        Day Progress
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// TodayTab
+// ---------------------------------------------------------------------------
 export default function TodayTab() {
   const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
   const [reauthRequired, setReauthRequired] = useState(false)
@@ -80,12 +301,17 @@ export default function TodayTab() {
         </div>
       </div>
 
-      <div className="flex justify-center py-4">
-        <div className="flex flex-col items-center gap-2">
-          <Ring value={snap ? recovery : 0} size={170} thickness={14} color={snap ? ringColor : '#2a2a2a'} />
-          <div className="text-[#888] uppercase text-[11px] tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-            Recovery Score
+      <GoalTicker />
+
+      <div className="flex flex-col items-center py-4 gap-2">
+        <div className="flex flex-row items-end justify-around gap-6 w-full flex-wrap">
+          <div className="flex flex-col items-center gap-2">
+            <Ring value={snap ? recovery : 0} size={140} thickness={8} color={snap ? ringColor : '#2a2a2a'} />
+            <div className="text-[#888] uppercase text-[11px] tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+              Recovery Score
+            </div>
           </div>
+          <DayRing />
         </div>
       </div>
 

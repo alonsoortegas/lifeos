@@ -4,21 +4,25 @@ import { useState, useEffect, useCallback } from 'react'
 import Card from '@/components/ui/Card'
 import { createClient } from '@/lib/supabase'
 import type { Todo } from '@/lib/types'
-
-function getTodayDate() {
-  return new Date().toISOString().split('T')[0]
-}
+import {
+  formatGoalDateEyebrow,
+  getCurrentGoalDate,
+  getMillisecondsUntilNextGoalReset,
+  getNextGoalDate,
+} from '@/lib/goal-dates'
 
 export default function FocusTab() {
   const [todos, setTodos] = useState<Todo[]>([])
   const [inputText, setInputText] = useState('')
   const [isPolishing, setIsPolishing] = useState(false)
   const [dbAvailable, setDbAvailable] = useState(true)
+  const [tomorrowTodos, setTomorrowTodos] = useState<Todo[]>([])
+  const [tomorrowInput, setTomorrowInput] = useState('')
 
   const loadTodos = useCallback(async () => {
     try {
       const supabase = createClient()
-      const today = getTodayDate()
+      const today = getCurrentGoalDate()
       const { data, error } = await supabase
         .from('todos')
         .select('*')
@@ -34,9 +38,41 @@ export default function FocusTab() {
     }
   }, [])
 
+  const loadTomorrowTodos = useCallback(async () => {
+    try {
+      const supabase = createClient()
+      const tomorrow = getNextGoalDate()
+      const { data } = await supabase
+        .from('todos')
+        .select('*')
+        .eq('day_date', tomorrow)
+        .order('created_at', { ascending: true })
+      setTomorrowTodos(data ?? [])
+    } catch {
+      /* non-critical */
+    }
+  }, [])
+
   useEffect(() => {
-    loadTodos()
-  }, [loadTodos])
+    const id = window.setTimeout(() => {
+      void loadTodos()
+      void loadTomorrowTodos()
+    }, 0)
+    let resetId: number
+
+    const refreshAtReset = () => {
+      void loadTodos()
+      void loadTomorrowTodos()
+      resetId = window.setTimeout(refreshAtReset, getMillisecondsUntilNextGoalReset() + 1000)
+    }
+
+    resetId = window.setTimeout(refreshAtReset, getMillisecondsUntilNextGoalReset() + 1000)
+
+    return () => {
+      window.clearTimeout(id)
+      window.clearTimeout(resetId)
+    }
+  }, [loadTodos, loadTomorrowTodos])
 
   const toggleTodo = async (todo: Todo) => {
     // Optimistic update
@@ -44,7 +80,10 @@ export default function FocusTab() {
       prev.map((t) => (t.id === todo.id ? { ...t, done: !t.done } : t))
     )
 
-    if (!dbAvailable) return
+    if (!dbAvailable) {
+      window.dispatchEvent(new CustomEvent('goals-changed'))
+      return
+    }
 
     try {
       const supabase = createClient()
@@ -52,6 +91,7 @@ export default function FocusTab() {
         .from('todos')
         .update({ done: !todo.done })
         .eq('id', todo.id)
+      window.dispatchEvent(new CustomEvent('goals-changed'))
     } catch {
       // Revert on failure
       setTodos((prev) =>
@@ -64,7 +104,7 @@ export default function FocusTab() {
     const trimmed = text.trim()
     if (!trimmed) return
 
-    const today = getTodayDate()
+    const today = getCurrentGoalDate()
     const tempId = Date.now()
     const optimistic: Todo = {
       id: tempId,
@@ -78,7 +118,10 @@ export default function FocusTab() {
     setTodos((prev) => [...prev, optimistic])
     setInputText('')
 
-    if (!dbAvailable) return
+    if (!dbAvailable) {
+      window.dispatchEvent(new CustomEvent('goals-changed'))
+      return
+    }
 
     try {
       const supabase = createClient()
@@ -92,13 +135,81 @@ export default function FocusTab() {
           prev.map((t) => (t.id === tempId ? (data as Todo) : t))
         )
       }
+      window.dispatchEvent(new CustomEvent('goals-changed'))
     } catch {
       // keep optimistic
     }
   }
 
+  const deleteTodo = async (id: number) => {
+    setTodos((prev) => prev.filter((t) => t.id !== id))
+    window.dispatchEvent(new CustomEvent('goals-changed'))
+
+    if (!dbAvailable) return
+
+    try {
+      const supabase = createClient()
+      await supabase.from('todos').delete().eq('id', id)
+    } catch {
+      // non-critical — optimistic delete stands
+    }
+  }
+
+  const addTomorrowTodo = async (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+
+    const tomorrow = getNextGoalDate()
+    const tempId = Date.now()
+    const optimistic: Todo = {
+      id: tempId,
+      text: trimmed,
+      done: false,
+      created_at: new Date().toISOString(),
+      day_date: tomorrow,
+    }
+
+    setTomorrowTodos((prev) => [...prev, optimistic])
+    setTomorrowInput('')
+
+    if (!dbAvailable) return
+
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('todos')
+        .insert({ text: trimmed, day_date: tomorrow })
+        .select()
+        .single()
+      if (!error && data) {
+        setTomorrowTodos((prev) =>
+          prev.map((t) => (t.id === tempId ? (data as Todo) : t))
+        )
+      }
+    } catch {
+      // keep optimistic
+    }
+  }
+
+  const deleteTomorrowTodo = async (id: number) => {
+    setTomorrowTodos((prev) => prev.filter((t) => t.id !== id))
+
+    if (!dbAvailable) return
+
+    try {
+      const supabase = createClient()
+      await supabase.from('todos').delete().eq('id', id)
+    } catch {
+      // non-critical
+    }
+  }
+
   const handleAdd = () => {
     addTodo(inputText)
+  }
+
+  const handleAddTomorrow = () => {
+    addTomorrowTodo(tomorrowInput)
   }
 
   const handlePolishAndAdd = async () => {
@@ -154,15 +265,47 @@ export default function FocusTab() {
           >
             · today&apos;s goals ·
           </div>
-          <div
-            className="text-[#888] text-[11px]"
-            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-          >
-            {done}/{total} done
-          </div>
         </div>
 
-        <Card>
+        {/* Counter */}
+        <div className="flex items-baseline gap-2 mb-2">
+          <span
+            className={`text-[38px] font-medium leading-none tracking-[-0.025em] tabular-nums ${done === total && total > 0 ? 'text-[#00d26a]' : 'text-[#ededed]'}`}
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            {done}
+          </span>
+          <span
+            className="text-[16px] text-[#555]"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            / {total}
+          </span>
+          <span
+            className={`ml-auto text-[10px] font-semibold uppercase tracking-[0.1em] ${done === total && total > 0 ? 'text-[#00d26a]' : 'text-[#555]'}`}
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            {total === 0 ? 'no goals yet' : done === total ? 'all done' : 'complete'}
+          </span>
+        </div>
+
+        {/* Segmented bar */}
+        {total > 0 && (
+          <div className="flex gap-1 mb-4">
+            {Array.from({ length: total }).map((_, i) => (
+              <div
+                key={i}
+                className="h-[6px] flex-1 rounded-full transition-all duration-300"
+                style={{
+                  background: i < done ? '#00d26a' : '#2a2a2a',
+                  boxShadow: i < done ? '0 0 6px rgba(0,210,106,0.35)' : 'none',
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        <Card style={done === total && total > 0 ? { background: 'rgba(0,210,106,0.04)' } : {}}>
           {todos.length === 0 ? (
             <div className="p-4 text-[#555] text-sm text-center">
               No goals yet. Add one below.
@@ -170,10 +313,10 @@ export default function FocusTab() {
           ) : (
             <ul className="divide-y divide-[#2a2a2a]">
               {todos.map((todo) => (
-                <li key={todo.id}>
+                <li key={todo.id} className="group flex items-center">
                   <button
                     onClick={() => toggleTodo(todo)}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left min-h-[44px]"
+                    className="flex-1 flex items-center gap-3 px-4 py-3 text-left min-h-[44px]"
                   >
                     {/* Checkbox */}
                     <span
@@ -184,12 +327,7 @@ export default function FocusTab() {
                       }`}
                     >
                       {todo.done && (
-                        <svg
-                          width="11"
-                          height="8"
-                          viewBox="0 0 11 8"
-                          fill="none"
-                        >
+                        <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
                           <path
                             d="M1 4L4 7L10 1"
                             stroke="#0e0e0e"
@@ -202,13 +340,18 @@ export default function FocusTab() {
                     </span>
                     <span
                       className={`text-sm leading-snug ${
-                        todo.done
-                          ? 'text-[#555] line-through'
-                          : 'text-[#ededed]'
+                        todo.done ? 'text-[#555] line-through' : 'text-[#ededed]'
                       }`}
                     >
                       {todo.text}
                     </span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteTodo(todo.id) }}
+                    className="opacity-0 group-hover:opacity-100 text-[#555] hover:text-[#ef4444] text-[14px] leading-none px-3 py-3 transition-opacity min-h-[44px] flex items-center"
+                    aria-label="Delete goal"
+                  >
+                    ×
                   </button>
                 </li>
               ))}
@@ -247,6 +390,77 @@ export default function FocusTab() {
             className="flex-1 bg-[#00d26a] text-[#0e0e0e] rounded-xl py-3 text-sm font-bold min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed active:opacity-80 transition-opacity"
           >
             {isPolishing ? 'polishing...' : '✦ Polish & Add'}
+          </button>
+        </div>
+      </div>
+
+      {/* Plan Tomorrow section */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div
+            className="text-[#555] text-[11px] tracking-widest uppercase"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            plan tomorrow — {formatGoalDateEyebrow(getNextGoalDate())}
+          </div>
+          <div
+            className="text-[#555] text-[11px] tabular-nums"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            {tomorrowTodos.length} planned
+          </div>
+        </div>
+        <div className="text-[#555] text-[11px] mb-3">Write tonight, locked until 6 AM.</div>
+
+        <Card>
+          {tomorrowTodos.length === 0 ? (
+            <div className="p-4 text-[#555] text-sm text-center">
+              Nothing planned for tomorrow yet.
+            </div>
+          ) : (
+            <ul className="divide-y divide-[#2a2a2a]">
+              {tomorrowTodos.map((todo) => (
+                <li key={todo.id} className="group">
+                  <div className="w-full flex items-center gap-3 px-4 py-3 text-left min-h-[44px] opacity-55">
+                    <span
+                      className="flex-shrink-0 w-5 h-5 rounded border border-[#3a3a3a] bg-transparent flex items-center justify-center cursor-not-allowed"
+                      title="Activates at 6 AM"
+                    />
+                    <span className="flex-1 text-sm text-[#ededed]">{todo.text}</span>
+                    <button
+                      onClick={() => deleteTomorrowTodo(todo.id)}
+                      className="opacity-0 group-hover:opacity-100 text-[#555] hover:text-[#ef4444] text-[14px] leading-none px-1 transition-opacity"
+                      aria-label="Delete"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <div className="space-y-2 mt-3">
+          <input
+            type="text"
+            value={tomorrowInput}
+            onChange={(e) => setTomorrowInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleAddTomorrow()
+              }
+            }}
+            placeholder="add to tomorrow..."
+            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#ededed] rounded-xl px-4 py-3 text-sm placeholder:text-[#555] focus:outline-none focus:border-[#3a3a3a] min-h-[44px]"
+          />
+          <button
+            onClick={handleAddTomorrow}
+            disabled={!tomorrowInput.trim()}
+            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#ededed] rounded-xl py-3 text-sm font-medium min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed active:bg-[#2a2a2a] transition-colors"
+          >
+            + Add to Tomorrow
           </button>
         </div>
       </div>
