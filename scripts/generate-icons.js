@@ -86,19 +86,6 @@ function distToSegment(px, py, ax, ay, bx, by) {
   return Math.hypot(px - x, py - y)
 }
 
-function roundedRectMask(x, y, size) {
-  const inset = size * 0.02
-  const radius = size * 0.22
-  const left = inset
-  const top = inset
-  const right = size - inset
-  const bottom = size - inset
-  const cx = Math.max(left + radius, Math.min(x, right - radius))
-  const cy = Math.max(top + radius, Math.min(y, bottom - radius))
-  const d = Math.hypot(x - cx, y - cy)
-  return radius + 0.5 - d
-}
-
 function strokeCoverage(distance, width) {
   return Math.max(0, Math.min(1, width / 2 + 0.7 - distance))
 }
@@ -119,8 +106,6 @@ function drawStroke(pixel, coverage, color) {
 
 function sampleIcon(size, x, y) {
   let pixel = BG
-  const mask = roundedRectMask(x, y, size)
-  if (mask <= 0) return [0, 0, 0, 0]
 
   const cx = size / 2
   const cy = size / 2
@@ -160,8 +145,7 @@ function sampleIcon(size, x, y) {
   pixel = drawStroke(pixel, strokeCoverage(Math.abs(hubD - hubR), spokeW), WHITE)
   if (hubD < hubR - spokeW / 2) pixel = BG
 
-  if (mask < 1) pixel = [pixel[0], pixel[1], pixel[2], Math.round(pixel[3] * mask)]
-  return pixel
+  return [pixel[0], pixel[1], pixel[2], 255]
 }
 
 function makePNG(size) {
