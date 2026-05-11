@@ -33,6 +33,14 @@ function strainValue(strain: number | null | undefined): string {
   return strain.toFixed(1)
 }
 
+function getGreeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  if (hour < 22) return 'Good evening'
+  return 'Good night'
+}
+
 // ---------------------------------------------------------------------------
 // GoalTicker
 // ---------------------------------------------------------------------------
@@ -272,6 +280,7 @@ function DayRing() {
 export default function TodayTab() {
   const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
   const [reauthRequired, setReauthRequired] = useState(false)
+  const [greeting, setGreeting] = useState(getGreeting)
 
   useEffect(() => {
     const load = () =>
@@ -297,6 +306,11 @@ export default function TodayTab() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
+  useEffect(() => {
+    const id = setInterval(() => setGreeting(getGreeting()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
   const now = new Date()
   const dayName = now.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase()
   const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()
@@ -311,7 +325,7 @@ export default function TodayTab() {
         <div className="text-[#888] uppercase text-[11px] tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
           {dayName} · {dateStr}
         </div>
-        <h1 className="text-[22px] font-bold text-[#ededed] mt-1">Good morning</h1>
+        <h1 className="text-[22px] font-bold text-[#ededed] mt-1">{greeting}</h1>
         <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
           WEEK {weekNum} · TRAINING BLOCK A
         </div>

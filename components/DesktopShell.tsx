@@ -5,7 +5,6 @@ import TodayTab from '@/components/tabs/TodayTab'
 import FocusTab from '@/components/tabs/FocusTab'
 import WorkoutTab from '@/components/tabs/WorkoutTab'
 import NutritionTab from '@/components/tabs/NutritionTab'
-import WhoopTab from '@/components/tabs/WhoopTab'
 import BioDesktop from '@/components/desktop/BioDesktop'
 
 const TABS = [
@@ -172,7 +171,7 @@ function CommandPalette({
 }
 
 export default function DesktopShell() {
-  const [activeTab, setActiveTab] = useState('focus')
+  const [activeTab, setActiveTab] = useState('today')
   const [cmdkOpen, setCmdkOpen] = useState(false)
 
   const currentTab = TABS.find(t => t.key === activeTab)
@@ -206,7 +205,7 @@ export default function DesktopShell() {
       case 'workout':   return <WorkoutTab />
       case 'nutrition': return <NutritionTab />
       case 'bio':       return <BioDesktop />
-      default:          return <FocusTab />
+      default:          return <TodayTab />
     }
   }
 

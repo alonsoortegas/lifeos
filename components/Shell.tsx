@@ -27,7 +27,7 @@ function getServerDesktopSnapshot() {
 }
 
 function MobileShell() {
-  const [activeTab, setActiveTab] = useState(1)
+  const [activeTab, setActiveTab] = useState(0)
 
   const renderTab = () => {
     switch (activeTab) {
@@ -36,7 +36,7 @@ function MobileShell() {
       case 2: return <WorkoutTab />
       case 3: return <NutritionTab />
       case 4: return <WhoopTab />
-      default: return <FocusTab />
+      default: return <TodayTab />
     }
   }
 
