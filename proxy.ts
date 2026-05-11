@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 const COOKIE = 'lifeos_auth'
 const LOGIN = '/login'
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
   // Let login page, auth endpoint, and Whoop OAuth callback through
