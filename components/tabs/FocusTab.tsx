@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Card from '@/components/ui/Card'
 import { createClient } from '@/lib/supabase'
 import type { Todo } from '@/lib/types'
@@ -11,6 +11,27 @@ import {
   getNextGoalDate,
 } from '@/lib/goal-dates'
 
+const ANCHORS = [
+  'The body keeps the schedule. Show up before you feel ready.',
+  'Discipline is the bridge between goals and accomplishment.',
+  'Small actions, compounded daily, become identity.',
+  'Consistency beats intensity. Do the boring thing again.',
+  'The goal is not to feel motivated. The goal is to move.',
+  'You don\'t rise to the occasion — you fall to your systems.',
+  'Rest is part of training. Skipping it is not toughness.',
+  'One hard thing per day keeps the softness away.',
+  'Clarity comes from action, not from thinking about action.',
+  'Build the day you want, or someone else will build it for you.',
+  'Progress is not always visible. Trust the process anyway.',
+  'The athlete and the builder share one thing: showing up.',
+]
+
+function getDailyAnchor(): string {
+  const dateKey = getCurrentGoalDate()
+  const daysEpoch = Math.floor(new Date(dateKey).getTime() / 86_400_000)
+  return ANCHORS[((daysEpoch % ANCHORS.length) + ANCHORS.length) % ANCHORS.length]
+}
+
 export default function FocusTab() {
   const [todos, setTodos] = useState<Todo[]>([])
   const [inputText, setInputText] = useState('')
@@ -18,6 +39,7 @@ export default function FocusTab() {
   const [dbAvailable, setDbAvailable] = useState(true)
   const [tomorrowTodos, setTomorrowTodos] = useState<Todo[]>([])
   const [tomorrowInput, setTomorrowInput] = useState('')
+  const didRollover = useRef(false)
 
   const loadTodos = useCallback(async () => {
     try {
@@ -53,11 +75,52 @@ export default function FocusTab() {
     }
   }, [])
 
+  const rolloverStaleGoals = useCallback(async () => {
+    if (!dbAvailable) return
+    try {
+      const supabase = createClient()
+      const today = getCurrentGoalDate()
+      const { data: stale } = await supabase
+        .from('todos')
+        .select('*')
+        .lt('day_date', today)
+        .eq('done', false)
+      if (!stale || stale.length === 0) return
+
+      // Reload today's list fresh so dedup is accurate
+      const { data: todayRows } = await supabase
+        .from('todos')
+        .select('text')
+        .eq('day_date', today)
+      const todayTexts = new Set((todayRows ?? []).map((r: { text: string }) => r.text.toLowerCase().trim()))
+
+      const toInsert = stale
+        .filter((s: Todo) => !todayTexts.has(s.text.toLowerCase().trim()))
+        .map((s: Todo) => ({ text: s.text, day_date: today }))
+
+      if (toInsert.length > 0) {
+        await supabase.from('todos').insert(toInsert)
+      }
+      await supabase.from('todos').delete().in('id', stale.map((s: Todo) => s.id))
+      await loadTodos()
+      window.dispatchEvent(new CustomEvent('goals-changed'))
+    } catch {
+      /* non-critical */
+    }
+  }, [dbAvailable, loadTodos])
+
   useEffect(() => {
-    const id = window.setTimeout(() => {
-      void loadTodos()
+    const init = async () => {
+      await loadTodos()
       void loadTomorrowTodos()
-    }, 0)
+
+      if (!didRollover.current) {
+        didRollover.current = true
+        await rolloverStaleGoals()
+      }
+    }
+
+    const id = window.setTimeout(() => { void init() }, 0)
     let resetId: number
 
     const refreshAtReset = () => {
@@ -72,7 +135,7 @@ export default function FocusTab() {
       window.clearTimeout(id)
       window.clearTimeout(resetId)
     }
-  }, [loadTodos, loadTomorrowTodos])
+  }, [loadTodos, loadTomorrowTodos, rolloverStaleGoals])
 
   const toggleTodo = async (todo: Todo) => {
     // Optimistic update
@@ -204,6 +267,43 @@ export default function FocusTab() {
     }
   }
 
+  const handlePushRemaining = useCallback(async () => {
+    const unchecked = todos.filter(t => !t.done)
+    if (unchecked.length === 0) return
+
+    const tomorrow = getNextGoalDate()
+    const tomorrowTexts = new Set(tomorrowTodos.map(t => t.text.toLowerCase().trim()))
+    const toAdd = unchecked.filter(t => !tomorrowTexts.has(t.text.toLowerCase().trim()))
+
+    // Optimistic UI
+    setTodos(prev => prev.filter(t => t.done))
+    const tempInserted: Todo[] = toAdd.map(t => ({
+      ...t,
+      id: Date.now() + Math.random(),
+      day_date: tomorrow,
+      done: false,
+    }))
+    setTomorrowTodos(prev => [...prev, ...tempInserted])
+
+    if (!dbAvailable) {
+      window.dispatchEvent(new CustomEvent('goals-changed'))
+      return
+    }
+
+    try {
+      const supabase = createClient()
+      if (toAdd.length > 0) {
+        await supabase.from('todos').insert(toAdd.map(t => ({ text: t.text, day_date: tomorrow })))
+      }
+      await supabase.from('todos').delete().in('id', unchecked.map(t => t.id))
+      await Promise.all([loadTodos(), loadTomorrowTodos()])
+      window.dispatchEvent(new CustomEvent('goals-changed'))
+    } catch {
+      // Reload to reconcile optimistic state
+      await Promise.all([loadTodos(), loadTomorrowTodos()])
+    }
+  }, [todos, tomorrowTodos, dbAvailable, loadTodos, loadTomorrowTodos])
+
   const handleAdd = () => {
     addTodo(inputText)
   }
@@ -251,7 +351,7 @@ export default function FocusTab() {
         </div>
         <Card className="p-4">
           <p className="text-[#888] text-sm leading-relaxed italic">
-            &ldquo;The body keeps the schedule. Show up before you feel ready.&rdquo;
+            &ldquo;{getDailyAnchor()}&rdquo;
           </p>
         </Card>
       </div>
@@ -359,6 +459,17 @@ export default function FocusTab() {
           )}
         </Card>
       </div>
+
+      {/* Push remaining */}
+      {todos.some(t => !t.done) && (
+        <button
+          onClick={handlePushRemaining}
+          className="w-full border border-dashed border-[#3a3a3a] text-[#555] rounded-xl py-3 text-[11px] font-semibold uppercase tracking-[0.14em] min-h-[44px] active:border-[#555] active:text-[#888] transition-colors"
+          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+        >
+          push remaining to tomorrow
+        </button>
+      )}
 
       {/* Input area */}
       <div className="space-y-2">

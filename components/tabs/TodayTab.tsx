@@ -180,6 +180,13 @@ function lerpDayColor(p: number): string {
   return 'rgb(47,58,102)'
 }
 
+function formatRemaining(hoursLeft: number): string {
+  const totalMin = Math.round(hoursLeft * 60)
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return h > 0 ? `${h}h ${m}m left` : `${m}m left`
+}
+
 function getDayRingState() {
   const now = new Date()
   const h = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600
@@ -187,10 +194,10 @@ function getDayRingState() {
   const C = 2 * Math.PI * 50
 
   if (h < WAKE) {
-    return { percent: 0, stroke: 'rgba(255,255,255,0.08)', dashOffset: C, phase: 'SLEEPING', display: '—' }
+    return { percent: 0, stroke: 'rgba(255,255,255,0.08)', dashOffset: C, phase: 'SLEEPING', display: '—', remaining: null }
   }
   if (h >= SLEEP) {
-    return { percent: 100, stroke: '#2e3a66', dashOffset: 0, phase: 'PAST MIDNIGHT', display: '100%' }
+    return { percent: 100, stroke: '#2e3a66', dashOffset: 0, phase: 'PAST MIDNIGHT', display: '100%', remaining: null }
   }
   const percent = ((h - WAKE) / (SLEEP - WAKE)) * 100
   const phase = percent < 25 ? 'MORNING' : percent < 50 ? 'MIDDAY' : percent < 75 ? 'AFTERNOON' : percent < 90 ? 'EVENING' : 'BEDTIME'
@@ -200,6 +207,7 @@ function getDayRingState() {
     dashOffset: C * (1 - percent / 100),
     phase,
     display: `${Math.round(percent)}%`,
+    remaining: formatRemaining(SLEEP - h),
   }
 }
 
@@ -238,6 +246,14 @@ function DayRing() {
           >
             {state.phase}
           </span>
+          {state.remaining && (
+            <span
+              className="text-[7px] tracking-[0.1em] text-[#555] mt-[2px]"
+              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+            >
+              {state.remaining}
+            </span>
+          )}
         </div>
       </div>
       <div

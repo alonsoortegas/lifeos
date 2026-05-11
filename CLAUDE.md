@@ -153,10 +153,10 @@ http://localhost:3000/callback
 https://lifeos-zeta-three.vercel.app/callback
 ```
 
-**Adding `offline` scope (once Whoop approves the app):**
-1. Add `offline` to `WHOOP_SCOPES` in `components/tabs/WhoopTab.tsx`
-2. The Edge Function already handles `refresh_token` grant — no other changes needed
-3. Users will need to reconnect once to get a refresh token issued
+**Whoop `offline` scope:**
+- `offline` is already included in `WHOOP_SCOPES` for the app tabs.
+- The Edge Function already handles `refresh_token` grant.
+- Once Whoop approves the app for offline access, users need to reconnect once to get a refresh token issued.
 
 **Chart visibility:**
 - Recovery/HRV/Strain sparklines: appear after 2+ days of synced data (`whoop_snapshots` needs ≥ 2 rows)
@@ -179,23 +179,14 @@ https://lifeos-zeta-three.vercel.app/callback
 ### Must-do before this is a real daily driver
 
 - [ ] **Supabase RLS** — tighten RLS policies before sharing the app. Currently open dev policies on all tables.
-- [ ] **Notion integration** — read training plan and nutrition plan pages via Notion API. Populate `WorkoutTab` with today's session and `NutritionTab` meal structure. Read-only.
-- [ ] **PWA icons** — add actual `icon-192.png` and `icon-512.png` to `public/`. The manifest references them but they don't exist yet.
+- [ ] **Plan/content architecture** — decide whether training and nutrition plans should stay DB-first, sync from Notion read-only, or use another source-of-truth model.
 
 ### FocusTab enhancements
 
 - [ ] **Goal inline editing and reorder** — support editing and reordering items in both Today and Plan Tomorrow lists.
-- [ ] **Goal rollover** — on load, find any `todos` rows with `day_date < today` that are `done = false`, push them into today's list (dedup by exact text), then delete the originals. Runs once per session.
-- [ ] **Push remaining button** — full-width dashed button below the goal list, visible only when at least one goal is unchecked. On confirm, moves all unchecked goals to the tomorrow list (dedup), removes them from today. Keeps checked goals in place.
-
-### TodayTab enhancements
-
-- [ ] **Day Ring remaining time** — add remaining awake time to the existing Day Ring.
 
 ### Nice-to-have
 
-- [ ] **Daily anchor rotation** — store a list of anchors in Supabase or a local JSON file; rotate daily rather than hardcoding one quote.
-- [ ] **Workout history** — show last session's sets inline on exercise cards (`last: 225 × 5 @ 8`). Read from `workout_logs` filtered by exercise name.
 - [ ] **Service worker caching** — implement a proper offline strategy in `public/sw.js` (cache-first for static assets, network-first for API routes).
 - [ ] **Strain live fill** — today's strain card shows `—` until Whoop syncs a workout. Auto-fill once a cycle with strain exists for today.
 - [ ] **Keyboard shortcut** — `1–5` keys to switch tabs on desktop.
