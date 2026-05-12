@@ -33,7 +33,7 @@ function MobileShell() {
     switch (activeTab) {
       case 0: return <TodayTab />
       case 1: return <FocusTab />
-      case 2: return <WorkoutTab />
+      case 2: return <WorkoutTab canAddExercises />
       case 3: return <NutritionTab />
       case 4: return <WhoopTab />
       default: return <TodayTab />

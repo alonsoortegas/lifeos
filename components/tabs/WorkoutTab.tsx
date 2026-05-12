@@ -59,6 +59,24 @@ interface ExerciseState {
   loggedSets: { id?: number; setNum: number; weight: number; reps: number; rpe: number; loggedAt?: string }[]
 }
 
+interface ExerciseFormState {
+  name: string
+  sets: string
+  reps: string
+  weight: string
+  rpe: string
+  notes: string
+}
+
+const EMPTY_EXERCISE_FORM: ExerciseFormState = {
+  name: '',
+  sets: '',
+  reps: '',
+  weight: '',
+  rpe: '',
+  notes: '',
+}
+
 function todayRange() {
   const start = new Date()
   start.setHours(0, 0, 0, 0)
@@ -67,7 +85,7 @@ function todayRange() {
   return { start: start.toISOString(), end: end.toISOString() }
 }
 
-export default function WorkoutTab() {
+export default function WorkoutTab({ canAddExercises = false }: { canAddExercises?: boolean }) {
   const today = getTodayKey()
   const currentWeek = getCurrentWeek()
 
@@ -77,12 +95,18 @@ export default function WorkoutTab() {
   const [lastSets, setLastSets] = useState<Record<string, WorkoutLog>>({})
   const [exerciseStates, setExerciseStates] = useState<ExerciseState[]>([])
   const [loading, setLoading] = useState(true)
+  const [addOpen, setAddOpen] = useState(false)
+  const [addSaving, setAddSaving] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [exerciseForm, setExerciseForm] = useState<ExerciseFormState>(EMPTY_EXERCISE_FORM)
 
   const loadSession = useCallback(async (day: string) => {
     setLoading(true)
     setSession(null)
     setExercises([])
     setExerciseStates([])
+    setAddOpen(false)
+    setAddError(null)
 
     const dbKey = DAY_META[day]?.dbKey
     if (!dbKey) { setLoading(false); return }
@@ -173,6 +197,68 @@ export default function WorkoutTab() {
 
   const updateState = (i: number, patch: Partial<ExerciseState>) =>
     setExerciseStates(prev => prev.map((s, idx) => idx === i ? { ...s, ...patch } : s))
+
+  const updateExerciseForm = (patch: Partial<ExerciseFormState>) => {
+    setExerciseForm(prev => ({ ...prev, ...patch }))
+    setAddError(null)
+  }
+
+  const addExercise = async () => {
+    if (!session || addSaving) return
+
+    const name = exerciseForm.name.trim()
+    if (!name) {
+      setAddError('Exercise name is required')
+      return
+    }
+
+    const parsedSets = exerciseForm.sets ? Number.parseInt(exerciseForm.sets, 10) : Number.NaN
+    const parsedWeight = exerciseForm.weight ? Number.parseFloat(exerciseForm.weight) : Number.NaN
+    const orderIndex = exercises.reduce((max, ex) => Math.max(max, ex.order_index), -1) + 1
+
+    setAddSaving(true)
+    setAddError(null)
+
+    const payload = {
+      session_id: session.id,
+      order_index: orderIndex,
+      exercise_name: name,
+      prescribed_sets: Number.isFinite(parsedSets) ? parsedSets : null,
+      prescribed_reps: exerciseForm.reps.trim() || null,
+      prescribed_weight: Number.isFinite(parsedWeight) ? parsedWeight : null,
+      weight_unit: 'kg',
+      target_rpe: exerciseForm.rpe.trim() || null,
+      notes: exerciseForm.notes.trim() || null,
+    }
+
+    const { data, error } = await supabase
+      .from('workout_exercises')
+      .insert(payload)
+      .select('*')
+      .single()
+
+    setAddSaving(false)
+
+    if (error) {
+      setAddError(error.message)
+      return
+    }
+
+    const exercise = data as WorkoutExercise
+    setExercises(prev => [...prev, exercise])
+    setExerciseStates(prev => [
+      ...prev,
+      {
+        expanded: true,
+        weight: exercise.prescribed_weight ?? 0,
+        selectedReps: parseReps(exercise.prescribed_reps),
+        selectedRpe: parseRpe(exercise.target_rpe),
+        loggedSets: [],
+      },
+    ])
+    setExerciseForm(EMPTY_EXERCISE_FORM)
+    setAddOpen(false)
+  }
 
   const logSet = (i: number) => {
     if (!session) return
@@ -294,10 +380,31 @@ export default function WorkoutTab() {
         <>
           {/* Header */}
           <div>
-            <div className="text-[#00d26a] uppercase text-[11px] tracking-widest mb-1" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-              WEEK {currentWeek} · {session.session_type.toUpperCase()}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[#00d26a] uppercase text-[11px] tracking-widest mb-1" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                  WEEK {currentWeek} · {session.session_type.toUpperCase()}
+                </div>
+                <h1 className="text-[22px] font-bold text-[#ededed]">{session.title}</h1>
+              </div>
+              {canAddExercises && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddOpen(open => !open)
+                    setAddError(null)
+                  }}
+                  aria-label={addOpen ? 'Close add exercise form' : 'Add exercise'}
+                  className={`flex-shrink-0 h-10 w-10 rounded-lg border text-xl leading-none flex items-center justify-center transition-colors ${
+                    addOpen
+                      ? 'border-[#00d26a] bg-[#00d26a] text-[#0e0e0e]'
+                      : 'border-[#2a2a2a] bg-transparent text-[#00d26a]'
+                  }`}
+                >
+                  {addOpen ? '−' : '+'}
+                </button>
+              )}
             </div>
-            <h1 className="text-[22px] font-bold text-[#ededed]">{session.title}</h1>
             <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
               {exercises.length} exercises · {totalSets} sets logged
             </div>
@@ -307,6 +414,126 @@ export default function WorkoutTab() {
               </div>
             )}
           </div>
+
+          {canAddExercises && addOpen && (
+            <Card className="p-4">
+              <form
+                className="space-y-3"
+                onSubmit={event => {
+                  event.preventDefault()
+                  void addExercise()
+                }}
+              >
+                <div>
+                  <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-name">
+                    Exercise
+                  </label>
+                  <input
+                    id="exercise-name"
+                    value={exerciseForm.name}
+                    onChange={event => updateExerciseForm({ name: event.target.value })}
+                    placeholder="e.g. Farmers Carry"
+                    className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none placeholder:text-[#3a3a3a] focus:border-[#00d26a]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-sets">
+                      Sets
+                    </label>
+                    <input
+                      id="exercise-sets"
+                      inputMode="numeric"
+                      type="number"
+                      min="0"
+                      value={exerciseForm.sets}
+                      onChange={event => updateExerciseForm({ sets: event.target.value })}
+                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-reps">
+                      Reps
+                    </label>
+                    <input
+                      id="exercise-reps"
+                      value={exerciseForm.reps}
+                      onChange={event => updateExerciseForm({ reps: event.target.value })}
+                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-weight">
+                      KG
+                    </label>
+                    <input
+                      id="exercise-weight"
+                      inputMode="decimal"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={exerciseForm.weight}
+                      onChange={event => updateExerciseForm({ weight: event.target.value })}
+                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-[88px_1fr] gap-2">
+                  <div>
+                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-rpe">
+                      RPE
+                    </label>
+                    <input
+                      id="exercise-rpe"
+                      inputMode="decimal"
+                      value={exerciseForm.rpe}
+                      onChange={event => updateExerciseForm({ rpe: event.target.value })}
+                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-notes">
+                      Notes
+                    </label>
+                    <input
+                      id="exercise-notes"
+                      value={exerciseForm.notes}
+                      onChange={event => updateExerciseForm({ notes: event.target.value })}
+                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                    />
+                  </div>
+                </div>
+
+                {addError && (
+                  <div className="text-[#ff6b6b] text-[11px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                    {addError}
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddOpen(false)
+                      setAddError(null)
+                    }}
+                    className="h-11 flex-1 rounded-lg border border-[#2a2a2a] text-[#888] text-sm font-bold active:opacity-70"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={addSaving}
+                    className="h-11 flex-1 rounded-lg bg-[#00d26a] text-[#0e0e0e] text-sm font-bold active:opacity-80 disabled:opacity-50"
+                  >
+                    {addSaving ? 'Adding…' : 'Add exercise'}
+                  </button>
+                </div>
+              </form>
+            </Card>
+          )}
 
           {/* Exercise cards */}
           {exercises.map((ex, i) => {
