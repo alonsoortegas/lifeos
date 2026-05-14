@@ -202,7 +202,7 @@ export default function DesktopShell() {
     switch (activeTab) {
       case 'today':     return <TodayTab />
       case 'focus':     return <FocusTab />
-      case 'workout':   return <WorkoutTab />
+      case 'workout':   return <WorkoutTab canAddExercises />
       case 'nutrition': return <NutritionTab />
       case 'bio':       return <BioDesktop />
       default:          return <TodayTab />
