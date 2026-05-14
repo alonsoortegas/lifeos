@@ -230,4 +230,5 @@ export interface Todo {
   done: boolean
   created_at: string
   day_date: string
+  sort_order: number
 }

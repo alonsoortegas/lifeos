@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useSyncExternalStore } from 'react'
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import TabBar from '@/components/TabBar'
 import TodayTab from '@/components/tabs/TodayTab'
 import FocusTab from '@/components/tabs/FocusTab'
@@ -28,6 +28,18 @@ function getServerDesktopSnapshot() {
 
 function MobileShell() {
   const [activeTab, setActiveTab] = useState(0)
+  const touchStartX = useRef(0)
+  const touchStartY = useRef(0)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      const n = parseInt(e.key)
+      if (n >= 1 && n <= 5) setActiveTab(n - 1)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   const renderTab = () => {
     switch (activeTab) {
@@ -73,7 +85,20 @@ function MobileShell() {
         </div>
       </header>
 
-      <main className="overflow-y-auto pt-28 pb-24">
+      <main
+        className="overflow-y-auto pt-28 pb-24"
+        onTouchStart={e => {
+          touchStartX.current = e.touches[0].clientX
+          touchStartY.current = e.touches[0].clientY
+        }}
+        onTouchEnd={e => {
+          const dx = e.changedTouches[0].clientX - touchStartX.current
+          const dy = e.changedTouches[0].clientY - touchStartY.current
+          if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+            setActiveTab(t => dx < 0 ? Math.min(4, t + 1) : Math.max(0, t - 1))
+          }
+        }}
+      >
         {renderTab()}
       </main>
 

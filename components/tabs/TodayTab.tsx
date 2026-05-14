@@ -6,6 +6,7 @@ import Ring from '@/components/ui/Ring'
 import StatCard from '@/components/ui/StatCard'
 import type { WhoopSnapshot, Todo } from '@/lib/types'
 import { getCurrentGoalDate, getMillisecondsUntilNextGoalReset } from '@/lib/goal-dates'
+import { getCurrentWeek, getTodayKey, DAY_META } from '@/lib/workout'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -118,15 +119,20 @@ function GoalTicker() {
     textColor = '#ededed'
   }
 
+  const allDone = total > 0 && pending.length === 0
+
   return (
-    <div className="flex items-center gap-2 px-3 py-[6px] rounded-[10px] bg-[#1a1a1a] border border-[#2a2a2a]">
+    <div className="relative flex items-center gap-2 px-3 py-[6px] rounded-[10px] bg-[#1a1a1a] border border-[#2a2a2a] overflow-hidden">
       <style>{`
         @keyframes tickerPulse { 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:0.4; transform:scale(0.85);} }
         @keyframes tickerSlideIn { from{ transform:translateY(100%); opacity:0;} to{ transform:translateY(0); opacity:1;} }
       `}</style>
       <div
         className="w-[7px] h-[7px] rounded-full flex-shrink-0"
-        style={{ background: '#00d26a', animation: 'tickerPulse 1.6s ease-in-out infinite' }}
+        style={{
+          background: '#00d26a',
+          animation: allDone ? 'none' : 'tickerPulse 1.6s ease-in-out infinite',
+        }}
       />
       <div
         className="text-[9px] font-bold tracking-[0.18em] uppercase flex-shrink-0"
@@ -148,15 +154,21 @@ function GoalTicker() {
         </span>
       </div>
       <div
-        className="text-[11px] px-[7px] py-[2px] rounded-full flex-shrink-0"
+        className="text-[11px] px-[7px] py-[2px] rounded-full flex-shrink-0 transition-colors duration-300"
         style={{
           fontFamily: 'var(--font-jetbrains-mono, monospace)',
-          color: '#888',
+          color: allDone ? '#00d26a' : '#888',
           background: 'rgba(255,255,255,0.04)',
         }}
       >
         {done}/{total}
       </div>
+      {total > 0 && (
+        <div
+          className="absolute bottom-0 left-0 h-[2px] bg-[#00d26a] transition-all duration-700"
+          style={{ width: `${(done / total) * 100}%` }}
+        />
+      )}
     </div>
   )
 }
@@ -331,7 +343,9 @@ export default function TodayTab() {
 
   const dayName = now ? now.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() : 'TODAY'
   const dateStr = now ? now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase() : '—'
-  const weekNum = now ? Math.ceil(now.getDate() / 7) : '—'
+  const trainingWeek = getCurrentWeek()
+  const todayMeta = DAY_META[getTodayKey()]
+  const blockLabel = todayMeta.dbKey ? 'WEIGHTS' : todayMeta.restLabel
   const greeting = now ? getGreeting() : 'Welcome back'
 
   const recovery = snap?.recovery_score ?? 0
@@ -345,7 +359,7 @@ export default function TodayTab() {
         </div>
         <h1 className="text-[22px] font-bold text-[#ededed] mt-1">{greeting}</h1>
         <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-          WEEK {weekNum} · TRAINING BLOCK A
+          WEEK {trainingWeek} · {blockLabel}
         </div>
       </div>
 

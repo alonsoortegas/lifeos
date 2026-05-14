@@ -1,26 +1,57 @@
+import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 
 const COOKIE = 'lifeos_auth'
 const LOGIN = '/login'
 
-export function proxy(req: NextRequest) {
+const PUBLIC_PREFIXES = [LOGIN, '/api/auth', '/api/whoop-callback', '/callback']
+
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Let login page, auth endpoint, and Whoop OAuth callback through
-  if (pathname === LOGIN || pathname.startsWith('/api/auth') || pathname === '/api/whoop-callback' || pathname === '/callback') {
+  if (PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))) {
     return NextResponse.next()
   }
 
   const token = req.cookies.get(COOKIE)?.value
   const expected = process.env.APP_PASSWORD
-
   if (!expected || token !== expected) {
     const url = req.nextUrl.clone()
     url.pathname = LOGIN
     return NextResponse.redirect(url)
   }
 
-  return NextResponse.next()
+  let res = NextResponse.next({ request: req })
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
+    {
+      cookies: {
+        getAll() { return req.cookies.getAll() },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value))
+          res = NextResponse.next({ request: req })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            res.cookies.set(name, value, options as Parameters<typeof res.cookies.set>[2])
+          )
+        },
+      },
+    }
+  )
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // If lifeos_auth is valid but the Supabase session expired (refresh token TTL
+  // is 7 days), silently re-sign-in so RLS keeps working without a manual login
+  if (!user) {
+    const email = process.env.SUPABASE_OWNER_EMAIL
+    const ownerPass = process.env.SUPABASE_OWNER_PASSWORD
+    if (email && ownerPass) {
+      await supabase.auth.signInWithPassword({ email, password: ownerPass })
+    }
+  }
+
+  return res
 }
 
 export const config = {

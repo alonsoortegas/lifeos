@@ -4,35 +4,28 @@ import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import Card from '@/components/ui/Card'
 import type { WorkoutSession, WorkoutExercise, WorkoutLog } from '@/lib/types'
+import { getCurrentWeek, getTodayKey, DAY_ORDER, DAY_META } from '@/lib/workout'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 )
 
-// Plan started Monday April 27 2026
-const PLAN_START = new Date('2026-04-27T00:00:00')
-const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000
-
-function getCurrentWeek(): number {
-  const elapsed = Date.now() - PLAN_START.getTime()
-  return Math.min(6, Math.max(1, Math.ceil(elapsed / MS_PER_WEEK)))
+// Returns the upper bound of a prescribed_reps string ("4-5" → 5, "8/leg" → 8, "5" → 5)
+function parseTopReps(r: string | null): number | null {
+  if (!r) return null
+  const range = r.match(/(\d+)\s*-\s*(\d+)/)
+  if (range) return parseInt(range[2], 10)
+  const single = r.match(/\d+/)
+  return single ? parseInt(single[0], 10) : null
 }
 
-const DAY_ORDER = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-
-const DAY_META: Record<string, { label: string; dbKey: string | null; restLabel: string; restSub: string }> = {
-  monday:    { label: 'MON', dbKey: 'monday',      restLabel: 'REST DAY',         restSub: 'No session scheduled' },
-  tuesday:   { label: 'TUE', dbKey: null,           restLabel: 'ZONE 2 + HYROX',   restSub: 'Zone 2 run AM · Hyrox class PM' },
-  wednesday: { label: 'WED', dbKey: 'wednesday',    restLabel: 'REST DAY',         restSub: 'No session scheduled' },
-  thursday:  { label: 'THU', dbKey: 'thursday_am',  restLabel: 'INTERVALS',        restSub: 'VO₂ max intervals PM — legs already covered AM' },
-  friday:    { label: 'FRI', dbKey: null,           restLabel: 'MACHINE WORK',     restSub: 'SkiErg / Row trials or accessory work' },
-  saturday:  { label: 'SAT', dbKey: null,           restLabel: 'THRESHOLD RUN',    restSub: 'Threshold run or Hyrox simulation' },
-  sunday:    { label: 'SUN', dbKey: null,           restLabel: 'REST DAY',         restSub: 'Full recovery — no session scheduled' },
-}
-
-function getTodayKey(): string {
-  return DAY_ORDER[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1] ?? 'monday'
+// If the last set hit or exceeded the top of the prescribed rep range, suggest +2.5kg
+function getProgressionSuggestion(ex: WorkoutExercise, last: WorkoutLog | undefined): number | null {
+  if (!last?.weight_lbs || last.weight_lbs <= 0) return null
+  const top = parseTopReps(ex.prescribed_reps)
+  if (top === null) return null
+  return (last.reps ?? 0) >= top ? last.weight_lbs + 2.5 : null
 }
 
 // Parse a prescribed_reps string to a numeric default (e.g. "4-5" → 4, "8/leg" → 8)
@@ -130,7 +123,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
     const exList = (exData ?? []) as WorkoutExercise[]
     setExercises(exList)
 
-    // Load last logged set per exercise
+    // Load last logged set per exercise from a previous session (before today)
     if (exList.length > 0) {
       const names = exList.map(e => e.exercise_name)
       const { start, end } = todayRange()
@@ -138,6 +131,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
         .from('workout_logs')
         .select('*')
         .in('exercise_name', names)
+        .lt('logged_at', start)
         .order('logged_at', { ascending: false })
 
       const last: Record<string, WorkoutLog> = {}
@@ -541,6 +535,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
             if (!s) return null
             const last = lastSets[ex.exercise_name]
             const setsTarget = ex.prescribed_sets ?? 0
+            const suggestion = getProgressionSuggestion(ex, last)
 
             return (
               <Card key={ex.id} className="overflow-hidden">
@@ -556,8 +551,11 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       {ex.target_rpe ? ` · RPE ${ex.target_rpe}` : ''}
                     </div>
                     {last && (
-                      <div className="text-[#3a3a3a] text-[10px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                        last: {last.weight_lbs}{last.weight_unit} × {last.reps} @ {last.rpe}
+                      <div className="text-[10px] mt-0.5 flex items-center gap-2" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                        <span className="text-[#3a3a3a]">last {last.weight_lbs}{last.weight_unit} × {last.reps} @ {last.rpe}</span>
+                        {suggestion !== null && (
+                          <span className="text-[#00d26a]">→ try {suggestion}kg</span>
+                        )}
                       </div>
                     )}
                   </div>

@@ -39,6 +39,8 @@ export default function FocusTab() {
   const [dbAvailable, setDbAvailable] = useState(true)
   const [tomorrowTodos, setTomorrowTodos] = useState<Todo[]>([])
   const [tomorrowInput, setTomorrowInput] = useState('')
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editText, setEditText] = useState('')
   const didRollover = useRef(false)
 
   const loadTodos = useCallback(async () => {
@@ -49,6 +51,7 @@ export default function FocusTab() {
         .from('todos')
         .select('*')
         .eq('day_date', today)
+        .order('sort_order', { ascending: true })
         .order('created_at', { ascending: true })
       if (error) {
         setDbAvailable(false)
@@ -68,6 +71,7 @@ export default function FocusTab() {
         .from('todos')
         .select('*')
         .eq('day_date', tomorrow)
+        .order('sort_order', { ascending: true })
         .order('created_at', { ascending: true })
       setTomorrowTodos(data ?? [])
     } catch {
@@ -163,11 +167,44 @@ export default function FocusTab() {
     }
   }
 
+  const moveItem = async (
+    id: number,
+    list: Todo[],
+    setter: React.Dispatch<React.SetStateAction<Todo[]>>,
+    direction: 'up' | 'down',
+  ) => {
+    const idx = list.findIndex(t => t.id === id)
+    if (idx < 0) return
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= list.length) return
+
+    const a = list[idx]
+    const b = list[swapIdx]
+    const aOrder = a.sort_order
+    const bOrder = b.sort_order
+
+    setter(prev => prev.map(t => {
+      if (t.id === a.id) return { ...t, sort_order: bOrder }
+      if (t.id === b.id) return { ...t, sort_order: aOrder }
+      return t
+    }).sort((x, y) => x.sort_order - y.sort_order))
+
+    if (!dbAvailable) return
+    try {
+      const supabase = createClient()
+      await Promise.all([
+        supabase.from('todos').update({ sort_order: bOrder }).eq('id', a.id),
+        supabase.from('todos').update({ sort_order: aOrder }).eq('id', b.id),
+      ])
+    } catch { /* optimistic swap stands */ }
+  }
+
   const addTodo = async (text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
 
     const today = getCurrentGoalDate()
+    const nextOrder = todos.length > 0 ? Math.max(...todos.map(t => t.sort_order ?? 0)) + 1 : 1
     const tempId = Date.now()
     const optimistic: Todo = {
       id: tempId,
@@ -175,6 +212,7 @@ export default function FocusTab() {
       done: false,
       created_at: new Date().toISOString(),
       day_date: today,
+      sort_order: nextOrder,
     }
 
     // Optimistic update
@@ -190,7 +228,7 @@ export default function FocusTab() {
       const supabase = createClient()
       const { data, error } = await supabase
         .from('todos')
-        .insert({ text: trimmed, day_date: today })
+        .insert({ text: trimmed, day_date: today, sort_order: nextOrder })
         .select()
         .single()
       if (!error && data) {
@@ -223,6 +261,7 @@ export default function FocusTab() {
     if (!trimmed) return
 
     const tomorrow = getNextGoalDate()
+    const nextOrder = tomorrowTodos.length > 0 ? Math.max(...tomorrowTodos.map(t => t.sort_order ?? 0)) + 1 : 1
     const tempId = Date.now()
     const optimistic: Todo = {
       id: tempId,
@@ -230,6 +269,7 @@ export default function FocusTab() {
       done: false,
       created_at: new Date().toISOString(),
       day_date: tomorrow,
+      sort_order: nextOrder,
     }
 
     setTomorrowTodos((prev) => [...prev, optimistic])
@@ -241,7 +281,7 @@ export default function FocusTab() {
       const supabase = createClient()
       const { data, error } = await supabase
         .from('todos')
-        .insert({ text: trimmed, day_date: tomorrow })
+        .insert({ text: trimmed, day_date: tomorrow, sort_order: nextOrder })
         .select()
         .single()
       if (!error && data) {
@@ -264,6 +304,28 @@ export default function FocusTab() {
       await supabase.from('todos').delete().eq('id', id)
     } catch {
       // non-critical
+    }
+  }
+
+  const saveEdit = async (id: number, newText: string, isTomorrow = false) => {
+    const trimmed = newText.trim()
+    setEditingId(null)
+    if (!trimmed) return
+
+    const setter = isTomorrow ? setTomorrowTodos : setTodos
+    setter(prev => prev.map(t => t.id === id ? { ...t, text: trimmed } : t))
+
+    if (!dbAvailable) {
+      if (!isTomorrow) window.dispatchEvent(new CustomEvent('goals-changed'))
+      return
+    }
+
+    try {
+      const supabase = createClient()
+      await supabase.from('todos').update({ text: trimmed }).eq('id', id)
+      if (!isTomorrow) window.dispatchEvent(new CustomEvent('goals-changed'))
+    } catch {
+      // optimistic edit stands
     }
   }
 
@@ -416,36 +478,61 @@ export default function FocusTab() {
                 <li key={todo.id} className="group flex items-center">
                   <button
                     onClick={() => toggleTodo(todo)}
-                    className="flex-1 flex items-center gap-3 px-4 py-3 text-left min-h-[44px]"
+                    className="flex-shrink-0 px-4 py-3 min-h-[44px] flex items-center"
+                    aria-label={todo.done ? 'Mark incomplete' : 'Mark complete'}
                   >
-                    {/* Checkbox */}
                     <span
-                      className={`flex-shrink-0 w-5 h-5 rounded border flex items-center justify-center ${
-                        todo.done
-                          ? 'bg-[#00d26a] border-[#00d26a]'
-                          : 'bg-transparent border-[#3a3a3a]'
+                      className={`w-5 h-5 rounded border flex items-center justify-center ${
+                        todo.done ? 'bg-[#00d26a] border-[#00d26a]' : 'bg-transparent border-[#3a3a3a]'
                       }`}
                     >
                       {todo.done && (
                         <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
-                          <path
-                            d="M1 4L4 7L10 1"
-                            stroke="#0e0e0e"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
+                          <path d="M1 4L4 7L10 1" stroke="#0e0e0e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       )}
                     </span>
-                    <span
-                      className={`text-sm leading-snug ${
-                        todo.done ? 'text-[#555] line-through' : 'text-[#ededed]'
-                      }`}
-                    >
-                      {todo.text}
-                    </span>
                   </button>
+                  <div
+                    className="flex-1 py-3 pr-1 min-h-[44px] flex items-center"
+                    onClick={() => { if (!todo.done && editingId !== todo.id) { setEditingId(todo.id); setEditText(todo.text) } }}
+                  >
+                    {editingId === todo.id ? (
+                      <input
+                        autoFocus
+                        value={editText}
+                        onChange={e => setEditText(e.target.value)}
+                        onBlur={() => saveEdit(todo.id, editText)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') { e.preventDefault(); saveEdit(todo.id, editText) }
+                          if (e.key === 'Escape') setEditingId(null)
+                        }}
+                        className="w-full bg-transparent text-sm text-[#ededed] outline-none border-b border-[#3a3a3a] pb-0.5"
+                      />
+                    ) : (
+                      <span className={`text-sm leading-snug ${todo.done ? 'text-[#555] line-through cursor-default' : 'text-[#ededed] cursor-text'}`}>
+                        {todo.text}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => moveItem(todo.id, todos, setTodos, 'up')}
+                      disabled={todos.indexOf(todo) === 0}
+                      className="text-[#555] hover:text-[#888] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
+                      aria-label="Move up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => moveItem(todo.id, todos, setTodos, 'down')}
+                      disabled={todos.indexOf(todo) === todos.length - 1}
+                      className="text-[#555] hover:text-[#888] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
+                      aria-label="Move down"
+                    >
+                      ↓
+                    </button>
+                  </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteTodo(todo.id) }}
                     className="opacity-0 group-hover:opacity-100 text-[#555] hover:text-[#ef4444] text-[14px] leading-none px-3 py-3 transition-opacity min-h-[44px] flex items-center"
@@ -531,21 +618,56 @@ export default function FocusTab() {
           ) : (
             <ul className="divide-y divide-[#2a2a2a]">
               {tomorrowTodos.map((todo) => (
-                <li key={todo.id} className="group">
-                  <div className="w-full flex items-center gap-3 px-4 py-3 text-left min-h-[44px] opacity-55">
-                    <span
-                      className="flex-shrink-0 w-5 h-5 rounded border border-[#3a3a3a] bg-transparent flex items-center justify-center cursor-not-allowed"
-                      title="Activates at 6 AM"
-                    />
-                    <span className="flex-1 text-sm text-[#ededed]">{todo.text}</span>
+                <li key={todo.id} className="group flex items-center">
+                  <span
+                    className="flex-shrink-0 mx-4 w-5 h-5 rounded border border-[#3a3a3a] bg-transparent opacity-55"
+                    title="Activates at 6 AM"
+                  />
+                  <div
+                    className="flex-1 py-3 pr-1 min-h-[44px] flex items-center"
+                    onClick={() => { if (editingId !== todo.id) { setEditingId(todo.id); setEditText(todo.text) } }}
+                  >
+                    {editingId === todo.id ? (
+                      <input
+                        autoFocus
+                        value={editText}
+                        onChange={e => setEditText(e.target.value)}
+                        onBlur={() => saveEdit(todo.id, editText, true)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') { e.preventDefault(); saveEdit(todo.id, editText, true) }
+                          if (e.key === 'Escape') setEditingId(null)
+                        }}
+                        className="w-full bg-transparent text-sm text-[#ededed] outline-none border-b border-[#3a3a3a] pb-0.5"
+                      />
+                    ) : (
+                      <span className="text-sm text-[#ededed] opacity-55 cursor-text">{todo.text}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
-                      onClick={() => deleteTomorrowTodo(todo.id)}
-                      className="opacity-0 group-hover:opacity-100 text-[#555] hover:text-[#ef4444] text-[14px] leading-none px-1 transition-opacity"
-                      aria-label="Delete"
+                      onClick={() => moveItem(todo.id, tomorrowTodos, setTomorrowTodos, 'up')}
+                      disabled={tomorrowTodos.indexOf(todo) === 0}
+                      className="text-[#555] hover:text-[#888] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
+                      aria-label="Move up"
                     >
-                      ×
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => moveItem(todo.id, tomorrowTodos, setTomorrowTodos, 'down')}
+                      disabled={tomorrowTodos.indexOf(todo) === tomorrowTodos.length - 1}
+                      className="text-[#555] hover:text-[#888] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
+                      aria-label="Move down"
+                    >
+                      ↓
                     </button>
                   </div>
+                  <button
+                    onClick={() => deleteTomorrowTodo(todo.id)}
+                    className="opacity-0 group-hover:opacity-100 text-[#555] hover:text-[#ef4444] text-[14px] leading-none px-3 py-3 transition-opacity min-h-[44px] flex items-center"
+                    aria-label="Delete"
+                  >
+                    ×
+                  </button>
                 </li>
               ))}
             </ul>
