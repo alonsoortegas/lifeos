@@ -209,11 +209,6 @@ export default function DesktopShell() {
     }
   }
 
-  const todayStr = new Date().toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  })
 
   return (
     <div className="h-screen bg-[#0e0e0e] text-[#ededed] flex flex-col overflow-hidden relative">
@@ -298,26 +293,6 @@ export default function DesktopShell() {
             })}
           </nav>
 
-          <div className="my-4 border-t border-dashed border-[#2a2a2a]" />
-
-          {/* Saved views */}
-          <div
-            className="px-2 mb-1.5 text-[#555] uppercase tracking-[0.12em]"
-            style={{ fontSize: 11, fontFamily: 'var(--font-inter-tight, sans-serif)' }}
-          >
-            Saved views
-          </div>
-          {['Last 7 days', 'PRs only', 'Sleep debt'].map(s => (
-            <button
-              key={s}
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded text-[#888] hover:text-[#ededed] transition-colors text-left"
-              style={{ fontSize: 12, fontFamily: 'var(--font-inter-tight, sans-serif)' }}
-            >
-              <span className="font-mono text-[10px] text-[#555]">·</span>
-              {s}
-            </button>
-          ))}
-
           <div className="flex-1" />
 
           {/* User */}
@@ -341,33 +316,6 @@ export default function DesktopShell() {
 
           {/* Topbar */}
           <div className="h-11 flex-shrink-0 flex items-center gap-3.5 px-4 border-b border-[#2a2a2a]">
-            {/* Breadcrumb */}
-            <div
-              className="flex items-center gap-2 text-[13px] text-[#888]"
-              style={{ fontFamily: 'var(--font-inter-tight, sans-serif)' }}
-            >
-              <span>{currentTab?.label}</span>
-              <span className="text-[#555]">/</span>
-              <span className="text-[#ededed]">{todayStr}</span>
-            </div>
-
-            {/* Period pills */}
-            <div className="flex gap-1 ml-3">
-              {['D', 'W', 'M', 'Q', 'Y'].map((p, i) => (
-                <button
-                  key={p}
-                  className="flex items-center justify-center rounded font-mono text-[11px] transition-colors"
-                  style={{
-                    width: 26, height: 22,
-                    border: `1px solid ${i === 0 ? '#3a3a3a' : '#2a2a2a'}`,
-                    background: i === 0 ? 'rgba(255,255,255,0.04)' : 'transparent',
-                    color: i === 0 ? '#ededed' : '#888',
-                    cursor: 'pointer',
-                  }}
-                >{p}</button>
-              ))}
-            </div>
-
             <div className="flex-1" />
 
             {/* Sync status */}
