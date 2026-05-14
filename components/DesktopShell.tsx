@@ -1,38 +1,34 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { createClient } from '@/lib/supabase'
 import TodayTab from '@/components/tabs/TodayTab'
 import FocusTab from '@/components/tabs/FocusTab'
 import WorkoutTab from '@/components/tabs/WorkoutTab'
 import NutritionTab from '@/components/tabs/NutritionTab'
-import BioDesktop from '@/components/desktop/BioDesktop'
+import WhoopDesktop from '@/components/desktop/WhoopDesktop'
 
 const TABS = [
   { key: 'today',     icon: '◐', label: 'Today',     kbd: '1' },
   { key: 'focus',     icon: '◆', label: 'Focus',     kbd: '2' },
   { key: 'workout',   icon: '⌇', label: 'Workout',   kbd: '3' },
   { key: 'nutrition', icon: '◇', label: 'Nutrition', kbd: '4' },
-  { key: 'bio',       icon: '~', label: 'Whoop',     kbd: '5' },
+  { key: 'whoop',     icon: '~', label: 'Whoop',     kbd: '5' },
 ]
 
 const CMDK_ITEMS = [
-  { sec: 'jump',  ic: '◐', label: 'Go to Today',           kbd: '⌘1', tab: 'today' },
-  { sec: 'jump',  ic: '◆', label: 'Go to Focus',           kbd: '⌘2', tab: 'focus' },
-  { sec: 'jump',  ic: '⌇', label: 'Go to Workout',         kbd: '⌘3', tab: 'workout' },
-  { sec: 'jump',  ic: '◇', label: 'Go to Nutrition',       kbd: '⌘4', tab: 'nutrition' },
-  { sec: 'jump',  ic: '~', label: 'Go to Whoop',           kbd: '⌘5', tab: 'bio' },
-  { sec: 'log',   ic: '+', label: 'Log a meal',            kbd: 'M',  tab: 'nutrition' },
-  { sec: 'log',   ic: '+', label: 'Start workout',         kbd: 'W',  tab: 'workout' },
-  { sec: 'log',   ic: '+', label: 'Quick journal entry',   kbd: 'J',  tab: 'today' },
-  { sec: 'log',   ic: '+', label: 'Add water · 250ml',     kbd: '⌘D', tab: 'nutrition' },
-  { sec: 'data',  ic: '↑', label: 'Sync now',                                          },
-  { sec: 'data',  ic: '↗', label: 'Export today as markdown'                           },
+  { sec: 'jump',  ic: '◐', label: 'Go to Today',     kbd: '⌘1', tab: 'today' },
+  { sec: 'jump',  ic: '◆', label: 'Go to Focus',     kbd: '⌘2', tab: 'focus' },
+  { sec: 'jump',  ic: '⌇', label: 'Go to Workout',   kbd: '⌘3', tab: 'workout' },
+  { sec: 'jump',  ic: '◇', label: 'Go to Nutrition', kbd: '⌘4', tab: 'nutrition' },
+  { sec: 'jump',  ic: '~', label: 'Go to Whoop',     kbd: '⌘5', tab: 'whoop' },
+  { sec: 'log',   ic: '+', label: 'Log a meal',      kbd: 'M',  tab: 'nutrition' },
+  { sec: 'log',   ic: '+', label: 'Start workout',   kbd: 'W',  tab: 'workout' },
 ]
 
 const SEC_TITLES: Record<string, string> = {
   jump: 'Jump to',
   log:  'Quick log',
-  data: 'Data',
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
@@ -53,6 +49,56 @@ function FooterHint({ k, l }: { k: string; l: string }) {
       <span>{l}</span>
     </span>
   )
+}
+
+// ─── Topbar status ────────────────────────────────────────────────────────────
+const supabaseTopbar = createClient()
+
+type TopbarStatus = {
+  lastSnapshotAt: string | null
+  reauth: boolean
+  connected: boolean
+  loading: boolean
+}
+
+function useTopbarStatus(): TopbarStatus {
+  const [state, setState] = useState({ lastSnapshotAt: null as string | null, reauth: false, connected: false })
+  const [loading, setLoading] = useState(true)
+
+  async function refresh() {
+    const [statusRes, snapRes] = await Promise.allSettled([
+      fetch('/api/whoop-status').then(r => r.json()),
+      supabaseTopbar.from('whoop_snapshots').select('recorded_at').order('recorded_at', { ascending: false }).limit(1).single(),
+    ])
+    setState({
+      lastSnapshotAt: snapRes.status === 'fulfilled' ? (snapRes.value.data?.recorded_at ?? null) : null,
+      reauth: statusRes.status === 'fulfilled' ? (statusRes.value.reauth_required ?? false) : false,
+      connected: statusRes.status === 'fulfilled' ? (statusRes.value.connected ?? false) : false,
+    })
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    void refresh()
+    const id = setInterval(() => { void refresh() }, 5 * 60 * 1000)
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return { ...state, loading }
+}
+
+function formatTopbarStatus(s: TopbarStatus): { text: string; dotColor: string; textColor: string } {
+  if (s.loading) return { text: '…', dotColor: '#555', textColor: '#555' }
+  if (!s.connected) return { text: 'not connected', dotColor: '#555', textColor: '#555' }
+  if (s.reauth) return { text: 'reconnect whoop', dotColor: '#f59e0b', textColor: '#f59e0b' }
+  if (!s.lastSnapshotAt) return { text: 'no data', dotColor: '#555', textColor: '#555' }
+
+  const ageH = (Date.now() - new Date(s.lastSnapshotAt).getTime()) / 3_600_000
+  const timeAgo = ageH < 1 ? 'just now' : ageH < 24 ? `${Math.floor(ageH)}h ago` : `${Math.floor(ageH / 24)}d ago`
+
+  if (ageH > 30) return { text: `stale · ${timeAgo}`, dotColor: '#f59e0b', textColor: '#f59e0b' }
+  return { text: `whoop · ${timeAgo}`, dotColor: '#00d26a', textColor: '#888' }
 }
 
 function CommandPalette({
@@ -173,6 +219,8 @@ function CommandPalette({
 export default function DesktopShell() {
   const [activeTab, setActiveTab] = useState('today')
   const [cmdkOpen, setCmdkOpen] = useState(false)
+  const topbarStatus = useTopbarStatus()
+  const statusDisplay = formatTopbarStatus(topbarStatus)
 
   const currentTab = TABS.find(t => t.key === activeTab)
 
@@ -185,7 +233,7 @@ export default function DesktopShell() {
       if (mod && e.key === '2') { e.preventDefault(); setActiveTab('focus') }
       if (mod && e.key === '3') { e.preventDefault(); setActiveTab('workout') }
       if (mod && e.key === '4') { e.preventDefault(); setActiveTab('nutrition') }
-      if (mod && e.key === '5') { e.preventDefault(); setActiveTab('bio') }
+      if (mod && e.key === '5') { e.preventDefault(); setActiveTab('whoop') }
     }
     const escHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setCmdkOpen(false)
@@ -204,7 +252,7 @@ export default function DesktopShell() {
       case 'focus':     return <FocusTab />
       case 'workout':   return <WorkoutTab canAddExercises />
       case 'nutrition': return <NutritionTab />
-      case 'bio':       return <BioDesktop />
+      case 'whoop':     return <WhoopDesktop />
       default:          return <TodayTab />
     }
   }
@@ -319,9 +367,9 @@ export default function DesktopShell() {
             <div className="flex-1" />
 
             {/* Sync status */}
-            <div className="flex items-center gap-2 font-mono text-[11px] text-[#888]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00d26a] inline-block" />
-              <span>synced</span>
+            <div className="flex items-center gap-2 font-mono text-[11px]" style={{ color: statusDisplay.textColor }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: statusDisplay.dotColor }} />
+              <span>{statusDisplay.text}</span>
             </div>
 
             {/* Search button */}

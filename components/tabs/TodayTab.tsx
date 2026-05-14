@@ -7,26 +7,12 @@ import StatCard from '@/components/ui/StatCard'
 import type { WhoopSnapshot, Todo } from '@/lib/types'
 import { getCurrentGoalDate, getMillisecondsUntilNextGoalReset } from '@/lib/goal-dates'
 import { getCurrentWeek, getTodayKey, DAY_META } from '@/lib/workout'
+import { sleepHM, whoopAuthUrl } from '@/lib/whoop-utils'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 )
-
-const WHOOP_CLIENT_ID = 'aeb5a295-3c6a-42a9-9657-57227bb0adb7'
-const WHOOP_SCOPES = 'offline read:recovery read:sleep read:workout read:cycles read:body_measurement'
-
-function sleepHM(ms: number | null): string {
-  if (!ms) return '—'
-  const totalMin = Math.round(ms / 60000)
-  return `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`
-}
-
-function whoopAuthUrl(host: string): string {
-  const redirectUri = encodeURIComponent(`${host}/api/whoop-callback`)
-  const scope = encodeURIComponent(WHOOP_SCOPES)
-  return `https://api.prod.whoop.com/oauth/oauth2/auth?client_id=${WHOOP_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=lifeos26`
-}
 
 function strainValue(strain: number | null | undefined): string {
   if (strain == null) return '—'

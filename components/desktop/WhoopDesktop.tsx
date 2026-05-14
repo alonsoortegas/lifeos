@@ -1,7 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -15,7 +13,8 @@ import {
   type ChartOptions,
 } from 'chart.js'
 import { Line, Bar } from 'react-chartjs-2'
-import type { WhoopSnapshot, WhoopWorkout } from '@/lib/types'
+import { useWhoopData } from '@/lib/whoop-data'
+import { sportColor, avg, shortDate, whoopAuthUrl } from '@/lib/whoop-utils'
 
 ChartJS.register(
   CategoryScale, LinearScale,
@@ -23,12 +22,6 @@ ChartJS.register(
   Filler, Tooltip, Legend,
 )
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-)
-
-// ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
   bg: '#0e0e0e', card: '#1a1a1a', border: '#2a2a2a', borderHi: '#3a3a3a',
   text: '#ededed', dim: '#888', faint: '#555', accent: '#00d26a',
@@ -36,7 +29,6 @@ const C = {
 const mono = 'var(--font-jetbrains-mono, monospace)'
 const sans = 'var(--font-inter-tight, sans-serif)'
 
-// ─── Chart.js shared defaults ─────────────────────────────────────────────────
 ChartJS.defaults.color = C.dim
 ChartJS.defaults.borderColor = C.border
 ChartJS.defaults.font.family = mono
@@ -64,10 +56,7 @@ function lineOpts(overrides: Partial<ChartOptions<'line'>> = {}): ChartOptions<'
     maintainAspectRatio: false,
     animation: false,
     plugins: { legend: { display: false }, tooltip: { ...TOOLTIP_STYLE } },
-    scales: {
-      x: { ...SCALE_DEFAULTS },
-      y: { ...SCALE_DEFAULTS },
-    },
+    scales: { x: { ...SCALE_DEFAULTS }, y: { ...SCALE_DEFAULTS } },
     ...overrides,
   } as ChartOptions<'line'>
 }
@@ -78,55 +67,13 @@ function barOpts(overrides: Partial<ChartOptions<'bar'>> = {}): ChartOptions<'ba
     maintainAspectRatio: false,
     animation: false,
     plugins: { legend: { display: false }, tooltip: { ...TOOLTIP_STYLE } },
-    scales: {
-      x: { ...SCALE_DEFAULTS },
-      y: { ...SCALE_DEFAULTS },
-    },
+    scales: { x: { ...SCALE_DEFAULTS }, y: { ...SCALE_DEFAULTS } },
     ...overrides,
   } as ChartOptions<'bar'>
 }
 
-// ─── Sport color map ─────────────────────────────────────────────────────────
-const SPORT_COLORS: Record<string, string> = {
-  'functional fitness': '#f97316',
-  'functional-fitness': '#f97316',
-  yoga: '#10b981',
-  running: '#8b5cf6',
-  walking: '#6b7280',
-  'weight lifting': '#06b6d4',
-  weightlifting: '#06b6d4',
-  lifting: '#06b6d4',
-  cycling: '#3b82f6',
-  hiit: '#f59e0b',
-  "barry's": '#ef4444',
-  barrys: '#ef4444',
-  commuting: '#9ca3af',
-  default: '#a78bfa',
-}
-
-function sportColor(name: string | null): string {
-  if (!name) return SPORT_COLORS.default
-  const key = name.toLowerCase()
-  return SPORT_COLORS[key] ?? SPORT_COLORS.default
-}
-
-function avg(arr: (number | null)[], decimals = 0): string {
-  const vals = arr.filter((v): v is number => v != null && v > 0)
-  if (!vals.length) return '—'
-  const mean = vals.reduce((a, b) => a + b, 0) / vals.length
-  return decimals > 0 ? mean.toFixed(decimals) : String(Math.round(mean))
-}
-
-function shortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
 // ─── Primitives ───────────────────────────────────────────────────────────────
-function StatCard({
-  label, value, unit, color,
-}: {
-  label: string; value: string; unit?: string; color: string;
-}) {
+function StatCard({ label, value, unit, color }: { label: string; value: string; unit?: string; color: string }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px' }}>
       <div style={{ fontFamily: mono, fontSize: 9, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
@@ -153,11 +100,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-function ChartCard({
-  title, children, height = 200, right,
-}: {
-  title: string; children: React.ReactNode; height?: number; right?: React.ReactNode;
-}) {
+function ChartCard({ title, children, height = 200, right }: { title: string; children: React.ReactNode; height?: number; right?: React.ReactNode }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -178,89 +121,18 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   )
 }
 
-const WHOOP_CLIENT_ID = 'aeb5a295-3c6a-42a9-9657-57227bb0adb7'
-const WHOOP_SCOPES = 'offline read:recovery read:sleep read:workout read:cycles read:body_measurement'
-
-function whoopAuthUrl(host: string): string {
-  const redirectUri = encodeURIComponent(`${host}/api/whoop-callback`)
-  const scope = encodeURIComponent(WHOOP_SCOPES)
-  return `https://api.prod.whoop.com/oauth/oauth2/auth?client_id=${WHOOP_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=lifeos26`
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function BioDesktop() {
-  const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
-  const [history, setHistory] = useState<WhoopSnapshot[]>([])
-  const [workouts, setWorkouts] = useState<WhoopWorkout[]>([])
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState<string | null>(null)
-  const [reauthRequired, setReauthRequired] = useState(false)
-
-  function load() {
-    supabase
-      .from('whoop_snapshots')
-      .select('*')
-      .order('recorded_at', { ascending: false })
-      .limit(1)
-      .single()
-      .then(({ data }) => { if (data) setSnap(data as WhoopSnapshot) })
-
-    supabase
-      .from('whoop_snapshots')
-      .select('*')
-      .order('recorded_at', { ascending: false })
-      .limit(30)
-      .then(({ data }) => { if (data) setHistory([...(data as WhoopSnapshot[])].reverse()) })
-
-    supabase
-      .from('whoop_workouts')
-      .select('*')
-      .order('started_at', { ascending: false })
-      .limit(25)
-      .then(({ data }) => { if (data) setWorkouts(data as WhoopWorkout[]) })
-  }
-
-  useEffect(() => {
-    load()
-    fetch('/api/whoop-status')
-      .then(r => r.json())
-      .then(d => { setReauthRequired(d.reauth_required ?? false) })
-      .catch(() => {})
-  }, [])
-
-  async function syncNow() {
-    setSyncing(true)
-    setSyncMsg(null)
-    try {
-      const res = await fetch('/api/whoop-sync', { method: 'POST' })
-      const data = await res.json()
-      if (data.ok) {
-        setSyncMsg(`synced · recovery ${data.recovery_score}%`)
-        load()
-      } else if (data.error === 'reauth_required') {
-        setReauthRequired(true)
-      } else {
-        setSyncMsg(data.error ?? 'sync failed')
-      }
-    } catch {
-      setSyncMsg('network error')
-    } finally {
-      setSyncing(false)
-    }
-  }
+export default function WhoopDesktop() {
+  const { snap, history, workouts, syncing, syncMsg, reauthRequired, loadError, syncNow } = useWhoopData()
 
   const hasData = history.length > 0
   const workoutsChron = [...workouts].reverse()
 
-  // Labels
   const snapLabels = history.map(h => shortDate(h.recorded_at))
-  const workoutLabels = workoutsChron.map(w =>
-    `${shortDate(w.started_at)} · ${w.sport_name ?? 'workout'}`
-  )
+  const workoutLabels = workoutsChron.map(w => `${shortDate(w.started_at)} · ${w.sport_name ?? 'workout'}`)
 
-  // Averages
   const recovery = snap?.recovery_score ?? 0
-  const recoveryColor = recovery >= 67 ? '#00ff87' : recovery >= 34 ? '#f59e0b' : '#ef4444'
+  const recoveryColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
   const avgRecovery = avg(history.map(h => h.recovery_score))
   const avgHrv = avg(history.map(h => h.hrv_rmssd), 1)
   const avgRhr = avg(history.map(h => h.rhr))
@@ -268,7 +140,6 @@ export default function BioDesktop() {
   const avgSleep = avg(history.map(h => h.sleep_score))
   const avgKcal = avg(history.map(h => h.kilojoule != null ? Math.round(h.kilojoule / 4.184) : null))
 
-  // Sport breakdown
   const sportCounts: Record<string, number> = {}
   workouts.forEach(w => {
     const k = w.sport_name ?? 'unknown'
@@ -276,13 +147,15 @@ export default function BioDesktop() {
   })
   const sortedSports = Object.entries(sportCounts).sort((a, b) => b[1] - a[1])
 
+  const authUrl = typeof window !== 'undefined' ? whoopAuthUrl(window.location.origin) : '#'
+
   return (
     <div className="px-5 pb-6 pt-3" style={{ fontFamily: sans, display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-      {/* Header row: title + controls */}
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h1 style={{ fontFamily: sans, fontSize: 20, fontWeight: 700, color: C.text, margin: 0 }}>Bio</h1>
+          <h1 style={{ fontFamily: sans, fontSize: 20, fontWeight: 700, color: C.text, margin: 0 }}>Whoop</h1>
           {hasData && (
             <span style={{ fontFamily: mono, fontSize: 10, color: C.faint }}>
               {shortDate(history[0].recorded_at)} – {shortDate(history[history.length - 1].recorded_at)} · {history.length} days
@@ -295,8 +168,8 @@ export default function BioDesktop() {
           )}
           {reauthRequired ? (
             <a
-              href={whoopAuthUrl(typeof window !== 'undefined' ? window.location.origin : '')}
-              style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid #f59e0b`, background: 'rgba(245,158,11,0.08)', color: '#f59e0b', fontFamily: mono, fontSize: 11, textDecoration: 'none', cursor: 'pointer' }}
+              href={authUrl}
+              style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid #f59e0b`, background: 'rgba(245,158,11,0.08)', color: '#f59e0b', fontFamily: mono, fontSize: 11, textDecoration: 'none' }}
             >
               reconnect whoop →
             </a>
@@ -312,12 +185,18 @@ export default function BioDesktop() {
         </div>
       </div>
 
+      {loadError && (
+        <div style={{ fontFamily: mono, fontSize: 11, color: '#ef4444', padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.18)', marginBottom: 12 }}>
+          db error · {loadError}
+        </div>
+      )}
+
       {!hasData ? (
         <div style={{ padding: '60px 0', textAlign: 'center', color: C.faint, fontFamily: mono, fontSize: 12 }}>
           No Whoop data yet — connect your Whoop to get started.
           <br />
           <a
-            href={whoopAuthUrl(typeof window !== 'undefined' ? window.location.origin : '')}
+            href={authUrl}
             style={{ marginTop: 16, display: 'inline-block', padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontFamily: mono, fontSize: 11, textDecoration: 'none' }}
           >
             connect whoop →
@@ -325,9 +204,9 @@ export default function BioDesktop() {
         </div>
       ) : (
         <>
-          {/* ── Stats row ─────────────────────────────────────────────── */}
+          {/* Stats row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10, marginBottom: 20 }}>
-            <StatCard label="Avg Recovery" value={avgRecovery} unit="%" color="#00ff87" />
+            <StatCard label="Avg Recovery" value={avgRecovery} unit="%" color={recoveryColor} />
             <StatCard label="Avg HRV" value={avgHrv} unit="ms" color="#3b82f6" />
             <StatCard label="Avg RHR" value={avgRhr} unit="bpm" color="#f97316" />
             <StatCard label="Avg Strain" value={avgStrain} color="#a78bfa" />
@@ -335,7 +214,7 @@ export default function BioDesktop() {
             <StatCard label="Avg Daily Calories" value={avgKcal} unit="kcal" color="#f43f5e" />
           </div>
 
-          {/* ── Recovery ──────────────────────────────────────────────── */}
+          {/* Recovery */}
           <SectionLabel>Recovery</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
 
@@ -419,10 +298,7 @@ export default function BioDesktop() {
                   ],
                 }}
                 options={lineOpts({
-                  plugins: {
-                    legend: { display: false },
-                    tooltip: { ...TOOLTIP_STYLE },
-                  },
+                  plugins: { legend: { display: false }, tooltip: { ...TOOLTIP_STYLE } },
                   scales: {
                     x: { ...SCALE_DEFAULTS },
                     y: { ...SCALE_DEFAULTS, position: 'left' },
@@ -433,7 +309,7 @@ export default function BioDesktop() {
             </ChartCard>
           </div>
 
-          {/* ── Sleep ─────────────────────────────────────────────────── */}
+          {/* Sleep */}
           <SectionLabel>Sleep</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
 
@@ -493,10 +369,7 @@ export default function BioDesktop() {
                   ],
                 }}
                 options={lineOpts({
-                  plugins: {
-                    legend: { display: false },
-                    tooltip: { ...TOOLTIP_STYLE },
-                  },
+                  plugins: { legend: { display: false }, tooltip: { ...TOOLTIP_STYLE } },
                   scales: {
                     x: { ...SCALE_DEFAULTS },
                     y: { ...SCALE_DEFAULTS, position: 'left', min: 0, max: 100 },
@@ -507,7 +380,6 @@ export default function BioDesktop() {
             </ChartCard>
           </div>
 
-          {/* Sleep stages stacked bar */}
           <ChartCard
             title="Sleep Stages (hours per night)"
             height={220}
@@ -526,34 +398,22 @@ export default function BioDesktop() {
                 datasets: [
                   {
                     label: 'REM',
-                    data: history.map(h => {
-                      if (!h.sleep_duration_ms || !h.sleep_rem_pct) return null
-                      return +(h.sleep_duration_ms * h.sleep_rem_pct / 100 / 3600000).toFixed(2)
-                    }),
+                    data: history.map(h => h.sleep_duration_ms && h.sleep_rem_pct ? +(h.sleep_duration_ms * h.sleep_rem_pct / 100 / 3600000).toFixed(2) : null),
                     backgroundColor: '#6366f1',
                   },
                   {
                     label: 'Deep (SWS)',
-                    data: history.map(h => {
-                      if (!h.sleep_duration_ms || !h.sleep_deep_pct) return null
-                      return +(h.sleep_duration_ms * h.sleep_deep_pct / 100 / 3600000).toFixed(2)
-                    }),
+                    data: history.map(h => h.sleep_duration_ms && h.sleep_deep_pct ? +(h.sleep_duration_ms * h.sleep_deep_pct / 100 / 3600000).toFixed(2) : null),
                     backgroundColor: '#0ea5e9',
                   },
                   {
                     label: 'Light',
-                    data: history.map(h => {
-                      if (!h.sleep_duration_ms || !h.sleep_light_pct) return null
-                      return +(h.sleep_duration_ms * h.sleep_light_pct / 100 / 3600000).toFixed(2)
-                    }),
+                    data: history.map(h => h.sleep_duration_ms && h.sleep_light_pct ? +(h.sleep_duration_ms * h.sleep_light_pct / 100 / 3600000).toFixed(2) : null),
                     backgroundColor: '#334155',
                   },
                   {
                     label: 'Awake',
-                    data: history.map(h => {
-                      if (!h.sleep_duration_ms || !h.sleep_awake_pct) return null
-                      return +(h.sleep_duration_ms * h.sleep_awake_pct / 100 / 3600000).toFixed(2)
-                    }),
+                    data: history.map(h => h.sleep_duration_ms && h.sleep_awake_pct ? +(h.sleep_duration_ms * h.sleep_awake_pct / 100 / 3600000).toFixed(2) : null),
                     backgroundColor: '#374151',
                   },
                 ],
@@ -561,10 +421,7 @@ export default function BioDesktop() {
               options={barOpts({
                 plugins: {
                   legend: { display: false },
-                  tooltip: {
-                    ...TOOLTIP_STYLE,
-                    callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}h` },
-                  },
+                  tooltip: { ...TOOLTIP_STYLE, callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}h` } },
                 },
                 scales: {
                   x: { ...SCALE_DEFAULTS, stacked: true },
@@ -574,7 +431,7 @@ export default function BioDesktop() {
             />
           </ChartCard>
 
-          {/* ── Strain & Activity ──────────────────────────────────────── */}
+          {/* Strain & Activity */}
           <SectionLabel>Strain &amp; Activity</SectionLabel>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
 
@@ -669,21 +526,14 @@ export default function BioDesktop() {
                     options={barOpts({
                       plugins: {
                         legend: { display: false },
-                        tooltip: {
-                          ...TOOLTIP_STYLE,
-                          callbacks: { title: ctx => ctx[0].label.split(' · ')[0] },
-                        },
+                        tooltip: { ...TOOLTIP_STYLE, callbacks: { title: ctx => ctx[0].label.split(' · ')[0] } },
                       },
-                      scales: {
-                        x: { ...SCALE_DEFAULTS },
-                        y: { ...SCALE_DEFAULTS, min: 40 },
-                      },
+                      scales: { x: { ...SCALE_DEFAULTS }, y: { ...SCALE_DEFAULTS, min: 40 } },
                     })}
                   />
                 </ChartCard>
               </div>
 
-              {/* HR zones stacked bar */}
               <ChartCard
                 title="Heart Rate Zones per Workout (minutes)"
                 height={220}
@@ -728,13 +578,12 @@ export default function BioDesktop() {
             </>
           )}
 
-          {/* ── Profile ───────────────────────────────────────────────── */}
+          {/* Profile */}
           {sortedSports.length > 0 && (
             <>
               <SectionLabel>Profile</SectionLabel>
               <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 12 }}>
 
-                {/* Workouts by activity */}
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px' }}>
                   <div style={{ fontFamily: mono, fontSize: 10, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
                     Workouts by Activity
@@ -752,7 +601,6 @@ export default function BioDesktop() {
                   </ul>
                 </div>
 
-                {/* Latest recovery snapshot */}
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px' }}>
                   <div style={{ fontFamily: mono, fontSize: 10, color: C.dim, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
                     Latest Snapshot

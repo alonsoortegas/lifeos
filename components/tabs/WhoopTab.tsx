@@ -1,59 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
 import Card from '@/components/ui/Card'
-import type { WhoopSnapshot, WhoopWorkout } from '@/lib/types'
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-)
-
-function sleepHM(ms: number | null): string {
-  if (!ms) return '—'
-  const totalMin = Math.round(ms / 60000)
-  return `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`
-}
-
-function avg(arr: (number | null)[], decimals = 0): string {
-  const vals = arr.filter((v): v is number => v != null)
-  if (!vals.length) return '—'
-  const mean = vals.reduce((a, b) => a + b, 0) / vals.length
-  return decimals > 0 ? mean.toFixed(decimals) : String(Math.round(mean))
-}
+import { useWhoopData } from '@/lib/whoop-data'
+import { sportColor, avg, shortDate, whoopAuthUrl, sleepHM } from '@/lib/whoop-utils'
 
 const ZONE_COLORS = ['#1e293b', '#3b82f6', '#22c55e', '#f59e0b', '#f97316', '#ef4444']
 const ZONE_LABELS = ['Z0', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5']
 
-const WHOOP_CLIENT_ID = 'aeb5a295-3c6a-42a9-9657-57227bb0adb7'
-const WHOOP_SCOPES = 'offline read:recovery read:sleep read:workout read:cycles read:body_measurement'
-
-function whoopAuthUrl(host: string): string {
-  const redirectUri = encodeURIComponent(`${host}/api/whoop-callback`)
-  const scope = encodeURIComponent(WHOOP_SCOPES)
-  return `https://api.prod.whoop.com/oauth/oauth2/auth?client_id=${WHOOP_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=lifeos26`
-}
-
-// ─── Style constants ──────────────────────────────────────────────────────────
 const C = {
   bg: '#0e0e0e', card: '#1a1a1a', border: '#2a2a2a', borderHi: '#3a3a3a',
   text: '#ededed', dim: '#888', faint: '#555', accent: '#00d26a',
 }
 const mono = 'var(--font-jetbrains-mono, monospace)'
 const sans = 'var(--font-inter-tight, sans-serif)'
-
-// ─── Sport color map ─────────────────────────────────────────────────────────
-const SPORT_COLORS: Record<string, string> = {
-  'functional-fitness': '#f97316', yoga: '#10b981', running: '#8b5cf6',
-  walking: '#6b7280', lifting: '#06b6d4', default: '#a78bfa',
-}
-
-function sportColor(name: string | null): string {
-  if (!name) return SPORT_COLORS.default
-  const key = name.toLowerCase()
-  return SPORT_COLORS[key] ?? SPORT_COLORS.default
-}
 
 // ─── Primitive components ─────────────────────────────────────────────────────
 function MiniStat({ label, value, unit, color, sub }: { label: string; value: string; unit?: string; color: string; sub?: string }) {
@@ -294,87 +253,17 @@ function Legend({ items }: { items: { label: string; color: string; dashed?: boo
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function WhoopTab() {
-  const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
-  const [history, setHistory] = useState<WhoopSnapshot[]>([])
-  const [workouts, setWorkouts] = useState<WhoopWorkout[]>([])
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState<string | null>(null)
-  const [reauthRequired, setReauthRequired] = useState(false)
-  const [hasOffline, setHasOffline] = useState(true)
-  const [tokenExpired, setTokenExpired] = useState(false)
-
-  function load() {
-    supabase
-      .from('whoop_snapshots')
-      .select('*')
-      .order('recorded_at', { ascending: false })
-      .limit(1)
-      .single()
-      .then(({ data }) => { if (data) setSnap(data as WhoopSnapshot) })
-
-    supabase
-      .from('whoop_snapshots')
-      .select('*')
-      .order('recorded_at', { ascending: false })
-      .limit(30)
-      .then(({ data }) => { if (data) setHistory([...(data as WhoopSnapshot[])].reverse()) })
-
-    supabase
-      .from('whoop_workouts')
-      .select('*')
-      .order('started_at', { ascending: false })
-      .limit(25)
-      .then(({ data }) => { if (data) setWorkouts(data as WhoopWorkout[]) })
-  }
-
-  useEffect(() => {
-    load()
-    fetch('/api/whoop-status')
-      .then(r => r.json())
-      .then(d => {
-        setReauthRequired(d.reauth_required ?? false)
-        setHasOffline(d.has_offline ?? true)
-        setTokenExpired(d.expires_at ? new Date(d.expires_at).getTime() <= Date.now() : false)
-      })
-      .catch(() => { /* non-critical */ })
-  }, [])
-
-  async function syncNow() {
-    setSyncing(true)
-    setSyncMsg(null)
-    try {
-      const res = await fetch('/api/whoop-sync', { method: 'POST' })
-      const data = await res.json()
-      if (data.ok) {
-        setSyncMsg(`synced · recovery ${data.recovery_score}% · ${data.workouts_synced ?? 0} workouts`)
-        load()
-      } else if (data.error === 'reauth_required') {
-        setReauthRequired(true)
-        setSyncMsg(null)
-      } else {
-        setSyncMsg(data.error ?? 'sync failed')
-      }
-    } catch {
-      setSyncMsg('network error')
-    } finally {
-      setSyncing(false)
-    }
-  }
+  const { snap, history, workouts, syncing, syncMsg, reauthRequired, hasOffline, tokenExpired, loadError, syncNow } = useWhoopData()
 
   const recovery = snap?.recovery_score ?? 0
   const recoveryColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
 
   const hasHistory = history.length > 1
 
-  // Period label from actual data
-  function axisDate(iso: string) {
-    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  }
-  const axisFirst = history.length > 0 ? axisDate(history[0].recorded_at) : ''
-  const axisLast = history.length > 0 ? axisDate(history[history.length - 1].recorded_at) : ''
+  const axisFirst = history.length > 0 ? shortDate(history[0].recorded_at) : ''
+  const axisLast = history.length > 0 ? shortDate(history[history.length - 1].recorded_at) : ''
   const periodLabel = axisFirst && axisLast ? `${axisFirst} – ${axisLast}` : ''
 
-  // Derived history arrays (chronological)
   const recoveryHistory = history.map(h => h.recovery_score ?? 0)
   const hrvHistory = history.map(h => Number(h.hrv_rmssd ?? 0))
   const rhrHistory = history.map(h => Number(h.rhr ?? 0))
@@ -383,7 +272,6 @@ export default function WhoopTab() {
   const sleepConsistencyHistory = history.map(h => h.sleep_consistency_pct ?? 0)
   const kcalHistory = history.map(h => h.kilojoule != null ? Math.round(h.kilojoule / 4.184) : 0)
 
-  // 25-day averages
   const avgRecovery = avg(history.map(h => h.recovery_score))
   const avgHrv = avg(history.map(h => h.hrv_rmssd), 1)
   const avgRhr = avg(history.map(h => h.rhr))
@@ -392,7 +280,6 @@ export default function WhoopTab() {
   const avgKcal = avg(history.map(h => h.kilojoule != null ? h.kilojoule / 4.184 : null))
   const avgSleepConsistency = avg(history.map(h => h.sleep_consistency_pct))
 
-  // Sleep stages for last night
   const sleepStages = [
     { name: 'rem', color: '#6366f1', pct: snap?.sleep_rem_pct ?? 0 },
     { name: 'deep', color: '#0ea5e9', pct: snap?.sleep_deep_pct ?? 0 },
@@ -409,7 +296,6 @@ export default function WhoopTab() {
 
   const hasSleepStages = sleepStages.some(s => s.pct > 0)
 
-  // Workouts — most recent first for list; reversed for charts
   const workoutList = workouts.slice(0, 8)
   const workoutsChron = [...workouts].reverse()
   const workoutStrains = workoutsChron.map(w => w.strain ?? 0)
@@ -417,7 +303,6 @@ export default function WhoopTab() {
   const workoutMaxHr = workoutsChron.map(w => w.max_hr ?? 0)
   const workoutColors = workoutsChron.map(w => sportColor(w.sport_name))
 
-  // Most recent workout HR zones
   const latestWorkout = workouts[0] ?? null
   const hrZones = latestWorkout
     ? [
@@ -431,7 +316,14 @@ export default function WhoopTab() {
   return (
     <div className="px-4 pb-32 pt-2" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-      {/* 1. Header */}
+      {/* DB error */}
+      {loadError && (
+        <div style={{ fontFamily: mono, fontSize: 11, color: '#ef4444', padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.18)' }}>
+          db error · {loadError}
+        </div>
+      )}
+
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <h1 style={{ fontFamily: sans, fontSize: 22, fontWeight: 700, color: C.text, margin: 0 }}>Whoop</h1>
         {periodLabel && (
@@ -439,7 +331,7 @@ export default function WhoopTab() {
         )}
       </div>
 
-      {/* 2. AVERAGES */}
+      {/* Averages */}
       <SectionLabel>{history.length > 0 ? `${history.length}-day averages` : 'averages'}</SectionLabel>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
         <MiniStat label="Recovery" value={avgRecovery} unit="%" color={recoveryColor} />
@@ -455,7 +347,7 @@ export default function WhoopTab() {
         </div>
       )}
 
-      {/* 3. RECOVERY section */}
+      {/* Recovery */}
       <SectionLabel>Recovery</SectionLabel>
 
       {hasHistory ? (
@@ -479,10 +371,9 @@ export default function WhoopTab() {
         </div>
       )}
 
-      {/* 4. SLEEP section */}
+      {/* Sleep */}
       <SectionLabel>Sleep</SectionLabel>
 
-      {/* Last-night sleep stages */}
       <Card className="p-4">
         <ChartTitle
           title="Last Night"
@@ -529,7 +420,7 @@ export default function WhoopTab() {
         </>
       )}
 
-      {/* 5. STRAIN & ACTIVITY section */}
+      {/* Strain & Activity */}
       <SectionLabel>Strain & Activity</SectionLabel>
 
       {hasHistory && (
@@ -551,7 +442,7 @@ export default function WhoopTab() {
         </>
       )}
 
-      {/* 6. WORKOUTS section */}
+      {/* Workouts */}
       <SectionLabel>Workouts</SectionLabel>
 
       {hasWorkoutCharts && (
@@ -560,8 +451,8 @@ export default function WhoopTab() {
             <ChartTitle title="Strain by Session" />
             <BarChart data={workoutStrains} colors={workoutColors} height={80} maxVal={21} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontFamily: mono, fontSize: 9, color: C.faint }}>
-              <span>{axisDate(workoutsChron[0].started_at)}</span>
-              <span>{axisDate(workoutsChron[workoutsChron.length - 1].started_at)}</span>
+              <span>{shortDate(workoutsChron[0].started_at)}</span>
+              <span>{shortDate(workoutsChron[workoutsChron.length - 1].started_at)}</span>
             </div>
           </Card>
 
@@ -569,35 +460,31 @@ export default function WhoopTab() {
             <ChartTitle title="Avg & Max HR per Workout" />
             <DualSpark dataA={workoutAvgHr} dataB={workoutMaxHr} colorA="#f97316" colorB="#ef4444" height={80} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontFamily: mono, fontSize: 9, color: C.faint }}>
-              <span>{axisDate(workoutsChron[0].started_at)}</span>
-              <span>{axisDate(workoutsChron[workoutsChron.length - 1].started_at)}</span>
+              <span>{shortDate(workoutsChron[0].started_at)}</span>
+              <span>{shortDate(workoutsChron[workoutsChron.length - 1].started_at)}</span>
             </div>
             <Legend items={[{ label: 'Avg HR bpm', color: '#f97316' }, { label: 'Max HR bpm', color: '#ef4444', dashed: true }]} />
           </Card>
         </>
       )}
 
-      {/* Recent workouts list */}
       {workoutList.length > 0 && (
         <Card className="p-4">
           <ChartTitle title="Recent Workouts" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {workoutList.map(w => {
-              const date = new Date(w.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
               const sc = sportColor(w.sport_name)
               const strainPct = w.strain != null ? Math.min(w.strain / 21, 1) * 100 : 0
               return (
                 <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: mono, fontSize: 10, color: C.faint, width: 48, flexShrink: 0 }}>{date}</span>
+                  <span style={{ fontFamily: mono, fontSize: 10, color: C.faint, width: 48, flexShrink: 0 }}>{shortDate(w.started_at)}</span>
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: sc, flexShrink: 0 }} />
                   <span style={{ fontFamily: mono, fontSize: 11, color: C.text, flex: 1, textTransform: 'capitalize' }}>
                     {w.sport_name?.replace(/-/g, ' ') ?? 'workout'}
                   </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {w.avg_hr != null && (
-                      <span style={{ fontFamily: mono, fontSize: 9, color: C.faint }}>{w.avg_hr}/{w.max_hr ?? '—'}</span>
-                    )}
-                  </div>
+                  {w.avg_hr != null && (
+                    <span style={{ fontFamily: mono, fontSize: 9, color: C.faint }}>{w.avg_hr}/{w.max_hr ?? '—'}</span>
+                  )}
                   <div style={{ width: 60, height: 4, background: C.border, borderRadius: 2, overflow: 'hidden' }}>
                     <div style={{ width: `${strainPct}%`, height: '100%', background: sc, borderRadius: 2 }} />
                   </div>
@@ -611,14 +498,13 @@ export default function WhoopTab() {
         </Card>
       )}
 
-      {/* HR zones for most recent workout */}
       {latestWorkout && hrZones.some(z => (z ?? 0) > 0) && (
         <Card className="p-4">
           <ChartTitle
             title="HR Zones (latest)"
             right={
               <span style={{ fontFamily: mono, fontSize: 10, color: C.faint, textTransform: 'capitalize' }}>
-                {latestWorkout.sport_name?.replace(/-/g, ' ') ?? 'workout'} · {new Date(latestWorkout.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {latestWorkout.sport_name?.replace(/-/g, ' ') ?? 'workout'} · {shortDate(latestWorkout.started_at)}
               </span>
             }
           />
@@ -650,7 +536,7 @@ export default function WhoopTab() {
         </Card>
       )}
 
-      {/* 7. PROFILE section */}
+      {/* Profile */}
       <SectionLabel>Profile</SectionLabel>
 
       <Card className="p-4">
@@ -679,7 +565,7 @@ export default function WhoopTab() {
         </div>
       </Card>
 
-      {/* 8. SYNC — bottom */}
+      {/* Sync */}
       <SectionLabel>Sync</SectionLabel>
 
       <Card className="p-4">
