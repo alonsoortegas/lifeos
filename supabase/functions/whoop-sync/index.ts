@@ -43,11 +43,36 @@ serve(async (req) => {
       return json({ error: 'Missing required environment variables' }, 500)
     }
 
-    // Optional: pass { days: 7 } to backfill multiple cycles
+    // Optional: pass { days: 7 } to backfill N cycles, or { backfill: true } to
+    // auto-detect gaps in the last 14 days and fetch exactly what's missing.
     let days = 1
     try {
       const body = await req.json()
-      if (typeof body?.days === 'number') days = Math.min(Math.max(1, body.days), 25)
+      if (body?.backfill === true) {
+        const supabaseTemp = createClient(supabaseUrl!, supabaseKey!)
+        const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+        const { data: existing } = await supabaseTemp
+          .from('whoop_snapshots')
+          .select('recorded_at')
+          .gte('recorded_at', since)
+          .order('recorded_at', { ascending: true })
+
+        const presentDates = new Set(
+          (existing ?? []).map((r: { recorded_at: string }) =>
+            new Date(r.recorded_at).toISOString().slice(0, 10)
+          )
+        )
+        // Find oldest missing date in the last 14 days
+        let oldestMissingDaysAgo = 0
+        for (let i = 14; i >= 1; i--) {
+          const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+          const key = d.toISOString().slice(0, 10)
+          if (!presentDates.has(key)) oldestMissingDaysAgo = i
+        }
+        days = oldestMissingDaysAgo > 0 ? Math.min(oldestMissingDaysAgo + 1, 25) : 1
+      } else if (typeof body?.days === 'number') {
+        days = Math.min(Math.max(1, body.days), 25)
+      }
     } catch { /* no body or not JSON — default to 1 */ }
 
     const supabase = createClient(supabaseUrl, supabaseKey)
