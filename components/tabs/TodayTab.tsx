@@ -8,6 +8,7 @@ import type { WhoopSnapshot, Todo } from '@/lib/types'
 import { getCurrentGoalDate, getMillisecondsUntilNextGoalReset } from '@/lib/goal-dates'
 import { getCurrentWeek, getTodayKey, DAY_META } from '@/lib/workout'
 import { sleepHM, whoopAuthUrl } from '@/lib/whoop-utils'
+import { computeReadiness, stateColor, stateLabel, stateTone, type Readiness } from '@/lib/readiness'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -286,12 +287,139 @@ function DayRing() {
 }
 
 // ---------------------------------------------------------------------------
+// DayModeCard
+// ---------------------------------------------------------------------------
+
+function getTrainingAdvice(readiness: Readiness, todayMeta: (typeof DAY_META)[string]): string {
+  if (!todayMeta.dbKey) {
+    if (readiness.state === 'hardNo') return 'Keep it restorative. Skip intensity.'
+    if (readiness.state === 'recover') return 'Easy movement only. Treat this as recovery.'
+    return todayMeta.restSub
+  }
+
+  if (readiness.state === 'green') return 'Run the programmed session.'
+  if (readiness.state === 'controlled') return `Train, but cap effort at RPE ${readiness.rpeCap}.`
+  if (readiness.state === 'recover') return 'Reduce to technique work or Z2.'
+  return 'No training load today.'
+}
+
+function getNutritionAdvice(readiness: Readiness): string {
+  if (readiness.state === 'green') return 'Fuel normally. Keep protein high and place carbs near training.'
+  if (readiness.state === 'controlled') return 'Do not under-eat. Protein first, then steady carbs.'
+  if (readiness.state === 'recover') return 'Use simpler meals. Hydrate and keep protein floor intact.'
+  return 'Easy food, hydration, and an earlier night.'
+}
+
+function getRecoveryAdvice(readiness: Readiness): string {
+  if (readiness.state === 'green') return 'Sleep and HRV support a normal day.'
+  if (readiness.state === 'controlled') return 'Useful day, but leave margin.'
+  if (readiness.state === 'recover') return 'Recovery has priority over output.'
+  return 'Protect sleep. No extra stressors.'
+}
+
+function DayModeCard({ readiness, todayMeta }: { readiness: Readiness; todayMeta: (typeof DAY_META)[string] }) {
+  const c = stateColor(readiness.state)
+  const tone = stateTone(readiness.state)
+  const toneColor = tone === 'good' ? '#00d26a' : tone === 'warn' ? '#f59e0b' : '#ef4444'
+  const rows = [
+    { label: 'Focus', value: 'Clear the top goal before adding more.' },
+    { label: 'Training', value: getTrainingAdvice(readiness, todayMeta) },
+    { label: 'Nutrition', value: getNutritionAdvice(readiness) },
+    { label: 'Recovery', value: getRecoveryAdvice(readiness) },
+  ]
+
+  return (
+    <div
+      style={{
+        background: '#1a1a1a',
+        border: `1px solid ${c}55`,
+        borderLeft: `3px solid ${c}`,
+        borderRadius: 14,
+        padding: '14px 14px 12px',
+      }}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span
+          className="text-[9px] font-bold tracking-[0.2em] uppercase"
+          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: '#555' }}
+          >
+          DAY MODE
+        </span>
+        <span
+          className="text-[9px] font-bold tracking-[0.14em] uppercase px-[7px] py-[3px] rounded-full"
+          style={{
+            fontFamily: 'var(--font-jetbrains-mono, monospace)',
+            color: toneColor,
+            border: `1px solid ${toneColor}55`,
+            background: `${toneColor}10`,
+          }}
+        >
+          {stateLabel(readiness.state)}
+        </span>
+      </div>
+
+      <div className="text-[18px] font-semibold leading-[1.25] text-[#ededed] mb-2" style={{ letterSpacing: '-0.01em' }}>
+        {readiness.headline}
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {readiness.rationale.slice(0, 3).map((r) => (
+          <span
+            key={r}
+            className="text-[10px] px-[7px] py-[3px] rounded-full"
+            style={{
+              fontFamily: 'var(--font-jetbrains-mono, monospace)',
+              color: '#888',
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid #2a2a2a',
+            }}
+          >
+            {r}
+          </span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-1.5 pt-3 border-t border-[#2a2a2a]">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="grid grid-cols-[82px_1fr] gap-2 rounded-lg px-2.5 py-2"
+            style={{ background: '#151515', border: '1px solid #2a2a2a' }}
+          >
+            <span
+              className="text-[9px] font-bold tracking-[0.16em] uppercase"
+              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: '#555' }}
+            >
+              {row.label}
+            </span>
+            <span className="text-[12px] leading-[1.3] text-[#ededed]">{row.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {readiness.rpeCap != null && readiness.rpeCap > 0 && (
+        <div
+          className="flex items-center justify-between pt-2 mt-2 border-t border-[#2a2a2a]"
+          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+        >
+          <span className="text-[10px] text-[#555]">RPE cap → Workout</span>
+          <span className="text-[10px] font-bold" style={{ color: toneColor }}>RPE ≤ {readiness.rpeCap}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // TodayTab
 // ---------------------------------------------------------------------------
 export default function TodayTab() {
-  const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
+  const [snapshots, setSnapshots] = useState<WhoopSnapshot[]>([])
   const [reauthRequired, setReauthRequired] = useState(false)
   const [now, setNow] = useState<Date | null>(null)
+
+  const snap = snapshots[0] ?? null
+  const readiness = snapshots.length >= 3 ? computeReadiness(snapshots) : null
 
   useEffect(() => {
     const load = () =>
@@ -299,9 +427,8 @@ export default function TodayTab() {
         .from('whoop_snapshots')
         .select('*')
         .order('recorded_at', { ascending: false })
-        .limit(1)
-        .single()
-        .then(({ data }) => { if (data) setSnap(data as WhoopSnapshot) })
+        .limit(30)
+        .then(({ data }) => { if (data) setSnapshots(data as WhoopSnapshot[]) })
 
     load()
     fetch('/api/whoop-status')
@@ -371,6 +498,7 @@ export default function TodayTab() {
           sub="rmssd · last night"
           accent={!!snap}
           color="#3b82f6"
+          delta={readiness?.signals.hrv}
         />
         <StatCard
           label="RHR"
@@ -378,12 +506,14 @@ export default function TodayTab() {
           unit={snap?.rhr != null ? 'bpm' : undefined}
           sub="resting heart rate"
           color="#f97316"
+          delta={readiness?.signals.rhr}
         />
         <StatCard
           label="Strain"
           value={reauthRequired ? '—' : strainValue(snap?.strain)}
           sub={reauthRequired ? 'sync paused · reconnect' : snap?.strain != null ? 'daily strain' : 'no activity logged'}
           color="#a78bfa"
+          delta={readiness?.signals.strain7d}
         />
         <StatCard
           label="Sleep"
@@ -391,8 +521,11 @@ export default function TodayTab() {
           unit={snap?.sleep_score != null ? '%' : undefined}
           sub={snap?.sleep_duration_ms ? sleepHM(snap.sleep_duration_ms) + ' · last night' : 'last night'}
           color="#06b6d4"
+          delta={readiness?.signals.sleepScore}
         />
       </div>
+
+      {readiness && <DayModeCard readiness={readiness} todayMeta={todayMeta} />}
 
       {reauthRequired && (
         <a

@@ -39,7 +39,7 @@ export function useWhoopData() {
   }
 
   useEffect(() => {
-    void load()
+    const initialId = window.setTimeout(() => { void load() }, 0)
     fetch('/api/whoop-status')
       .then(r => r.json())
       .then(d => {
@@ -48,7 +48,7 @@ export function useWhoopData() {
         setTokenExpired(d.expires_at ? new Date(d.expires_at).getTime() <= Date.now() : false)
       })
       .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => window.clearTimeout(initialId)
   }, [])
 
   async function syncNow() {

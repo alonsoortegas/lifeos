@@ -1,3 +1,10 @@
+const DELTA_TONE_COLOR: Record<string, string> = {
+  good: '#00d26a',
+  warn: '#f59e0b',
+  bad:  '#ef4444',
+  neutral: '#555',
+}
+
 interface StatCardProps {
   label: string
   value: string | number
@@ -5,6 +12,11 @@ interface StatCardProps {
   sub?: string
   accent?: boolean
   color?: string
+  delta?: {
+    value: string
+    tone: 'good' | 'warn' | 'bad' | 'neutral'
+    label: string
+  }
 }
 
 export default function StatCard({
@@ -14,6 +26,7 @@ export default function StatCard({
   sub,
   accent = false,
   color,
+  delta,
 }: StatCardProps) {
   return (
     <div
@@ -43,9 +56,20 @@ export default function StatCard({
           </span>
         )}
       </div>
+      {delta && (
+        <div
+          className="flex items-center gap-1.5 mt-2"
+          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+        >
+          <span className="text-[10px] font-bold" style={{ color: DELTA_TONE_COLOR[delta.tone] }}>
+            {delta.value}
+          </span>
+          <span className="text-[10px] text-[#555]">{delta.label}</span>
+        </div>
+      )}
       {sub && (
         <div
-          className="text-[#555] text-[10px] mt-1"
+          className={`text-[10px] ${delta ? 'mt-0.5' : 'mt-1'} text-[#555]`}
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
           {sub}

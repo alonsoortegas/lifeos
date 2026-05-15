@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import TodayTab from '@/components/tabs/TodayTab'
-import FocusTab from '@/components/tabs/FocusTab'
-import WorkoutTab from '@/components/tabs/WorkoutTab'
-import NutritionTab from '@/components/tabs/NutritionTab'
 import WhoopDesktop from '@/components/desktop/WhoopDesktop'
+import FocusDesktop from '@/components/desktop/FocusDesktop'
+import WorkoutDesktop from '@/components/desktop/WorkoutDesktop'
+import NutritionDesktop from '@/components/desktop/NutritionDesktop'
 
 const TABS = [
   { key: 'today',     icon: '◐', label: 'Today',     kbd: '1' },
@@ -79,10 +79,12 @@ function useTopbarStatus(): TopbarStatus {
   }
 
   useEffect(() => {
-    void refresh()
+    const initialId = window.setTimeout(() => { void refresh() }, 0)
     const id = setInterval(() => { void refresh() }, 5 * 60 * 1000)
-    return () => clearInterval(id)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      window.clearTimeout(initialId)
+      clearInterval(id)
+    }
   }, [])
 
   return { ...state, loading }
@@ -249,9 +251,9 @@ export default function DesktopShell() {
   const renderTab = () => {
     switch (activeTab) {
       case 'today':     return <TodayTab />
-      case 'focus':     return <FocusTab />
-      case 'workout':   return <WorkoutTab canAddExercises />
-      case 'nutrition': return <NutritionTab />
+      case 'focus':     return <FocusDesktop />
+      case 'workout':   return <WorkoutDesktop />
+      case 'nutrition': return <NutritionDesktop />
       case 'whoop':     return <WhoopDesktop />
       default:          return <TodayTab />
     }
@@ -398,7 +400,6 @@ export default function DesktopShell() {
           >
             <FooterHint k="⌘K" l="commands" />
             <FooterHint k="⌘1–5" l="tabs" />
-            <FooterHint k="J/K" l="navigate" />
             <span className="ml-auto">v0.4 · desktop</span>
           </div>
         </div>
