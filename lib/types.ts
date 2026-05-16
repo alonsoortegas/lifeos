@@ -47,6 +47,8 @@ export interface WorkoutLog {
   weight_unit: string
   reps: number | null
   rpe: number | null
+  distance_m?: number | null
+  duration_s?: number | null
   notes: string | null
 }
 
@@ -59,6 +61,8 @@ export interface WorkoutSession {
   notes: string | null
 }
 
+export type ExerciseModality = 'strength' | 'erg' | 'carry' | 'bodyweight'
+
 export interface WorkoutExercise {
   id: number
   session_id: number
@@ -70,6 +74,7 @@ export interface WorkoutExercise {
   weight_unit: string
   target_rpe: string | null
   notes: string | null
+  modality: ExerciseModality
 }
 
 export interface NutritionLog {

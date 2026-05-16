@@ -56,7 +56,13 @@ function findLoggedItem(logs: MealLog[], mealName: MealTemplateName, foodItemId:
 const mono = 'var(--font-jetbrains-mono, monospace)'
 const sans = 'var(--font-inter-tight, sans-serif)'
 
-export default function NutritionDesktop() {
+export default function NutritionDesktop({
+  initialAction,
+  onInitialActionConsumed,
+}: {
+  initialAction?: string
+  onInitialActionConsumed?: () => void
+}) {
   const [dayType, setDayType] = useState<NutritionDayType>('hard')
   const [nutritionDay, setNutritionDay] = useState<NutritionDay | null>(null)
   const [foods, setFoods] = useState<FoodItem[]>([])
@@ -114,6 +120,18 @@ export default function NutritionDesktop() {
     load()
     return () => { cancelled = true }
   }, [dayType, ensureDay, loadMealLogs])
+
+  // Expand all meals when launched via "Log a meal" command
+  useEffect(() => {
+    if (initialAction !== 'log-meal' || loading || defaultMeals.length === 0) return
+
+    const id = window.setTimeout(() => {
+      setExpandedMeals(new Set(defaultMeals.map(m => m.name as MealTemplateName)))
+      onInitialActionConsumed?.()
+    }, 0)
+
+    return () => window.clearTimeout(id)
+  }, [initialAction, loading, defaultMeals, onInitialActionConsumed])
 
   const logTemplateItem = async (mealName: MealTemplateName, item: DefaultMealItem, override?: { food: FoodItem; quantity: number; label: string; groupName?: string }) => {
     const day = nutritionDay ?? (await ensureDay(dayType)); if (!day) return

@@ -57,7 +57,13 @@ function todayRange() {
 const mono = 'var(--font-jetbrains-mono, monospace)'
 const sans = 'var(--font-inter-tight, sans-serif)'
 
-export default function WorkoutDesktop() {
+export default function WorkoutDesktop({
+  initialAction,
+  onInitialActionConsumed,
+}: {
+  initialAction?: string
+  onInitialActionConsumed?: () => void
+}) {
   const today = getTodayKey()
   const currentWeek = getCurrentWeek()
 
@@ -118,6 +124,18 @@ export default function WorkoutDesktop() {
     const id = window.setTimeout(() => { void loadSession(selectedDay) }, 0)
     return () => window.clearTimeout(id)
   }, [selectedDay, loadSession])
+
+  // Jump to first exercise when launched via "Start workout" command
+  useEffect(() => {
+    if (initialAction !== 'start' || loading) return
+
+    const id = window.setTimeout(() => {
+      setActiveExIdx(0)
+      onInitialActionConsumed?.()
+    }, 0)
+
+    return () => window.clearTimeout(id)
+  }, [initialAction, loading, onInitialActionConsumed])
 
   const updateState = (i: number, patch: Partial<ExerciseState>) =>
     setExerciseStates(prev => prev.map((s, idx) => idx === i ? { ...s, ...patch } : s))

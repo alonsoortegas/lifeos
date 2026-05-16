@@ -290,6 +290,8 @@ function DayRing() {
 // DayModeCard
 // ---------------------------------------------------------------------------
 
+interface NutritionRemaining { calories: number; protein_g: number }
+
 function getTrainingAdvice(readiness: Readiness, todayMeta: (typeof DAY_META)[string]): string {
   if (!todayMeta.dbKey) {
     if (readiness.state === 'hardNo') return 'Keep it restorative. Skip intensity.'
@@ -303,7 +305,15 @@ function getTrainingAdvice(readiness: Readiness, todayMeta: (typeof DAY_META)[st
   return 'No training load today.'
 }
 
-function getNutritionAdvice(readiness: Readiness): string {
+function getNutritionAdvice(readiness: Readiness, remaining: NutritionRemaining | null): string {
+  if (remaining) {
+    const kcal = Math.round(remaining.calories)
+    const prot = Math.round(remaining.protein_g)
+    if (kcal <= 0 && prot <= 0) return 'Targets hit. Stay hydrated.'
+    if (prot > 0 && kcal > 0) return `+${prot}g protein · ${kcal} kcal left`
+    if (prot > 0) return `+${prot}g protein left`
+    if (kcal > 0) return `${kcal} kcal left`
+  }
   if (readiness.state === 'green') return 'Fuel normally. Keep protein high and place carbs near training.'
   if (readiness.state === 'controlled') return 'Do not under-eat. Protein first, then steady carbs.'
   if (readiness.state === 'recover') return 'Use simpler meals. Hydrate and keep protein floor intact.'
@@ -317,14 +327,25 @@ function getRecoveryAdvice(readiness: Readiness): string {
   return 'Protect sleep. No extra stressors.'
 }
 
-function DayModeCard({ readiness, todayMeta }: { readiness: Readiness; todayMeta: (typeof DAY_META)[string] }) {
+function DayModeCard({
+  readiness,
+  todayMeta,
+  topTodo,
+  nutritionRemaining,
+}: {
+  readiness: Readiness
+  todayMeta: (typeof DAY_META)[string]
+  topTodo: string | null
+  nutritionRemaining: NutritionRemaining | null
+}) {
   const c = stateColor(readiness.state)
   const tone = stateTone(readiness.state)
   const toneColor = tone === 'good' ? '#00d26a' : tone === 'warn' ? '#f59e0b' : '#ef4444'
+  const focusValue = topTodo ? `Top goal: ${topTodo}` : 'Clear the top goal before adding more.'
   const rows = [
-    { label: 'Focus', value: 'Clear the top goal before adding more.' },
+    { label: 'Focus', value: focusValue },
     { label: 'Training', value: getTrainingAdvice(readiness, todayMeta) },
-    { label: 'Nutrition', value: getNutritionAdvice(readiness) },
+    { label: 'Nutrition', value: getNutritionAdvice(readiness, nutritionRemaining) },
     { label: 'Recovery', value: getRecoveryAdvice(readiness) },
   ]
 
@@ -417,6 +438,8 @@ export default function TodayTab() {
   const [snapshots, setSnapshots] = useState<WhoopSnapshot[]>([])
   const [reauthRequired, setReauthRequired] = useState(false)
   const [now, setNow] = useState<Date | null>(null)
+  const [topTodo, setTopTodo] = useState<string | null>(null)
+  const [nutritionRemaining, setNutritionRemaining] = useState<NutritionRemaining | null>(null)
 
   const snap = snapshots[0] ?? null
   const readiness = snapshots.length >= 3 ? computeReadiness(snapshots) : null
@@ -442,6 +465,47 @@ export default function TodayTab() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  // Best-effort: top unfinished goal
+  useEffect(() => {
+    const today = getCurrentGoalDate()
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from('todos')
+          .select('text')
+          .eq('day_date', today)
+          .eq('done', false)
+          .order('sort_order', { ascending: true })
+          .limit(1)
+          .single()
+        setTopTodo(data?.text ?? null)
+      } catch { /* non-critical */ }
+    })()
+  }, [])
+
+  // Best-effort: nutrition remaining (calories + protein)
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from('nutrition_day')
+          .select('calories_target, protein_target, meal_log(meal_log_item(calories, protein_g))')
+          .eq('date', today)
+          .single()
+        if (!data) return
+        const items = (data.meal_log as { meal_log_item: { calories: number; protein_g: number }[] }[] ?? [])
+          .flatMap(log => log.meal_log_item ?? [])
+        const consumedCal = items.reduce((s, i) => s + (Number(i.calories) || 0), 0)
+        const consumedProt = items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0)
+        setNutritionRemaining({
+          calories: (data.calories_target ?? 0) - consumedCal,
+          protein_g: (data.protein_target ?? 0) - consumedProt,
+        })
+      } catch { /* non-critical */ }
+    })()
   }, [])
 
   useEffect(() => {
@@ -525,7 +589,7 @@ export default function TodayTab() {
         />
       </div>
 
-      {readiness && <DayModeCard readiness={readiness} todayMeta={todayMeta} />}
+      {readiness && <DayModeCard readiness={readiness} todayMeta={todayMeta} topTodo={topTodo} nutritionRemaining={nutritionRemaining} />}
 
       {reauthRequired && (
         <a

@@ -68,6 +68,12 @@ export default function NutritionTab() {
   const [expandedMeal, setExpandedMeal] = useState<MealTemplateName>('breakfast')
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [mutError, setMutError] = useState<string | null>(null)
+
+  const showMutError = (msg: string) => {
+    setMutError(msg)
+    setTimeout(() => setMutError(null), 3500)
+  }
 
   const targets = useMemo(() => getDailyTargets(dayType, 'cut'), [dayType])
   const defaultMeals = useMemo(() => generateDefaultMeals(dayType), [dayType])
@@ -129,6 +135,7 @@ export default function NutritionTab() {
 
     if (error) {
       console.error('nutrition day upsert failed:', error.message)
+      showMutError('couldn\'t save day settings')
       return null
     }
 
@@ -203,6 +210,7 @@ export default function NutritionTab() {
 
       if (error) {
         console.error('meal log create failed:', error.message)
+        showMutError('couldn\'t create meal')
         setSavingKey(null)
         return
       }
@@ -221,7 +229,10 @@ export default function NutritionTab() {
       substitution_group: override?.groupName ?? item.substitutionGroup ?? label,
     })
 
-    if (error) console.error('meal item insert failed:', error.message)
+    if (error) {
+      console.error('meal item insert failed:', error.message)
+      showMutError('meal didn\'t save')
+    }
     await loadMealLogs(day.id)
     setSavingKey(null)
   }
@@ -230,7 +241,10 @@ export default function NutritionTab() {
     if (!nutritionDay) return
     setSavingKey(`remove:${itemId}`)
     const { error } = await supabase.from('meal_log_item').delete().eq('id', itemId)
-    if (error) console.error('meal item delete failed:', error.message)
+    if (error) {
+      console.error('meal item delete failed:', error.message)
+      showMutError('couldn\'t remove item')
+    }
     await loadMealLogs(nutritionDay.id)
     setSavingKey(null)
   }
@@ -298,6 +312,12 @@ export default function NutritionTab() {
         <div className="py-8 text-center text-sm text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
           loading fuel plan…
         </div>
+      )}
+
+      {mutError && (
+        <p className="text-xs text-red-400 mt-1" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+          {mutError}
+        </p>
       )}
 
       {!loading && (

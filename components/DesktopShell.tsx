@@ -17,13 +17,13 @@ const TABS = [
 ]
 
 const CMDK_ITEMS = [
-  { sec: 'jump',  ic: '◐', label: 'Go to Today',     kbd: '⌘1', tab: 'today' },
-  { sec: 'jump',  ic: '◆', label: 'Go to Focus',     kbd: '⌘2', tab: 'focus' },
-  { sec: 'jump',  ic: '⌇', label: 'Go to Workout',   kbd: '⌘3', tab: 'workout' },
-  { sec: 'jump',  ic: '◇', label: 'Go to Nutrition', kbd: '⌘4', tab: 'nutrition' },
-  { sec: 'jump',  ic: '~', label: 'Go to Whoop',     kbd: '⌘5', tab: 'whoop' },
-  { sec: 'log',   ic: '+', label: 'Log a meal',      kbd: 'M',  tab: 'nutrition' },
-  { sec: 'log',   ic: '+', label: 'Start workout',   kbd: 'W',  tab: 'workout' },
+  { sec: 'jump',  ic: '◐', label: 'Go to Today',     kbd: '⌘1', tab: 'today',     action: undefined },
+  { sec: 'jump',  ic: '◆', label: 'Go to Focus',     kbd: '⌘2', tab: 'focus',     action: undefined },
+  { sec: 'jump',  ic: '⌇', label: 'Go to Workout',   kbd: '⌘3', tab: 'workout',   action: undefined },
+  { sec: 'jump',  ic: '◇', label: 'Go to Nutrition', kbd: '⌘4', tab: 'nutrition', action: undefined },
+  { sec: 'jump',  ic: '~', label: 'Go to Whoop',     kbd: '⌘5', tab: 'whoop',     action: undefined },
+  { sec: 'log',   ic: '+', label: 'Log a meal',      kbd: 'M',  tab: 'nutrition', action: 'log-meal' },
+  { sec: 'log',   ic: '+', label: 'Start workout',   kbd: 'W',  tab: 'workout',   action: 'start' },
 ]
 
 const SEC_TITLES: Record<string, string> = {
@@ -92,15 +92,15 @@ function useTopbarStatus(): TopbarStatus {
 
 function formatTopbarStatus(s: TopbarStatus): { text: string; dotColor: string; textColor: string } {
   if (s.loading) return { text: '…', dotColor: '#555', textColor: '#555' }
-  if (!s.connected) return { text: 'not connected', dotColor: '#555', textColor: '#555' }
-  if (s.reauth) return { text: 'reconnect whoop', dotColor: '#f59e0b', textColor: '#f59e0b' }
-  if (!s.lastSnapshotAt) return { text: 'no data', dotColor: '#555', textColor: '#555' }
+  if (!s.connected) return { text: 'whoop offline · other data live', dotColor: '#555', textColor: '#555' }
+  if (s.reauth) return { text: 'reconnect whoop · other data live', dotColor: '#f59e0b', textColor: '#888' }
+  if (!s.lastSnapshotAt) return { text: 'no whoop data', dotColor: '#555', textColor: '#555' }
 
   const ageH = (Date.now() - new Date(s.lastSnapshotAt).getTime()) / 3_600_000
   const timeAgo = ageH < 1 ? 'just now' : ageH < 24 ? `${Math.floor(ageH)}h ago` : `${Math.floor(ageH / 24)}d ago`
 
-  if (ageH > 30) return { text: `stale · ${timeAgo}`, dotColor: '#f59e0b', textColor: '#f59e0b' }
-  return { text: `whoop · ${timeAgo}`, dotColor: '#00d26a', textColor: '#888' }
+  if (ageH > 30) return { text: `whoop stale · ${timeAgo}`, dotColor: '#f59e0b', textColor: '#888' }
+  return { text: timeAgo, dotColor: '#00d26a', textColor: '#888' }
 }
 
 function CommandPalette({
@@ -108,7 +108,7 @@ function CommandPalette({
   onNav,
 }: {
   onClose: () => void
-  onNav: (tab: string) => void
+  onNav: (tab: string, action?: string) => void
 }) {
   const [q, setQ] = useState('')
   const [highlighted, setHighlighted] = useState(0)
@@ -134,7 +134,7 @@ function CommandPalette({
       if (e.key === 'Enter') {
         e.preventDefault()
         const item = flat[highlighted]
-        if (item?.tab) onNav(item.tab)
+        if (item?.tab) onNav(item.tab, item.action)
         onClose()
       }
     }
@@ -185,7 +185,7 @@ function CommandPalette({
                 return (
                   <button
                     key={it.label}
-                    onClick={() => { if (it.tab) onNav(it.tab); onClose() }}
+                    onClick={() => { if (it.tab) onNav(it.tab, it.action); onClose() }}
                     onMouseEnter={() => setHighlighted(idx)}
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-lg mx-1.5 text-left text-sm transition-colors"
                     style={{
@@ -220,6 +220,7 @@ function CommandPalette({
 
 export default function DesktopShell() {
   const [activeTab, setActiveTab] = useState('today')
+  const [tabAction, setTabAction] = useState<string | undefined>(undefined)
   const [cmdkOpen, setCmdkOpen] = useState(false)
   const topbarStatus = useTopbarStatus()
   const statusDisplay = formatTopbarStatus(topbarStatus)
@@ -252,8 +253,8 @@ export default function DesktopShell() {
     switch (activeTab) {
       case 'today':     return <TodayTab />
       case 'focus':     return <FocusDesktop />
-      case 'workout':   return <WorkoutDesktop />
-      case 'nutrition': return <NutritionDesktop />
+      case 'workout':   return <WorkoutDesktop initialAction={tabAction} onInitialActionConsumed={() => setTabAction(undefined)} />
+      case 'nutrition': return <NutritionDesktop initialAction={tabAction} onInitialActionConsumed={() => setTabAction(undefined)} />
       case 'whoop':     return <WhoopDesktop />
       default:          return <TodayTab />
     }
@@ -409,7 +410,7 @@ export default function DesktopShell() {
       {cmdkOpen && (
         <CommandPalette
           onClose={() => setCmdkOpen(false)}
-          onNav={(tab) => { setActiveTab(tab); setCmdkOpen(false) }}
+          onNav={(tab, action) => { setActiveTab(tab); setTabAction(action); setCmdkOpen(false) }}
         />
       )}
     </div>

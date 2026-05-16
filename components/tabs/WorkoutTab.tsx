@@ -49,7 +49,9 @@ interface ExerciseState {
   weight: number
   selectedReps: number
   selectedRpe: number
-  loggedSets: { id?: number; setNum: number; weight: number; reps: number; rpe: number; loggedAt?: string }[]
+  selectedDistance: number
+  selectedDuration: number
+  loggedSets: { id?: number; setNum: number; weight: number; reps: number; rpe: number; distance_m?: number; duration_s?: number; loggedAt?: string }[]
 }
 
 interface ExerciseFormState {
@@ -91,6 +93,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
   const [addOpen, setAddOpen] = useState(false)
   const [addSaving, setAddSaving] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [logError, setLogError] = useState<string | null>(null)
   const [exerciseForm, setExerciseForm] = useState<ExerciseFormState>(EMPTY_EXERCISE_FORM)
 
   const loadSession = useCallback(async (day: string) => {
@@ -100,6 +103,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
     setExerciseStates([])
     setAddOpen(false)
     setAddError(null)
+    setLogError(null)
 
     const dbKey = DAY_META[day]?.dbKey
     if (!dbKey) { setLoading(false); return }
@@ -165,6 +169,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
         weight: ex.prescribed_weight ?? last[ex.exercise_name]?.weight_lbs ?? 0,
         selectedReps: parseReps(ex.prescribed_reps),
         selectedRpe: parseRpe(ex.target_rpe),
+        selectedDistance: last[ex.exercise_name]?.distance_m ?? 500,
+        selectedDuration: last[ex.exercise_name]?.duration_s ?? 120,
         loggedSets: scopedLogs
           .filter(log => log.workout_exercise_id === ex.id || (!log.workout_exercise_id && log.exercise_name === ex.exercise_name))
           .map((log, idx) => ({
@@ -173,6 +179,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
             weight: log.weight_lbs ?? 0,
             reps: log.reps ?? 0,
             rpe: log.rpe ?? 0,
+            distance_m: log.distance_m ?? undefined,
+            duration_s: log.duration_s ?? undefined,
             loggedAt: log.logged_at,
           })),
       })))
@@ -247,6 +255,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
         weight: exercise.prescribed_weight ?? 0,
         selectedReps: parseReps(exercise.prescribed_reps),
         selectedRpe: parseRpe(exercise.target_rpe),
+        selectedDistance: 500,
+        selectedDuration: 120,
         loggedSets: [],
       },
     ])
@@ -259,15 +269,18 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
     const s = exerciseStates[i]
     const ex = exercises[i]
     const setNum = s.loggedSets.length + 1
+    const modality = ex.modality ?? 'strength'
     const payload = {
       workout_session_id: session.id,
       workout_exercise_id: ex.id,
       exercise_name: ex.exercise_name,
       set_number: setNum,
-      weight_lbs: s.weight,
+      weight_lbs: modality === 'bodyweight' ? 0 : s.weight,
       weight_unit: 'kg',
-      reps: s.selectedReps,
+      reps: modality === 'erg' ? null : s.selectedReps,
       rpe: s.selectedRpe,
+      distance_m: modality === 'erg' || modality === 'carry' ? s.selectedDistance : null,
+      duration_s: modality === 'erg' ? s.selectedDuration : null,
     }
 
     supabase.from('workout_logs').insert(payload).select('*').single().then(async ({ data, error }) => {
@@ -282,6 +295,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
       if (error) {
         console.error('workout log insert failed:', error.message)
+        setLogError('couldn\'t log set')
+        setTimeout(() => setLogError(null), 3500)
         return
       }
 
@@ -295,6 +310,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
             weight: log.weight_lbs ?? s.weight,
             reps: log.reps ?? s.selectedReps,
             rpe: log.rpe ?? s.selectedRpe,
+            distance_m: log.distance_m ?? undefined,
+            duration_s: log.duration_s ?? undefined,
             loggedAt: log.logged_at,
           },
         ],
@@ -571,48 +588,70 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
                 {s.expanded && (
                   <div className="border-t border-[#2a2a2a] px-4 pb-4 space-y-4 pt-4">
-                    {/* Weight adjuster */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#888] text-xs uppercase tracking-wider">Weight</span>
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => updateState(i, { weight: Math.max(0, s.weight - 2.5) })}
-                          className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60"
-                        >
-                          −
-                        </button>
-                        <span className="text-[#ededed] text-2xl font-bold min-w-[64px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                          {s.weight}<span className="text-[#555] text-sm ml-0.5">kg</span>
-                        </span>
-                        <button
-                          onClick={() => updateState(i, { weight: s.weight + 2.5 })}
-                          className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60"
-                        >
-                          +
-                        </button>
+                    {/* Modality: strength — weight + reps */}
+                    {(ex.modality === 'strength' || ex.modality === 'carry' || !ex.modality) && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#888] text-xs uppercase tracking-wider">Weight</span>
+                        <div className="flex items-center gap-3">
+                          <button onClick={() => updateState(i, { weight: Math.max(0, s.weight - 2.5) })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">−</button>
+                          <span className="text-[#ededed] text-2xl font-bold min-w-[64px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                            {s.weight}<span className="text-[#555] text-sm ml-0.5">kg</span>
+                          </span>
+                          <button onClick={() => updateState(i, { weight: s.weight + 2.5 })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">+</button>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Reps */}
-                    <div>
-                      <div className="text-[#888] text-xs uppercase tracking-wider mb-2">Reps</div>
-                      <div className="flex flex-wrap gap-2">
-                        {[3, 4, 5, 6, 7, 8, 9, 10, 12, 15].map(r => (
-                          <button
-                            key={r}
-                            onClick={() => updateState(i, { selectedReps: r })}
-                            className={`min-w-[40px] min-h-[36px] px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                              s.selectedReps === r
-                                ? 'bg-[#00d26a] border-[#00d26a] text-[#0e0e0e] font-bold'
-                                : 'bg-transparent border-[#2a2a2a] text-[#888]'
-                            }`}
-                            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-                          >
-                            {r}
-                          </button>
-                        ))}
+                    {/* Distance — erg + carry */}
+                    {(ex.modality === 'erg' || ex.modality === 'carry') && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#888] text-xs uppercase tracking-wider">Distance</span>
+                        <div className="flex items-center gap-3">
+                          <button onClick={() => updateState(i, { selectedDistance: Math.max(50, s.selectedDistance - 50) })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">−</button>
+                          <span className="text-[#ededed] text-2xl font-bold min-w-[72px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                            {s.selectedDistance}<span className="text-[#555] text-sm ml-0.5">m</span>
+                          </span>
+                          <button onClick={() => updateState(i, { selectedDistance: s.selectedDistance + 50 })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">+</button>
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {/* Duration — erg only */}
+                    {ex.modality === 'erg' && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#888] text-xs uppercase tracking-wider">Time</span>
+                        <div className="flex items-center gap-3">
+                          <button onClick={() => updateState(i, { selectedDuration: Math.max(10, s.selectedDuration - 10) })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">−</button>
+                          <span className="text-[#ededed] text-2xl font-bold min-w-[72px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                            {Math.floor(s.selectedDuration / 60)}:{String(s.selectedDuration % 60).padStart(2, '0')}
+                          </span>
+                          <button onClick={() => updateState(i, { selectedDuration: s.selectedDuration + 10 })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">+</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Reps — strength + bodyweight + carry */}
+                    {ex.modality !== 'erg' && (
+                      <div>
+                        <div className="text-[#888] text-xs uppercase tracking-wider mb-2">Reps</div>
+                        <div className="flex flex-wrap gap-2">
+                          {[3, 4, 5, 6, 7, 8, 9, 10, 12, 15].map(r => (
+                            <button
+                              key={r}
+                              onClick={() => updateState(i, { selectedReps: r })}
+                              className={`min-w-[40px] min-h-[36px] px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                                s.selectedReps === r
+                                  ? 'bg-[#00d26a] border-[#00d26a] text-[#0e0e0e] font-bold'
+                                  : 'bg-transparent border-[#2a2a2a] text-[#888]'
+                              }`}
+                              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+                            >
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* RPE */}
                     <div>
@@ -653,6 +692,12 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       Log set {s.loggedSets.length + 1}{setsTarget > 0 ? ` of ${setsTarget}` : ''} →
                     </button>
 
+                    {logError && (
+                      <p className="text-[11px] text-red-400" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                        {logError}
+                      </p>
+                    )}
+
                     {/* Logged sets */}
                     {s.loggedSets.length > 0 && (
                       <div className="space-y-1.5">
@@ -660,7 +705,10 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                         {s.loggedSets.map(ls => (
                           <div key={ls.setNum} className="flex items-center justify-between text-[#888] text-[11px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                             <span>Set {ls.setNum}</span>
-                            <span>{ls.weight}kg × {ls.reps}</span>
+                            {ls.distance_m != null
+                              ? <span>{ls.distance_m}m{ls.duration_s != null ? ` · ${Math.floor(ls.duration_s / 60)}:${String(ls.duration_s % 60).padStart(2, '0')}` : ''}</span>
+                              : <span>{ex.modality !== 'bodyweight' ? `${ls.weight}kg × ` : ''}{ls.reps}</span>
+                            }
                             <span>RPE {ls.rpe}</span>
                           </div>
                         ))}
