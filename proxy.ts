@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
+import { verifySessionToken } from './lib/session'
 
 const COOKIE = 'lifeos_auth'
 const LOGIN = '/login'
@@ -14,8 +15,7 @@ export async function proxy(req: NextRequest) {
   }
 
   const token = req.cookies.get(COOKIE)?.value
-  const expected = process.env.APP_PASSWORD
-  if (!expected || token !== expected) {
+  if (!token || !await verifySessionToken(token)) {
     const url = req.nextUrl.clone()
     url.pathname = LOGIN
     return NextResponse.redirect(url)

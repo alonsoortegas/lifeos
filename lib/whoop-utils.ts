@@ -2,7 +2,7 @@ export const WHOOP_CLIENT_ID = 'aeb5a295-3c6a-42a9-9657-57227bb0adb7'
 export const WHOOP_SCOPES = 'offline read:recovery read:sleep read:workout read:cycles read:body_measurement'
 
 export function whoopAuthUrl(host: string): string {
-  const redirectUri = encodeURIComponent(`${host}/api/whoop-callback`)
+  const redirectUri = encodeURIComponent(`${host}/callback`)
   const scope = encodeURIComponent(WHOOP_SCOPES)
   return `https://api.prod.whoop.com/oauth/oauth2/auth?client_id=${WHOOP_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=lifeos26`
 }
