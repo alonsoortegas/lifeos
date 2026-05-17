@@ -97,7 +97,7 @@ Set `NEXT_PUBLIC_WHOOP_REDIRECT_URI` to the exact URI you are using from the lis
 
 ```
 "connect whoop" button
-  → whoopAuthUrl() builds auth URL with redirect_uri=/api/whoop-callback
+  → GET /api/whoop-auth builds auth URL with redirect_uri=/api/whoop-callback
   → WHOOP OAuth consent screen
   → GET /api/whoop-callback?code=...
   → token exchange via lib/whoop-oauth.ts

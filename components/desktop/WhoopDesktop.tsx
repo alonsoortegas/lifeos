@@ -14,7 +14,7 @@ import {
 } from 'chart.js'
 import { Line, Bar } from 'react-chartjs-2'
 import { useWhoopData } from '@/lib/whoop-data'
-import { sportColor, avg, shortDate, whoopAuthUrl } from '@/lib/whoop-utils'
+import { sportColor, avg, shortDate } from '@/lib/whoop-utils'
 
 ChartJS.register(
   CategoryScale, LinearScale,
@@ -147,8 +147,6 @@ export default function WhoopDesktop() {
   })
   const sortedSports = Object.entries(sportCounts).sort((a, b) => b[1] - a[1])
 
-  const authUrl = typeof window !== 'undefined' ? whoopAuthUrl(window.location.origin) : '#'
-
   return (
     <div className="px-5 pb-6 pt-3" style={{ fontFamily: sans, display: 'flex', flexDirection: 'column', gap: 0 }}>
 
@@ -168,7 +166,7 @@ export default function WhoopDesktop() {
           )}
           {reauthRequired ? (
             <a
-              href={authUrl}
+              href="/api/whoop-auth"
               style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid #f59e0b`, background: 'rgba(245,158,11,0.08)', color: '#f59e0b', fontFamily: mono, fontSize: 11, textDecoration: 'none' }}
             >
               reconnect whoop →
@@ -196,7 +194,7 @@ export default function WhoopDesktop() {
           No Whoop data yet — connect your Whoop to get started.
           <br />
           <a
-            href={authUrl}
+            href="/api/whoop-auth"
             style={{ marginTop: 16, display: 'inline-block', padding: '8px 16px', borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontFamily: mono, fontSize: 11, textDecoration: 'none' }}
           >
             connect whoop →

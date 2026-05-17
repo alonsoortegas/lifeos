@@ -2,7 +2,7 @@
 
 import Card from '@/components/ui/Card'
 import { useWhoopData } from '@/lib/whoop-data'
-import { sportColor, avg, shortDate, whoopAuthUrl, sleepHM } from '@/lib/whoop-utils'
+import { sportColor, avg, shortDate, sleepHM } from '@/lib/whoop-utils'
 
 const ZONE_COLORS = ['#1e293b', '#3b82f6', '#22c55e', '#f59e0b', '#f97316', '#ef4444']
 const ZONE_LABELS = ['Z0', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5']
@@ -589,7 +589,7 @@ export default function WhoopTab() {
         </div>
         {(reauthRequired || tokenExpired) && (
           <a
-            href={typeof window !== 'undefined' ? whoopAuthUrl(window.location.origin) : '#'}
+            href="/api/whoop-auth"
             style={{
               display: 'block', textAlign: 'center', background: C.accent, color: C.bg,
               fontFamily: mono, fontSize: 12, fontWeight: 700, borderRadius: 8,

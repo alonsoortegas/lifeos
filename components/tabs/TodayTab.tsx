@@ -7,7 +7,7 @@ import StatCard from '@/components/ui/StatCard'
 import type { WhoopSnapshot, Todo } from '@/lib/types'
 import { getCurrentGoalDate, getMillisecondsUntilNextGoalReset } from '@/lib/goal-dates'
 import { getCurrentWeek, getTodayKey, DAY_META } from '@/lib/workout'
-import { sleepHM, whoopAuthUrl } from '@/lib/whoop-utils'
+import { sleepHM } from '@/lib/whoop-utils'
 import { computeReadiness, stateColor, stateLabel, stateTone, type Readiness } from '@/lib/readiness'
 
 const supabase = createBrowserClient(
@@ -593,7 +593,7 @@ export default function TodayTab() {
 
       {reauthRequired && (
         <a
-          href={typeof window !== 'undefined' ? whoopAuthUrl(window.location.origin) : '#'}
+          href="/api/whoop-auth"
           className="block rounded-lg bg-[#00d26a] py-3 text-center text-[12px] font-bold text-[#0e0e0e] no-underline"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
