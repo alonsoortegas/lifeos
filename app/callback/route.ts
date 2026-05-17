@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { exchangeWhoopCode, persistWhoopTokens } from '../../lib/whoop-oauth'
+import { whoopRedirectUri } from '../../lib/whoop-redirect'
 
 function escapeHtml(s: string): string {
   return s
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
   // Use x-forwarded headers when behind Vercel's proxy (where req.url uses http).
   const proto = req.headers.get('x-forwarded-proto') ?? reqUrl.protocol.replace(':', '')
   const host = req.headers.get('x-forwarded-host') ?? reqUrl.host
-  const redirectUri = `${proto}://${host}/callback`
+  const redirectUri = whoopRedirectUri(`${proto}://${host}`)
 
   const result = await exchangeWhoopCode(code, redirectUri)
   if (!result.ok) return html(`<h2>Error</h2><p>${escapeHtml(result.error)}</p>`, result.status)

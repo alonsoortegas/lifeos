@@ -105,8 +105,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
     setAddError(null)
     setLogError(null)
 
-    const dbKey = DAY_META[day]?.dbKey
-    if (!dbKey) { setLoading(false); return }
+    const dbKey = DAY_META[day]?.dbKey ?? day
 
     const { data: sessionData } = await supabase
       .from('workout_sessions')
@@ -206,7 +205,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
   }
 
   const addExercise = async () => {
-    if (!session || addSaving) return
+    if (addSaving) return
 
     const name = exerciseForm.name.trim()
     if (!name) {
@@ -221,8 +220,31 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
     setAddSaving(true)
     setAddError(null)
 
+    let currentSession = session
+    if (!currentSession) {
+      const dayKey = DAY_META[selectedDay]?.dbKey ?? selectedDay
+      const { data: newSession, error: sessionError } = await supabase
+        .from('workout_sessions')
+        .insert({
+          week_number: currentWeek,
+          day_of_week: dayKey,
+          title: DAY_META[selectedDay]?.restLabel ?? 'Extra Work',
+          session_type: 'extra',
+          notes: null,
+        })
+        .select('*')
+        .single()
+      if (sessionError || !newSession) {
+        setAddError(sessionError?.message ?? 'Failed to create session')
+        setAddSaving(false)
+        return
+      }
+      currentSession = newSession as WorkoutSession
+      setSession(currentSession)
+    }
+
     const payload = {
-      session_id: session.id,
+      session_id: currentSession.id,
       order_index: orderIndex,
       exercise_name: name,
       prescribed_sets: Number.isFinite(parsedSets) ? parsedSets : null,
@@ -356,19 +378,40 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
       </div>
 
       {/* Rest / cardio day */}
-      {!isGymDay && (
-        <Card className="p-6 flex flex-col items-center gap-2 text-center">
-          <div className="text-[#555] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-            · {meta?.restLabel} ·
-          </div>
-          <div className="text-[#888] text-sm" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-            {meta?.restSub}
+      {!isGymDay && !loading && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-1.5">
+              <div className="text-[#555] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                · {meta?.restLabel} ·
+              </div>
+              <div className="text-[#888] text-sm" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                {meta?.restSub}
+              </div>
+            </div>
+            {canAddExercises && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAddOpen(open => !open)
+                  setAddError(null)
+                }}
+                aria-label={addOpen ? 'Close add exercise form' : 'Add exercise'}
+                className={`flex-shrink-0 h-10 w-10 rounded-lg border text-xl leading-none flex items-center justify-center transition-colors ${
+                  addOpen
+                    ? 'border-[#00d26a] bg-[#00d26a] text-[#0e0e0e]'
+                    : 'border-[#2a2a2a] bg-transparent text-[#00d26a]'
+                }`}
+              >
+                {addOpen ? '−' : '+'}
+              </button>
+            )}
           </div>
         </Card>
       )}
 
       {/* Loading */}
-      {isGymDay && loading && (
+      {loading && (
         <div className="text-[#555] text-sm text-center py-8" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
           loading…
         </div>
@@ -386,47 +429,47 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
         </Card>
       )}
 
-      {/* Session */}
+      {/* Session header — gym days with a scheduled session */}
       {isGymDay && !loading && session && (
-        <>
-          {/* Header */}
-          <div>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[#00d26a] uppercase text-[11px] tracking-widest mb-1" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                  WEEK {currentWeek} · {session.session_type.toUpperCase()}
-                </div>
-                <h1 className="text-[22px] font-bold text-[#ededed]">{session.title}</h1>
+        <div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[#00d26a] uppercase text-[11px] tracking-widest mb-1" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                WEEK {currentWeek} · {session.session_type.toUpperCase()}
               </div>
-              {canAddExercises && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAddOpen(open => !open)
-                    setAddError(null)
-                  }}
-                  aria-label={addOpen ? 'Close add exercise form' : 'Add exercise'}
-                  className={`flex-shrink-0 h-10 w-10 rounded-lg border text-xl leading-none flex items-center justify-center transition-colors ${
-                    addOpen
-                      ? 'border-[#00d26a] bg-[#00d26a] text-[#0e0e0e]'
-                      : 'border-[#2a2a2a] bg-transparent text-[#00d26a]'
-                  }`}
-                >
-                  {addOpen ? '−' : '+'}
-                </button>
-              )}
+              <h1 className="text-[22px] font-bold text-[#ededed]">{session.title}</h1>
             </div>
-            <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-              {exercises.length} exercises · {totalSets} sets logged
-            </div>
-            {session.notes && (
-              <div className="text-[#555] text-[11px] mt-1 leading-relaxed" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                {session.notes}
-              </div>
+            {canAddExercises && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAddOpen(open => !open)
+                  setAddError(null)
+                }}
+                aria-label={addOpen ? 'Close add exercise form' : 'Add exercise'}
+                className={`flex-shrink-0 h-10 w-10 rounded-lg border text-xl leading-none flex items-center justify-center transition-colors ${
+                  addOpen
+                    ? 'border-[#00d26a] bg-[#00d26a] text-[#0e0e0e]'
+                    : 'border-[#2a2a2a] bg-transparent text-[#00d26a]'
+                }`}
+              >
+                {addOpen ? '−' : '+'}
+              </button>
             )}
           </div>
+          <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+            {exercises.length} exercises · {totalSets} sets logged
+          </div>
+          {session.notes && (
+            <div className="text-[#555] text-[11px] mt-1 leading-relaxed" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+              {session.notes}
+            </div>
+          )}
+        </div>
+      )}
 
-          {canAddExercises && addOpen && (
+      {/* Add form — available on all days */}
+      {canAddExercises && addOpen && (
             <Card className="p-4">
               <form
                 className="space-y-3"
@@ -546,8 +589,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
             </Card>
           )}
 
-          {/* Exercise cards */}
-          {exercises.map((ex, i) => {
+      {/* Exercise cards — available on all days */}
+      {!loading && exercises.map((ex, i) => {
             const s = exerciseStates[i]
             if (!s) return null
             const last = lastSets[ex.exercise_name]
@@ -718,9 +761,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                 )}
               </Card>
             )
-          })}
-        </>
-      )}
+      })}
 
       <div className="h-4" />
     </div>

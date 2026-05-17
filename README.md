@@ -87,22 +87,24 @@ WHOOP uses OAuth2 authorization code flow. Tokens are stored in `whoop_tokens` (
 ### Registered redirect URIs (must be whitelisted in WHOOP developer dashboard)
 
 ```
-http://localhost:3000/callback
-https://lifeos-zeta-three.vercel.app/callback
+http://localhost:3000/api/whoop-callback
+https://lifeos-zeta-three.vercel.app/api/whoop-callback
 ```
+
+Set `NEXT_PUBLIC_WHOOP_REDIRECT_URI` to the exact URI you are using from the list above. If it is unset, the app falls back to `${window.location.origin}/api/whoop-callback`; that fallback only works when the current origin is already registered in WHOOP.
 
 ### Connect flow
 
 ```
 "connect whoop" button
-  → whoopAuthUrl() builds auth URL with redirect_uri=/callback
+  → whoopAuthUrl() builds auth URL with redirect_uri=/api/whoop-callback
   → WHOOP OAuth consent screen
-  → GET /callback?code=...
+  → GET /api/whoop-callback?code=...
   → token exchange via lib/whoop-oauth.ts
   → tokens stored in whoop_tokens
 ```
 
-`/api/whoop-callback` is a legacy path kept for backwards compatibility. Both routes share the token exchange + persistence logic in `lib/whoop-oauth.ts`.
+`/callback` is kept for backwards compatibility only. The registered WHOOP callback is `/api/whoop-callback`.
 
 ### Sync
 

@@ -60,7 +60,7 @@ function findLoggedItem(logs: MealLog[], mealName: MealTemplateName, foodItemId:
 }
 
 export default function NutritionTab() {
-  const [dayType, setDayType] = useState<NutritionDayType>('hard')
+  const [dayType, setDayType] = useState<NutritionDayType>('moderate')
   const [nutritionDay, setNutritionDay] = useState<NutritionDay | null>(null)
   const [foods, setFoods] = useState<FoodItem[]>([])
   const [substitutionRows, setSubstitutionRows] = useState<SubstitutionRow[]>([])
@@ -144,18 +144,18 @@ export default function NutritionTab() {
     return day
   }, [])
 
+  // Init effect — runs once on mount. Loads static data and detects the day type from
+  // any meals already logged today, so re-opening the tab doesn't reset the selection.
   useEffect(() => {
     let cancelled = false
 
-    async function load() {
+    async function init() {
       setLoading(true)
-      const [foodResult, substitutionResult, day] = await Promise.all([
+
+      const [foodResult, substitutionResult, existingDayResult] = await Promise.all([
         supabase.from('food_item').select('*').order('category').order('name'),
-        supabase
-          .from('food_substitution_group_item')
-          .select('*, food_substitution_group(*)')
-          .order('label'),
-        ensureDay(dayType),
+        supabase.from('food_substitution_group_item').select('*, food_substitution_group(*)').order('label'),
+        supabase.from('nutrition_day').select('*').eq('date', todayISO()).maybeSingle(),
       ])
 
       if (cancelled) return
@@ -165,19 +165,40 @@ export default function NutritionTab() {
 
       setFoods((foodResult.data ?? []) as FoodItem[])
       setSubstitutionRows((substitutionResult.data ?? []) as SubstitutionRow[])
-      if (day) await loadMealLogs(day.id)
-      setLoading(false)
+
+      let day: NutritionDay | null = (existingDayResult.data as NutritionDay) ?? null
+
+      if (day) {
+        // If any meals have been logged today, lock in the day type from the existing row.
+        const { data: logCheck } = await supabase
+          .from('meal_log')
+          .select('id')
+          .eq('nutrition_day_id', day.id)
+          .limit(1)
+
+        if (logCheck && logCheck.length > 0) {
+          setDayType(day.day_type as NutritionDayType)
+        }
+
+        setNutritionDay(day)
+      } else {
+        // First open of the day — create the row with the current default.
+        day = await ensureDay('moderate')
+      }
+
+      if (day && !cancelled) await loadMealLogs(day.id)
+      if (!cancelled) setLoading(false)
     }
 
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [dayType, ensureDay, loadMealLogs])
+    init()
+    return () => { cancelled = true }
+  }, [ensureDay, loadMealLogs]) // stable refs, effectively runs once
 
   const changeDayType = async (nextDayType: NutritionDayType) => {
     setDayType(nextDayType)
     setExpandedMeal(generateDefaultMeals(nextDayType)[0]?.name ?? 'breakfast')
+    const day = await ensureDay(nextDayType)
+    if (day) await loadMealLogs(day.id)
   }
 
   const logTemplateItem = async (

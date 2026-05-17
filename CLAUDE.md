@@ -154,7 +154,7 @@ WorkoutTab uses `lastSets` (filtered to before today) to compute progressive ove
 OAuth2 authorization code flow. Tokens are stored in `whoop_tokens`. The access token lasts 1 hour; refresh tokens are issued once Whoop approves the app for the `offline` scope (pending review).
 
 ```
-User → "connect whoop" button → Whoop OAuth → /callback → stores token in whoop_tokens
+User → "connect whoop" button → Whoop OAuth → /api/whoop-callback → stores token in whoop_tokens
 "sync now" button → /api/whoop-sync → supabase/functions/whoop-sync → whoop_snapshots + whoop_workouts
 Hourly cron → whoop-sync Edge Function (pg_cron configured in migrations)
 ```
@@ -170,8 +170,8 @@ supabase secrets set WHOOP_CLIENT_ID=aeb5a295-3c6a-42a9-9657-57227bb0adb7 WHOOP_
 
 **Whoop developer app redirect URIs (must be whitelisted in dashboard):**
 ```
-http://localhost:3000/callback
-https://lifeos-zeta-three.vercel.app/callback
+http://localhost:3000/api/whoop-callback
+https://lifeos-zeta-three.vercel.app/api/whoop-callback
 ```
 
 **Whoop `offline` scope:**

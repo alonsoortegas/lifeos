@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { exchangeWhoopCode, persistWhoopTokens } from '../../../lib/whoop-oauth'
 
-// Legacy callback path — kept for backwards compatibility if this redirect_uri was
-// registered in an older WHOOP developer app config. New flows use /callback.
+// Canonical WHOOP callback path. This exact path must match the redirect_uri
+// registered in the WHOOP developer dashboard.
 
 function escapeHtml(s: string): string {
   return s
