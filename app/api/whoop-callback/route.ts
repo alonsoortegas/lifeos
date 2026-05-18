@@ -26,6 +26,15 @@ function getRedirectUri(req: NextRequest): string {
   return `${proto}://${host}/api/whoop-callback`
 }
 
+function dashboardRedirect(req: NextRequest) {
+  const proto = req.headers.get('x-forwarded-proto') ?? 'http'
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? 'localhost:3000'
+  const url = new URL('/', `${proto}://${host}`)
+  url.searchParams.set('tab', 'whoop')
+  url.searchParams.set('whoop_sync', '1')
+  return NextResponse.redirect(url)
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
@@ -40,14 +49,5 @@ export async function GET(req: NextRequest) {
   const dbError = await persistWhoopTokens(result.tokens)
   if (dbError) return html('<h2>DB error — check server logs</h2>', 500)
 
-  const { tokens } = result
-  const offlineNote = tokens.refresh_token
-    ? '<p>Offline access enabled — tokens will refresh automatically.</p>'
-    : '<p><strong>Note:</strong> No refresh token returned. You will need to reconnect when the access token expires.</p>'
-
-  return html(`
-    <h2>Whoop connected</h2>
-    <p>Tokens stored. You can close this tab.</p>
-    ${offlineNote}
-  `)
+  return dashboardRedirect(req)
 }

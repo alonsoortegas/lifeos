@@ -16,6 +16,14 @@ const TABS = [
   { key: 'whoop',     icon: '~', label: 'Whoop',     kbd: '5' },
 ]
 
+const TAB_KEYS = new Set(TABS.map(t => t.key))
+
+function initialDesktopTab() {
+  if (typeof window === 'undefined') return 'today'
+  const tab = new URLSearchParams(window.location.search).get('tab')
+  return tab && TAB_KEYS.has(tab) ? tab : 'today'
+}
+
 const CMDK_ITEMS = [
   { sec: 'jump',  ic: '◐', label: 'Go to Today',     kbd: '⌘1', tab: 'today',     action: undefined },
   { sec: 'jump',  ic: '◆', label: 'Go to Focus',     kbd: '⌘2', tab: 'focus',     action: undefined },
@@ -219,7 +227,7 @@ function CommandPalette({
 }
 
 export default function DesktopShell() {
-  const [activeTab, setActiveTab] = useState('today')
+  const [activeTab, setActiveTab] = useState(initialDesktopTab)
   const [tabAction, setTabAction] = useState<string | undefined>(undefined)
   const [cmdkOpen, setCmdkOpen] = useState(false)
   const topbarStatus = useTopbarStatus()

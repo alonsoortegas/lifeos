@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import type { WhoopSnapshot, WhoopWorkout } from '@/lib/types'
 
@@ -19,6 +19,7 @@ export function useWhoopData() {
   const [hasOffline, setHasOffline] = useState(true)
   const [tokenExpired, setTokenExpired] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const autoSyncStarted = useRef(false)
 
   async function load() {
     const [snapRes, histRes, wktRes] = await Promise.all([
@@ -49,6 +50,17 @@ export function useWhoopData() {
       })
       .catch(() => {})
     return () => window.clearTimeout(initialId)
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('whoop_sync') !== '1' || autoSyncStarted.current) return
+
+    autoSyncStarted.current = true
+    params.delete('whoop_sync')
+    const nextUrl = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash}`
+    window.history.replaceState(null, '', nextUrl)
+    void syncNow()
   }, [])
 
   async function syncNow() {

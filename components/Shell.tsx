@@ -11,6 +11,18 @@ import DesktopShell from '@/components/DesktopShell'
 
 const TAB_LABELS = ['TODAY', 'FOCUS', 'WORKOUT', 'NUTRITION', 'WHOOP']
 const DESKTOP_QUERY = '(min-width: 1024px)'
+const TAB_QUERY_INDEX: Record<string, number> = {
+  today: 0,
+  focus: 1,
+  workout: 2,
+  nutrition: 3,
+  whoop: 4,
+}
+
+function initialMobileTab() {
+  if (typeof window === 'undefined') return 0
+  return TAB_QUERY_INDEX[new URLSearchParams(window.location.search).get('tab') ?? ''] ?? 0
+}
 
 function subscribeToDesktopChange(onChange: () => void) {
   const mq = window.matchMedia(DESKTOP_QUERY)
@@ -27,7 +39,7 @@ function getServerDesktopSnapshot() {
 }
 
 function MobileShell() {
-  const [activeTab, setActiveTab] = useState(0)
+  const [activeTab, setActiveTab] = useState(initialMobileTab)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
 

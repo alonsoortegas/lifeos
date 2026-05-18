@@ -52,7 +52,7 @@ async function performRefresh(currentRefreshToken: string): Promise<string> {
     .upsert({
       id: 1,
       access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      refresh_token: tokens.refresh_token ?? currentRefreshToken,
       expires_at: expiresAt,
       token_type: tokens.token_type ?? 'Bearer',
       scope: tokens.scope ?? null,

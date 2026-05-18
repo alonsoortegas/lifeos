@@ -8,6 +8,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const WHOOP_TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token'
 const WHOOP_BASE = 'https://api.prod.whoop.com/developer/v2'
+const LOCK_ID = 'whoop-sync'
+const LOCK_TTL_MS = 10 * 60 * 1000
 
 const SPORT_NAMES: Record<number, string> = {
   0: 'running',
@@ -33,6 +35,9 @@ const SPORT_NAMES: Record<number, string> = {
 }
 
 serve(async (req) => {
+  let lockClient: ReturnType<typeof createClient> | null = null
+  let lockToken: string | null = null
+
   try {
     const clientId = Deno.env.get('WHOOP_CLIENT_ID')
     const clientSecret = Deno.env.get('WHOOP_CLIENT_SECRET')
@@ -76,6 +81,12 @@ serve(async (req) => {
     } catch { /* no body or not JSON — default to 1 */ }
 
     const supabase = createClient(supabaseUrl, supabaseKey)
+    lockClient = supabase
+
+    lockToken = await claimSyncLock(supabase)
+    if (!lockToken) {
+      return json({ error: 'already_running', message: 'WHOOP sync is already running' }, 409)
+    }
 
     // 1. Load stored tokens
     const { data: tokenRow, error: tokenErr } = await supabase
@@ -119,7 +130,7 @@ serve(async (req) => {
         await supabase.from('whoop_tokens').upsert({
           id: 1,
           access_token: accessToken,
-          refresh_token: tokens.refresh_token,
+          refresh_token: tokens.refresh_token ?? tokenRow.refresh_token,
           expires_at: newExpiresAt,
           token_type: tokens.token_type ?? 'Bearer',
           scope: tokens.scope ?? null,
@@ -134,6 +145,9 @@ serve(async (req) => {
           return json({ error: 'reauth_required', message: 'WHOOP token expired — please reconnect WHOOP in the dashboard' }, 401)
         }
         console.warn('Token refresh failed, proceeding with stored access token:', body)
+        if (Date.now() >= expiresAt) {
+          return json({ error: 'token_refresh_failed', message: 'WHOOP token refresh failed — retry later' }, 503)
+        }
       }
     } else if (needsRefresh && !tokenRow.refresh_token) {
       // No refresh token — mark as needing reauth and return error
@@ -286,6 +300,8 @@ serve(async (req) => {
   } catch (err) {
     console.error('whoop-sync error:', err)
     return json({ error: String(err) }, 500)
+  } finally {
+    if (lockClient && lockToken) await releaseSyncLock(lockClient, lockToken)
   }
 })
 
@@ -298,6 +314,34 @@ async function whoopGet(token: string, path: string) {
     throw Object.assign(new Error(`Whoop ${path} error ${res.status}: ${body}`), { status: res.status })
   }
   return res.json()
+}
+
+async function claimSyncLock(supabase: ReturnType<typeof createClient>) {
+  const token = crypto.randomUUID()
+  const now = new Date().toISOString()
+  const lockedUntil = new Date(Date.now() + LOCK_TTL_MS).toISOString()
+
+  const { data, error } = await supabase
+    .from('whoop_sync_locks')
+    .update({ locked_until: lockedUntil, lock_token: token, updated_at: now })
+    .eq('id', LOCK_ID)
+    .lt('locked_until', now)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  return data ? token : null
+}
+
+async function releaseSyncLock(supabase: ReturnType<typeof createClient>, token: string) {
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('whoop_sync_locks')
+    .update({ locked_until: now, lock_token: null, updated_at: now })
+    .eq('id', LOCK_ID)
+    .eq('lock_token', token)
+
+  if (error) console.warn('whoop-sync lock release failed:', error.message)
 }
 
 function json(data: unknown, status = 200) {
