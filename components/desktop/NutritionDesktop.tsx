@@ -19,6 +19,7 @@ import type {
   FoodSubstitutionGroup,
   FoodSubstitutionGroupItem,
   MealLog,
+  MealLogItem,
   MealTemplateName,
   NutritionDay,
   NutritionDayType,
@@ -43,8 +44,19 @@ interface SubstitutionRow extends FoodSubstitutionGroupItem {
   food_substitution_group?: FoodSubstitutionGroup
 }
 
+type PortionDraft = {
+  foodItemId: string
+  quantity: string
+}
+
 function todayISO(): string { return new Date().toISOString().slice(0, 10) }
 function macroVal(v: number): string { return `${Math.round(v)}` }
+function quantityVal(v: number): string { return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, '') }
+function loggedFoodLabel(item: MealLogItem): string {
+  const foodName = item.food_item?.name ?? 'food'
+  const quantity = Number(item.quantity) || 0
+  return quantity > 0 ? `${foodName} x${quantityVal(quantity)}` : foodName
+}
 function foodKey(mealName: MealTemplateName, foodItemId: number, label: string): string {
   return `${mealName}:${foodItemId}:${label}`
 }
@@ -70,6 +82,7 @@ export default function NutritionDesktop({
   const [mealLogs, setMealLogs] = useState<MealLog[]>([])
   const [expandedMeals, setExpandedMeals] = useState<Set<MealTemplateName>>(new Set(['breakfast']))
   const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [portionDrafts, setPortionDrafts] = useState<Partial<Record<MealTemplateName, PortionDraft>>>({})
   const [loading, setLoading] = useState(true)
 
   const targets = useMemo(() => getDailyTargets(dayType, 'cut'), [dayType])
@@ -147,6 +160,46 @@ export default function NutritionDesktop({
     }
     const scaled = scaleFood(food, override?.quantity ?? item.quantity)
     await supabase.from('meal_log_item').insert({ meal_log_id: mealLog.id, food_item_id: food.id, quantity: scaled.quantity, calories: scaled.calories, protein_g: scaled.protein_g, carbs_g: scaled.carbs_g, fat_g: scaled.fat_g, substitution_group: override?.groupName ?? item.substitutionGroup ?? label })
+    await loadMealLogs(day.id); setSavingKey(null)
+  }
+
+  const updatePortionDraft = (mealName: MealTemplateName, patch: Partial<PortionDraft>) => {
+    setPortionDrafts(prev => ({
+      ...prev,
+      [mealName]: {
+        foodItemId: prev[mealName]?.foodItemId ?? '',
+        quantity: prev[mealName]?.quantity ?? '1',
+        ...patch,
+      },
+    }))
+  }
+
+  const getPortionDraft = (mealName: MealTemplateName): PortionDraft => ({
+    foodItemId: portionDrafts[mealName]?.foodItemId ?? '',
+    quantity: portionDrafts[mealName]?.quantity ?? '1',
+  })
+
+  const logFoodPortion = async (mealName: MealTemplateName) => {
+    const day = nutritionDay ?? (await ensureDay(dayType)); if (!day) return
+    const draft = getPortionDraft(mealName)
+    const food = foods.find(candidate => candidate.id === Number(draft.foodItemId))
+    const quantity = Number(draft.quantity)
+    if (!food || !Number.isFinite(quantity) || quantity <= 0) return
+
+    const key = `portion:${mealName}:${food.id}`
+    setSavingKey(key)
+
+    let mealLog = mealLogs.find(log => log.meal_name === mealName)
+    if (!mealLog) {
+      const { data, error } = await supabase.from('meal_log').insert({ nutrition_day_id: day.id, meal_name: mealName }).select('*').single()
+      if (error) { console.error('meal log create failed:', error.message); setSavingKey(null); return }
+      mealLog = { ...(data as MealLog), meal_log_item: [] }
+    }
+
+    const scaled = scaleFood(food, quantity)
+    const { error } = await supabase.from('meal_log_item').insert({ meal_log_id: mealLog.id, food_item_id: food.id, quantity: scaled.quantity, calories: scaled.calories, protein_g: scaled.protein_g, carbs_g: scaled.carbs_g, fat_g: scaled.fat_g, substitution_group: `extra:${food.name}` })
+    if (error) console.error('meal portion insert failed:', error.message)
+    else updatePortionDraft(mealName, { quantity: '1' })
     await loadMealLogs(day.id); setSavingKey(null)
   }
 
@@ -276,7 +329,7 @@ export default function NutritionDesktop({
                   mealName: MEAL_LABELS[log.meal_name], item,
                 }))).map(({ mealName, item }) => (
                   <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: mono, fontSize: 10, color: '#555' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{mealName} · {item.food_item?.name ?? 'food'}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{mealName} · {loggedFoodLabel(item)}</span>
                     <span style={{ flexShrink: 0 }}>{macroVal(Number(item.protein_g))}p/{macroVal(Number(item.carbs_g))}c</span>
                   </div>
                 ))}
@@ -321,6 +374,15 @@ export default function NutritionDesktop({
 
                   {isExpanded && (
                     <div style={{ borderTop: '1px solid #2a2a2a', padding: '8px 14px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <PortionAdder
+                        mealName={meal.name}
+                        foods={foods}
+                        draft={getPortionDraft(meal.name)}
+                        savingKey={savingKey}
+                        onChange={updatePortionDraft}
+                        onSubmit={logFoodPortion}
+                      />
+
                       {meal.items.length === 0 && (
                         <div style={{ padding: '8px 0', fontSize: 12, color: '#555' }}>No items for this day type.</div>
                       )}
@@ -368,6 +430,61 @@ export default function NutritionDesktop({
             })}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function PortionAdder({
+  mealName,
+  foods,
+  draft,
+  savingKey,
+  onChange,
+  onSubmit,
+}: {
+  mealName: MealTemplateName
+  foods: FoodItem[]
+  draft: PortionDraft
+  savingKey: string | null
+  onChange: (mealName: MealTemplateName, patch: Partial<PortionDraft>) => void
+  onSubmit: (mealName: MealTemplateName) => void
+}) {
+  const selectedFood = foods.find(food => food.id === Number(draft.foodItemId))
+  const quantity = Number(draft.quantity)
+  const scaled = selectedFood && Number.isFinite(quantity) && quantity > 0 ? scaleFood(selectedFood, quantity) : null
+  const isSaving = selectedFood ? savingKey === `portion:${mealName}:${selectedFood.id}` : false
+
+  return (
+    <div style={{ background: '#101010', border: '1px solid #2a2a2a', borderRadius: 8, padding: 10, display: 'grid', gridTemplateColumns: '1fr 90px auto', gap: 8, alignItems: 'center' }}>
+      <select
+        value={draft.foodItemId}
+        onChange={event => onChange(mealName, { foodItemId: event.target.value })}
+        style={{ minWidth: 0, height: 32, borderRadius: 6, border: '1px solid #2a2a2a', background: '#151515', color: '#ededed', padding: '0 9px', fontSize: 12, fontFamily: sans }}
+      >
+        <option value="">Add portion</option>
+        {foods.map(food => (
+          <option key={food.id} value={food.id}>{food.name} · {food.portion_label}</option>
+        ))}
+      </select>
+      <input
+        value={draft.quantity}
+        onChange={event => onChange(mealName, { quantity: event.target.value })}
+        type="number"
+        min="0.25"
+        step="0.25"
+        aria-label="Portions"
+        style={{ height: 32, borderRadius: 6, border: '1px solid #2a2a2a', background: '#151515', color: '#ededed', padding: '0 9px', fontSize: 12, fontFamily: mono }}
+      />
+      <button
+        onClick={() => onSubmit(mealName)}
+        disabled={!selectedFood || isSaving}
+        style={{ height: 32, border: 'none', borderRadius: 6, background: '#00d26a', color: '#0e0e0e', padding: '0 12px', fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', cursor: selectedFood ? 'pointer' : 'default', opacity: !selectedFood || isSaving ? 0.5 : 1 }}
+      >
+        add
+      </button>
+      <div style={{ gridColumn: '1 / -1', fontFamily: mono, fontSize: 10, color: '#555', minHeight: 13 }}>
+        {scaled ? `${scaled.calories} kcal · ${scaled.protein_g}p · ${scaled.carbs_g}c · ${scaled.fat_g}f` : 'Select a food, then set how many standard portions you ate.'}
       </div>
     </div>
   )

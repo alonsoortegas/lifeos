@@ -88,6 +88,17 @@ export interface NutritionLog {
   day_type: 'Hard' | 'Moderate' | 'Rest' | null
 }
 
+export interface DailyRegister {
+  id: number
+  log_date: string
+  sleep_hours: number
+  previous_day_steps: number
+  previous_day_calories: number
+  on_period: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type NutritionDayType = 'hard' | 'moderate' | 'rest'
 export type NormalizedNutritionDayType = 'hard_training' | 'moderate_training' | 'rest_easy'
 export type NutritionGoal = 'cut' | 'maintenance' | 'race_week'

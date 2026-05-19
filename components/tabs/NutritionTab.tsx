@@ -21,6 +21,7 @@ import type {
   FoodSubstitutionGroup,
   FoodSubstitutionGroupItem,
   MealLog,
+  MealLogItem,
   MealTemplateName,
   NutritionDay,
   NutritionDayType,
@@ -38,12 +39,29 @@ interface SubstitutionRow extends FoodSubstitutionGroupItem {
   food_substitution_group?: FoodSubstitutionGroup
 }
 
+type PortionDraft = {
+  foodItemId: string
+  quantity: string
+}
+
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
 function macroValue(value: number): string {
   return `${Math.round(value)}`
+}
+
+function quantityValue(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, '')
+}
+
+function loggedFoodLabel(item: MealLogItem): string {
+  const foodName = item.food_item?.name ?? 'food'
+  const quantity = Number(item.quantity) || 0
+  if (quantity <= 0) return foodName
+
+  return `${foodName} x${quantityValue(quantity)}`
 }
 
 function foodKey(mealName: MealTemplateName, foodItemId: number, label: string): string {
@@ -67,6 +85,7 @@ export default function NutritionTab() {
   const [mealLogs, setMealLogs] = useState<MealLog[]>([])
   const [expandedMeal, setExpandedMeal] = useState<MealTemplateName>('breakfast')
   const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [portionDrafts, setPortionDrafts] = useState<Partial<Record<MealTemplateName, PortionDraft>>>({})
   const [loading, setLoading] = useState(true)
   const [mutError, setMutError] = useState<string | null>(null)
 
@@ -199,6 +218,77 @@ export default function NutritionTab() {
     setExpandedMeal(generateDefaultMeals(nextDayType)[0]?.name ?? 'breakfast')
     const day = await ensureDay(nextDayType)
     if (day) await loadMealLogs(day.id)
+  }
+
+  const updatePortionDraft = (mealName: MealTemplateName, patch: Partial<PortionDraft>) => {
+    setPortionDrafts((prev) => ({
+      ...prev,
+      [mealName]: {
+        foodItemId: prev[mealName]?.foodItemId ?? '',
+        quantity: prev[mealName]?.quantity ?? '1',
+        ...patch,
+      },
+    }))
+  }
+
+  const getPortionDraft = (mealName: MealTemplateName): PortionDraft => ({
+    foodItemId: portionDrafts[mealName]?.foodItemId ?? '',
+    quantity: portionDrafts[mealName]?.quantity ?? '1',
+  })
+
+  const logFoodPortion = async (mealName: MealTemplateName) => {
+    const day = nutritionDay ?? (await ensureDay(dayType))
+    if (!day) return
+
+    const draft = getPortionDraft(mealName)
+    const food = foods.find((candidate) => candidate.id === Number(draft.foodItemId))
+    const quantity = Number(draft.quantity)
+
+    if (!food || !Number.isFinite(quantity) || quantity <= 0) {
+      showMutError('choose a food and portion amount')
+      return
+    }
+
+    const key = `portion:${mealName}:${food.id}`
+    setSavingKey(key)
+
+    let mealLog = mealLogs.find((log) => log.meal_name === mealName)
+    if (!mealLog) {
+      const { data, error } = await supabase
+        .from('meal_log')
+        .insert({ nutrition_day_id: day.id, meal_name: mealName })
+        .select('*')
+        .single()
+
+      if (error) {
+        console.error('meal log create failed:', error.message)
+        showMutError('couldn\'t create meal')
+        setSavingKey(null)
+        return
+      }
+      mealLog = { ...(data as MealLog), meal_log_item: [] }
+    }
+
+    const scaled = scaleFood(food, quantity)
+    const { error } = await supabase.from('meal_log_item').insert({
+      meal_log_id: mealLog.id,
+      food_item_id: food.id,
+      quantity: scaled.quantity,
+      calories: scaled.calories,
+      protein_g: scaled.protein_g,
+      carbs_g: scaled.carbs_g,
+      fat_g: scaled.fat_g,
+      substitution_group: `extra:${food.name}`,
+    })
+
+    if (error) {
+      console.error('meal portion insert failed:', error.message)
+      showMutError('portion didn\'t save')
+    } else {
+      updatePortionDraft(mealName, { quantity: '1' })
+    }
+    await loadMealLogs(day.id)
+    setSavingKey(null)
   }
 
   const logTemplateItem = async (
@@ -369,6 +459,15 @@ export default function NutritionTab() {
 
                 {isExpanded && (
                   <div className="space-y-3 border-t border-[#2a2a2a] px-4 py-3">
+                    <PortionAdder
+                      mealName={meal.name}
+                      foods={foods}
+                      draft={getPortionDraft(meal.name)}
+                      savingKey={savingKey}
+                      onChange={updatePortionDraft}
+                      onSubmit={logFoodPortion}
+                    />
+
                     {meal.items.length === 0 && (
                       <div className="rounded-lg border border-[#2a2a2a] bg-[#151515] p-3 text-sm text-[#555]">
                         No default fuel here for this day type.
@@ -455,6 +554,72 @@ export default function NutritionTab() {
   )
 }
 
+function PortionAdder({
+  mealName,
+  foods,
+  draft,
+  savingKey,
+  onChange,
+  onSubmit,
+}: {
+  mealName: MealTemplateName
+  foods: FoodItem[]
+  draft: PortionDraft
+  savingKey: string | null
+  onChange: (mealName: MealTemplateName, patch: Partial<PortionDraft>) => void
+  onSubmit: (mealName: MealTemplateName) => void
+}) {
+  const selectedFood = foods.find((food) => food.id === Number(draft.foodItemId))
+  const quantity = Number(draft.quantity)
+  const scaled = selectedFood && Number.isFinite(quantity) && quantity > 0 ? scaleFood(selectedFood, quantity) : null
+  const isSaving = selectedFood ? savingKey === `portion:${mealName}:${selectedFood.id}` : false
+
+  return (
+    <div className="rounded-lg border border-[#2a2a2a] bg-[#101010] p-3">
+      <div className="mb-2 text-[11px] uppercase tracking-widest text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+        add portion
+      </div>
+      <div className="grid grid-cols-[1fr_86px] gap-2">
+        <select
+          value={draft.foodItemId}
+          onChange={(event) => onChange(mealName, { foodItemId: event.target.value })}
+          className="min-w-0 rounded-md border border-[#2a2a2a] bg-[#151515] px-2.5 py-2 text-sm text-[#ededed]"
+        >
+          <option value="">Choose food</option>
+          {foods.map((food) => (
+            <option key={food.id} value={food.id}>
+              {food.name} · {food.portion_label}
+            </option>
+          ))}
+        </select>
+        <input
+          value={draft.quantity}
+          onChange={(event) => onChange(mealName, { quantity: event.target.value })}
+          inputMode="decimal"
+          type="number"
+          min="0.25"
+          step="0.25"
+          className="rounded-md border border-[#2a2a2a] bg-[#151515] px-2.5 py-2 text-sm text-[#ededed]"
+          aria-label="Portions"
+        />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <div className="min-w-0 text-[11px] text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+          {scaled ? `${scaled.calories}kcal · ${scaled.protein_g}p · ${scaled.carbs_g}c · ${scaled.fat_g}f` : 'select a food item'}
+        </div>
+        <button
+          onClick={() => onSubmit(mealName)}
+          disabled={!selectedFood || isSaving}
+          className="flex-shrink-0 rounded-md bg-[#00d26a] px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[#0e0e0e] disabled:opacity-50"
+          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+        >
+          add
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function LoggedSummary({ mealLogs, totals }: { mealLogs: MealLog[]; totals: MacroTotals }) {
   const loggedItems = mealLogs.flatMap((log) =>
     (log.meal_log_item ?? []).map((item) => ({
@@ -482,7 +647,7 @@ function LoggedSummary({ mealLogs, totals }: { mealLogs: MealLog[]; totals: Macr
               style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
             >
               <span className="truncate">
-                {item.mealName} · {item.food_item?.name ?? 'food'}
+                {item.mealName} · {loggedFoodLabel(item)}
               </span>
               <span className="flex-shrink-0">{macroValue(Number(item.protein_g))}p/{macroValue(Number(item.carbs_g))}c</span>
             </div>
