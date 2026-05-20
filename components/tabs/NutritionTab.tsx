@@ -12,7 +12,6 @@ import {
   getSubstitutions,
   MEAL_LABELS,
   scaleFood,
-  suggestNextFood,
   type DefaultMealItem,
   type MacroTotals,
 } from '@/lib/nutrition'
@@ -98,7 +97,6 @@ export default function NutritionTab() {
   const defaultMeals = useMemo(() => generateDefaultMeals(dayType), [dayType])
   const consumed = useMemo(() => calculateConsumed(mealLogs), [mealLogs])
   const remaining = useMemo(() => calculateRemaining(targets, consumed), [targets, consumed])
-  const suggestion = useMemo(() => suggestNextFood(remaining, dayType), [remaining, dayType])
 
   const foodsByName = useMemo(() => {
     const map = new Map<string, FoodItem>()
@@ -411,13 +409,6 @@ export default function NutritionTab() {
           </Card>
         ))}
       </div>
-
-      <Card className="p-4">
-        <div className="text-[#555] text-[11px] uppercase tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-          · next move ·
-        </div>
-        <div className="mt-1 text-sm text-[#ededed]">{suggestion}</div>
-      </Card>
 
       {loading && (
         <div className="py-8 text-center text-sm text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>

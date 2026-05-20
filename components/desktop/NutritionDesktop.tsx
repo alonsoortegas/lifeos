@@ -10,7 +10,6 @@ import {
   getSubstitutions,
   MEAL_LABELS,
   scaleFood,
-  suggestNextFood,
   type DefaultMealItem,
   type MacroTotals,
 } from '@/lib/nutrition'
@@ -89,7 +88,6 @@ export default function NutritionDesktop({
   const defaultMeals = useMemo(() => generateDefaultMeals(dayType), [dayType])
   const consumed = useMemo(() => calculateConsumed(mealLogs), [mealLogs])
   const remaining = useMemo(() => calculateRemaining(targets, consumed), [targets, consumed])
-  const suggestion = useMemo(() => suggestNextFood(remaining, dayType), [remaining, dayType])
 
   const foodsByName = useMemo(() => {
     const map = new Map<string, FoodItem>()
@@ -253,7 +251,7 @@ export default function NutritionDesktop({
       {/* Two columns */}
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '0.85fr 1.3fr', gap: 18, minHeight: 0 }}>
 
-        {/* LEFT — macros + suggestion + consumed */}
+        {/* LEFT — macros + consumed */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflow: 'auto' }}>
           {/* Macros label */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid #2a2a2a', paddingBottom: 6, flexShrink: 0 }}>
@@ -301,17 +299,6 @@ export default function NutritionDesktop({
                 </div>
               )
             })}
-          </div>
-
-          {/* Next move card */}
-          <div style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: mono, fontSize: 9, color: '#555', letterSpacing: '0.16em', textTransform: 'uppercase' }}>· NEXT MOVE ·</span>
-              <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#f59e0b', border: '1px solid #f59e0b44', background: '#f59e0b10', padding: '2px 7px', borderRadius: 999 }}>
-                {dayType.toUpperCase()}
-              </span>
-            </div>
-            <div style={{ fontSize: 13, color: '#ededed', lineHeight: 1.45 }}>{suggestion}</div>
           </div>
 
           {/* Consumed summary */}
