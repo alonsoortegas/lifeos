@@ -253,7 +253,7 @@ function Legend({ items }: { items: { label: string; color: string; dashed?: boo
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function WhoopTab() {
-  const { snap, history, workouts, syncing, syncMsg, reauthRequired, hasOffline, tokenExpired, loadError, syncNow } = useWhoopData()
+  const { snap, history, workouts, syncing, syncMsg, reauthRequired, hasOffline, tokenExpired, needsReconnect, loadError, syncNow } = useWhoopData()
 
   const recovery = snap?.recovery_score ?? 0
   const recoveryColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
@@ -587,7 +587,7 @@ export default function WhoopTab() {
             {syncing ? 'syncing...' : 'sync now'}
           </button>
         </div>
-        {(reauthRequired || tokenExpired) && (
+        {needsReconnect && (
           <a
             href="/api/whoop-auth"
             style={{
@@ -599,7 +599,7 @@ export default function WhoopTab() {
             reconnect whoop →
           </a>
         )}
-        {!reauthRequired && !tokenExpired && !hasOffline && (
+        {!reauthRequired && !tokenExpired && !needsReconnect && !hasOffline && (
           <div style={{ fontFamily: mono, fontSize: 10, color: C.dim, marginTop: 8, textAlign: 'center' }}>
             reconnect once to enable automatic token refresh
           </div>

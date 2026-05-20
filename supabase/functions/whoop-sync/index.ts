@@ -9,6 +9,18 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const WHOOP_TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token'
 const WHOOP_BASE = 'https://api.prod.whoop.com/developer/v2'
 const LOCK_ID = 'whoop-sync'
+
+function isRefreshAuthFailure(status: number, body: string): boolean {
+  const normalized = body.toLowerCase()
+  return (
+    status === 401 ||
+    normalized.includes('invalid_grant') ||
+    normalized.includes('invalid refresh') ||
+    normalized.includes('expired refresh') ||
+    (normalized.includes('refresh token') && normalized.includes('expired')) ||
+    (normalized.includes('refresh token') && normalized.includes('invalid'))
+  )
+}
 const LOCK_TTL_MS = 10 * 60 * 1000
 
 const SPORT_NAMES: Record<number, string> = {
@@ -139,8 +151,7 @@ serve(async (req) => {
         })
       } else {
         const body = await tokenRes.text()
-        const isAuthFailure = tokenRes.status === 401 || body.includes('invalid_grant')
-        if (isAuthFailure) {
+        if (isRefreshAuthFailure(tokenRes.status, body)) {
           await supabase.from('whoop_tokens').update({ reauth_required: true }).eq('id', 1)
           return json({ error: 'reauth_required', message: 'WHOOP token expired — please reconnect WHOOP in the dashboard' }, 401)
         }

@@ -123,7 +123,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function WhoopDesktop() {
-  const { snap, history, workouts, syncing, syncMsg, reauthRequired, loadError, syncNow } = useWhoopData()
+  const { snap, history, workouts, syncing, syncMsg, needsReconnect, loadError, syncNow } = useWhoopData()
 
   const hasData = history.length > 0
   const workoutsChron = [...workouts].reverse()
@@ -164,7 +164,7 @@ export default function WhoopDesktop() {
           {syncMsg && (
             <span style={{ fontFamily: mono, fontSize: 10, color: C.dim }}>{syncMsg}</span>
           )}
-          {reauthRequired ? (
+          {needsReconnect ? (
             <a
               href="/api/whoop-auth"
               style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid #f59e0b`, background: 'rgba(245,158,11,0.08)', color: '#f59e0b', fontFamily: mono, fontSize: 11, textDecoration: 'none' }}

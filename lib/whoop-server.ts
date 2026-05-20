@@ -14,6 +14,18 @@ function adminClient() {
 // On Vercel (serverless), this guards concurrent requests within the same instance.
 const refreshInFlight = new Map<string, Promise<string>>()
 
+function isRefreshAuthFailure(status: number, body: string): boolean {
+  const normalized = body.toLowerCase()
+  return (
+    status === 401 ||
+    normalized.includes('invalid_grant') ||
+    normalized.includes('invalid refresh') ||
+    normalized.includes('expired refresh') ||
+    (normalized.includes('refresh token') && normalized.includes('expired')) ||
+    (normalized.includes('refresh token') && normalized.includes('invalid'))
+  )
+}
+
 async function performRefresh(currentRefreshToken: string): Promise<string> {
   const clientId = process.env.WHOOP_CLIENT_ID ?? ''
   const clientSecret = process.env.WHOOP_CLIENT_SECRET ?? ''
@@ -32,8 +44,7 @@ async function performRefresh(currentRefreshToken: string): Promise<string> {
 
   if (!res.ok) {
     const body = await res.text()
-    const isAuthFailure = res.status === 401 || body.includes('invalid_grant')
-    if (isAuthFailure) {
+    if (isRefreshAuthFailure(res.status, body)) {
       await adminClient()
         .from('whoop_tokens')
         .update({ reauth_required: true })
