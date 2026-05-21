@@ -69,7 +69,7 @@ export function getDailyTargets(dayType: NutritionDayType, goal: NutritionGoal):
   }
 
   const cutTargets: Record<NutritionDayType, MacroTotals> = {
-    hard: { calories: 2500, protein_g: 165, carbs_g: 285, fat_g: 75 },
+    hard: { calories: 2500, protein_g: 165, carbs_g: 300, fat_g: 70 },
     moderate: { calories: 2250, protein_g: 165, carbs_g: 220, fat_g: 75 },
     rest: { calories: 1950, protein_g: 165, carbs_g: 150, fat_g: 70 },
   }
@@ -129,10 +129,8 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
         label: MEAL_LABELS.breakfast,
         defaultTime: '07:30',
         items: [
-          { foodName: 'Egg', quantity: 5, label: '5 eggs' },
-          { foodName: 'Protein powder', quantity: 1, label: '1 scoop protein', substitutionGroup: 'protein_25g' },
-          { foodName: 'Dry oats 3/4 cup', quantity: 1, label: '3/4 cup oats', substitutionGroup: 'carb_45_50g' },
-          { foodName: 'Berries', quantity: 1, label: 'berries' },
+          { foodName: 'Egg', quantity: 4, label: '4 eggs' },
+          { foodName: 'Vollkornbrot', quantity: 3, label: '3 slices Vollkornbrot', substitutionGroup: 'carb_45_50g' },
         ],
       },
       {
@@ -141,15 +139,19 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
         defaultTime: '12:30',
         items: [
           { foodName: 'Skyr / magerquark', quantity: 1, label: '1 cup skyr/magerquark', substitutionGroup: 'protein_25g' },
-          { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice', substitutionGroup: 'carb_70g' },
-          { foodName: 'Salad / raw veggies', quantity: 1, label: 'salad/raw veggies' },
+          { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
+          { foodName: 'Dry oats 3/4 cup', quantity: 1, label: '3/4 cup dry oats', substitutionGroup: 'carb_45_50g' },
+          { foodName: 'Berries', quantity: 1, label: 'berries' },
         ],
       },
       {
         name: 'pre_workout',
         label: MEAL_LABELS.pre_workout,
         defaultTime: '16:00',
-        items: [{ foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' }],
+        items: [
+          { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
+          { foodName: 'Rice cakes', quantity: 1, label: '2 rice cakes', substitutionGroup: 'carb_15g' },
+        ],
       },
       {
         name: 'post_workout',
@@ -166,8 +168,18 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
         defaultTime: '20:00',
         items: [
           commonDinnerProtein,
-          { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice', substitutionGroup: 'carb_70g' },
+          { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice', substitutionGroup: 'carb_70g_starchy' },
           { foodName: 'Vegetables', quantity: 1, label: 'vegetables' },
+          { foodName: 'Olive oil', quantity: 1, label: '15ml olive oil' },
+        ],
+      },
+      {
+        name: 'snack',
+        label: MEAL_LABELS.snack,
+        defaultTime: '21:30',
+        items: [
+          { foodName: 'Mixed nuts', quantity: 1, label: '25g mixed nuts' },
+          { foodName: 'Protein powder', quantity: 0.5, label: '1/2 scoop protein', substitutionGroup: 'protein_25g' },
         ],
       },
     ]
@@ -265,9 +277,12 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
 export function getSubstitutions(
   foodItemId: number,
   foods: FoodItem[],
-  groups: { groupName: string; foodItemId: number; quantity: number; label: string }[]
+  groups: { groupName: string; foodItemId: number; quantity: number; label: string }[],
+  requestedGroupName?: string
 ): SubstitutionOption[] {
-  const groupNames = groups.filter((item) => item.foodItemId === foodItemId).map((item) => item.groupName)
+  const groupNames = requestedGroupName
+    ? [requestedGroupName]
+    : groups.filter((item) => item.foodItemId === foodItemId).map((item) => item.groupName)
 
   return groups
     .filter((item) => groupNames.includes(item.groupName) && item.foodItemId !== foodItemId)

@@ -377,7 +377,7 @@ export default function NutritionDesktop({
                         const food = foodsByName.get(item.foodName); if (!food) return null
                         const logged = findLoggedItem(mealLogs, meal.name, food.id, item.substitutionGroup ?? item.label)
                         const scaled = scaleFood(food, item.quantity)
-                        const substitutions = getSubstitutions(food.id, foods, substitutionIndex)
+                        const substitutions = getSubstitutions(food.id, foods, substitutionIndex, item.substitutionGroup)
                         const key = foodKey(meal.name, food.id, item.label)
 
                         return (
