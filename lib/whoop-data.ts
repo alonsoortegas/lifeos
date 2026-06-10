@@ -44,7 +44,7 @@ export function useWhoopData() {
     setSyncing(true)
     setSyncMsg(null)
     try {
-      const res = await fetch('/api/whoop-sync', { method: 'POST' })
+      const res = await fetch('/api/whoop-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ backfill: true }) })
       const data = await res.json()
       if (data.ok) {
         setSyncMsg(`synced · recovery ${data.recovery_score}% · ${data.workouts_synced ?? 0} workouts`)

@@ -5,10 +5,14 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { calculateBackfillDays, type SnapshotCoverage } from './backfill.ts'
 
 const WHOOP_TOKEN_URL = 'https://api.prod.whoop.com/oauth/oauth2/token'
 const WHOOP_BASE = 'https://api.prod.whoop.com/developer/v2'
 const LOCK_ID = 'whoop-sync'
+const BACKFILL_LOOKBACK_DAYS = 30
+const MAX_BACKFILL_RECORDS = 60
+const WHOOP_PAGE_SIZE = 25
 
 function isRefreshAuthFailure(status: number, body: string): boolean {
   const normalized = body.toLowerCase()
@@ -61,34 +65,28 @@ serve(async (req) => {
     }
 
     // Optional: pass { days: 7 } to backfill N cycles, or { backfill: true } to
-    // auto-detect gaps in the last 14 days and fetch exactly what's missing.
+    // auto-detect gaps in the last 30 days and fetch exactly what's missing.
     let days = 1
     try {
       const body = await req.json()
       if (body?.backfill === true) {
         const supabaseTemp = createClient(supabaseUrl!, supabaseKey!)
-        const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+        const sinceDate = new Date(Date.now() - BACKFILL_LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
+        sinceDate.setUTCHours(0, 0, 0, 0)
         const { data: existing } = await supabaseTemp
           .from('whoop_snapshots')
-          .select('recorded_at')
-          .gte('recorded_at', since)
+          .select('recorded_at, sleep_score, sleep_duration_ms')
+          .gte('recorded_at', sinceDate.toISOString())
           .order('recorded_at', { ascending: true })
 
-        const presentDates = new Set(
-          (existing ?? []).map((r: { recorded_at: string }) =>
-            new Date(r.recorded_at).toISOString().slice(0, 10)
-          )
+        days = calculateBackfillDays(
+          (existing ?? []) as SnapshotCoverage[],
+          new Date(),
+          BACKFILL_LOOKBACK_DAYS,
+          MAX_BACKFILL_RECORDS,
         )
-        // Find oldest missing date in the last 14 days
-        let oldestMissingDaysAgo = 0
-        for (let i = 14; i >= 1; i--) {
-          const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
-          const key = d.toISOString().slice(0, 10)
-          if (!presentDates.has(key)) oldestMissingDaysAgo = i
-        }
-        days = oldestMissingDaysAgo > 0 ? Math.min(oldestMissingDaysAgo + 1, 25) : 1
       } else if (typeof body?.days === 'number') {
-        days = Math.min(Math.max(1, body.days), 25)
+        days = Math.min(Math.max(1, body.days), MAX_BACKFILL_RECORDS)
       }
     } catch { /* no body or not JSON — default to 1 */ }
 
@@ -183,9 +181,37 @@ serve(async (req) => {
       }
     }
 
-    let recoveryData: Record<string, unknown> | null = null
+    async function whoopCollectionGuarded(
+      token: string,
+      path: string,
+      maxRecords: number,
+      optional = false,
+    ) {
+      const records: Record<string, unknown>[] = []
+      let nextToken: string | undefined
+
+      do {
+        const separator = path.includes('?') ? '&' : '?'
+        const pagination = new URLSearchParams({ limit: String(WHOOP_PAGE_SIZE) })
+        if (nextToken) pagination.set('nextToken', nextToken)
+
+        const page = await whoopGetGuarded(
+          token,
+          `${path}${separator}${pagination}`,
+          optional,
+        )
+        if (!page) return null
+
+        records.push(...(page.records ?? []))
+        nextToken = page.next_token as string | undefined
+      } while (nextToken && records.length < maxRecords)
+
+      return { records: records.slice(0, maxRecords) }
+    }
+
+    let recoveryData: { records: Record<string, unknown>[] } | null = null
     try {
-      recoveryData = await whoopGetGuarded(accessToken, `/recovery?limit=${days}`)
+      recoveryData = await whoopCollectionGuarded(accessToken, '/recovery', days)
     } catch (e: unknown) {
       if ((e as { reauth?: boolean }).reauth) {
         return json({ error: 'reauth_required', message: 'WHOOP returned 401 — please reconnect WHOOP in the dashboard' }, 401)
@@ -194,10 +220,14 @@ serve(async (req) => {
     }
 
     const [sleepData, cycleData, workoutData] = await Promise.all([
-      whoopGetGuarded(accessToken, `/activity/sleep?limit=${days}`, true),
-      whoopGetGuarded(accessToken, `/cycle?limit=${days}`, true),
-      whoopGetGuarded(accessToken, `/activity/workout?limit=${workoutLimit}`, true),
+      whoopCollectionGuarded(accessToken, '/activity/sleep', days * 3, true),
+      whoopCollectionGuarded(accessToken, '/cycle', days, true),
+      whoopCollectionGuarded(accessToken, '/activity/workout', workoutLimit, true),
     ])
+
+    if (!sleepData) {
+      return json({ error: 'sleep_fetch_failed', message: 'WHOOP sleep fetch failed — retry later' }, 503)
+    }
 
     const recoveries: Record<string, unknown>[] = recoveryData?.records ?? []
     if (!recoveries.length) return json({ error: 'No recovery records returned' }, 500)
