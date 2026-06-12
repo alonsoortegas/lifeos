@@ -397,16 +397,23 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
               <button
                 key={day}
                 onClick={() => setSelectedDay(day)}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-bold border transition-all active:scale-[0.94] ${
                   isSelected
-                    ? 'bg-[#00d26a] border-[#00d26a] text-[var(--bg)]'
+                    ? 'border-transparent'
                     : isToday
-                    ? 'bg-transparent border-[#00d26a] text-[#00d26a]'
+                    ? 'bg-[var(--ink-02)] border-[rgba(0,210,106,0.45)] text-[#00d26a]'
                     : isGym
-                    ? 'bg-transparent border-[var(--border)] text-[var(--text-dim)]'
-                    : 'bg-transparent border-[var(--surface)] text-[var(--text-faint)]'
+                    ? 'bg-[var(--ink-02)] border-[var(--border)] text-[var(--text-dim)]'
+                    : 'bg-transparent border-transparent text-[var(--text-faint)]'
                 }`}
-                style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+                style={{
+                  fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                  ...(isSelected ? {
+                    background: 'linear-gradient(180deg, #2ee6a8, #00d26a)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 14px rgba(0,210,106,0.3)',
+                    color: '#062514',
+                  } : {}),
+                }}
               >
                 {DAY_META[day]?.label}
               </button>
@@ -435,10 +442,10 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                   setAddError(null)
                 }}
                 aria-label={addOpen ? 'Close add exercise form' : 'Add exercise'}
-                className={`flex-shrink-0 h-10 w-10 rounded-lg border text-xl leading-none flex items-center justify-center transition-colors ${
+                className={`flex-shrink-0 h-10 w-10 rounded-full border text-xl leading-none flex items-center justify-center transition-all active:scale-[0.9] ${
                   addOpen
-                    ? 'border-[#00d26a] bg-[#00d26a] text-[var(--bg)]'
-                    : 'border-[var(--border)] bg-transparent text-[#00d26a]'
+                    ? 'btn-accent border-transparent'
+                    : 'border-[var(--border)] bg-[var(--ink-04)] text-[#00d26a]'
                 }`}
               >
                 {addOpen ? '−' : '+'}
@@ -483,7 +490,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                   type="button"
                   onClick={() => void shareWorkout()}
                   aria-label="Copy workout summary"
-                  className={`h-10 rounded-lg border px-3 text-[11px] font-semibold transition-colors ${
+                  className={`glass h-10 rounded-full border px-3.5 text-[11px] font-semibold transition-all active:scale-[0.95] ${
                     shareState !== 'idle'
                       ? 'border-[#00d26a] text-[#00d26a]'
                       : 'border-[var(--border)] text-[var(--text-dim)]'
@@ -501,10 +508,10 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     setAddError(null)
                   }}
                   aria-label={addOpen ? 'Close add exercise form' : 'Add exercise'}
-                  className={`h-10 w-10 rounded-lg border text-xl leading-none flex items-center justify-center transition-colors ${
+                  className={`h-10 w-10 rounded-full border text-xl leading-none flex items-center justify-center transition-all active:scale-[0.9] ${
                     addOpen
-                      ? 'border-[#00d26a] bg-[#00d26a] text-[var(--bg)]'
-                      : 'border-[var(--border)] bg-transparent text-[#00d26a]'
+                      ? 'btn-accent border-transparent'
+                      : 'border-[var(--border)] bg-[var(--ink-04)] text-[#00d26a]'
                   }`}
                 >
                   {addOpen ? '−' : '+'}
@@ -542,7 +549,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     value={exerciseForm.name}
                     onChange={event => updateExerciseForm({ name: event.target.value })}
                     placeholder="e.g. Farmers Carry"
-                    className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none placeholder:text-[var(--border-hi)] focus:border-[#00d26a]"
+                    className="mt-2 w-full h-11 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-[var(--text)] outline-none placeholder:text-[var(--border-hi)] focus:border-[#00d26a]"
                   />
                 </div>
 
@@ -558,7 +565,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       min="0"
                       value={exerciseForm.sets}
                       onChange={event => updateExerciseForm({ sets: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                   <div>
@@ -569,7 +576,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       id="exercise-reps"
                       value={exerciseForm.reps}
                       onChange={event => updateExerciseForm({ reps: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                   <div>
@@ -584,7 +591,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       step="0.5"
                       value={exerciseForm.weight}
                       onChange={event => updateExerciseForm({ weight: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                 </div>
@@ -599,7 +606,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       inputMode="decimal"
                       value={exerciseForm.rpe}
                       onChange={event => updateExerciseForm({ rpe: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                   <div>
@@ -610,7 +617,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       id="exercise-notes"
                       value={exerciseForm.notes}
                       onChange={event => updateExerciseForm({ notes: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                 </div>
@@ -628,14 +635,14 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       setAddOpen(false)
                       setAddError(null)
                     }}
-                    className="h-11 flex-1 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-sm font-bold active:opacity-70"
+                    className="glass h-11 flex-1 rounded-xl border border-[var(--border)] text-[var(--text-dim)] text-sm font-bold transition-transform active:scale-[0.97]"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={addSaving}
-                    className="h-11 flex-1 rounded-lg bg-[#00d26a] text-[var(--bg)] text-sm font-bold active:opacity-80 disabled:opacity-50"
+                    className="btn-accent h-11 flex-1 rounded-xl text-sm font-bold"
                   >
                     {addSaving ? 'Adding…' : 'Add exercise'}
                   </button>
@@ -691,11 +698,11 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       <div className="flex items-center justify-between">
                         <span className="text-[var(--text-dim)] text-xs uppercase tracking-wider">Weight</span>
                         <div className="flex items-center gap-3">
-                          <button onClick={() => updateState(i, { weight: Math.max(0, s.weight - 2.5) })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">−</button>
+                          <button onClick={() => updateState(i, { weight: Math.max(0, s.weight - 2.5) })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">−</button>
                           <span className="text-[var(--text)] text-2xl font-bold min-w-[64px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                             {s.weight}<span className="text-[var(--text-faint)] text-sm ml-0.5">kg</span>
                           </span>
-                          <button onClick={() => updateState(i, { weight: s.weight + 2.5 })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">+</button>
+                          <button onClick={() => updateState(i, { weight: s.weight + 2.5 })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">+</button>
                         </div>
                       </div>
                     )}
@@ -705,11 +712,11 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       <div className="flex items-center justify-between">
                         <span className="text-[var(--text-dim)] text-xs uppercase tracking-wider">Distance</span>
                         <div className="flex items-center gap-3">
-                          <button onClick={() => updateState(i, { selectedDistance: Math.max(50, s.selectedDistance - 50) })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">−</button>
+                          <button onClick={() => updateState(i, { selectedDistance: Math.max(50, s.selectedDistance - 50) })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">−</button>
                           <span className="text-[var(--text)] text-2xl font-bold min-w-[72px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                             {s.selectedDistance}<span className="text-[var(--text-faint)] text-sm ml-0.5">m</span>
                           </span>
-                          <button onClick={() => updateState(i, { selectedDistance: s.selectedDistance + 50 })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">+</button>
+                          <button onClick={() => updateState(i, { selectedDistance: s.selectedDistance + 50 })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">+</button>
                         </div>
                       </div>
                     )}
@@ -719,11 +726,11 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       <div className="flex items-center justify-between">
                         <span className="text-[var(--text-dim)] text-xs uppercase tracking-wider">Time</span>
                         <div className="flex items-center gap-3">
-                          <button onClick={() => updateState(i, { selectedDuration: Math.max(10, s.selectedDuration - 10) })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">−</button>
+                          <button onClick={() => updateState(i, { selectedDuration: Math.max(10, s.selectedDuration - 10) })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">−</button>
                           <span className="text-[var(--text)] text-2xl font-bold min-w-[72px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                             {Math.floor(s.selectedDuration / 60)}:{String(s.selectedDuration % 60).padStart(2, '0')}
                           </span>
-                          <button onClick={() => updateState(i, { selectedDuration: s.selectedDuration + 10 })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">+</button>
+                          <button onClick={() => updateState(i, { selectedDuration: s.selectedDuration + 10 })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">+</button>
                         </div>
                       </div>
                     )}
@@ -737,12 +744,19 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                             <button
                               key={r}
                               onClick={() => updateState(i, { selectedReps: r })}
-                              className={`min-w-[40px] min-h-[36px] px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                              className={`min-w-[40px] min-h-[36px] px-3 py-1.5 rounded-full text-sm border transition-all active:scale-[0.92] ${
                                 s.selectedReps === r
-                                  ? 'bg-[#00d26a] border-[#00d26a] text-[var(--bg)] font-bold'
-                                  : 'bg-transparent border-[var(--border)] text-[var(--text-dim)]'
+                                  ? 'border-transparent font-bold'
+                                  : 'bg-[var(--ink-04)] border-[var(--border)] text-[var(--text-dim)]'
                               }`}
-                              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+                              style={{
+                                fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                                ...(s.selectedReps === r ? {
+                                  background: 'linear-gradient(180deg, #2ee6a8, #00d26a)',
+                                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(0,210,106,0.3)',
+                                  color: '#062514',
+                                } : {}),
+                              }}
                             >
                               {r}
                             </button>
@@ -762,12 +776,19 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                           <button
                             key={r}
                             onClick={() => updateState(i, { selectedRpe: r })}
-                            className={`flex-1 h-8 rounded text-[10px] border transition-colors ${
+                            className={`flex-1 h-8 rounded-lg text-[10px] border transition-all active:scale-[0.92] ${
                               s.selectedRpe === r
-                                ? 'bg-[#00d26a] border-[#00d26a] text-[var(--bg)] font-bold'
-                                : 'bg-transparent border-[var(--border)] text-[var(--text-faint)]'
+                                ? 'border-transparent font-bold'
+                                : 'bg-[var(--ink-04)] border-[var(--border)] text-[var(--text-faint)]'
                             }`}
-                            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+                            style={{
+                              fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                              ...(s.selectedRpe === r ? {
+                                background: 'linear-gradient(180deg, #2ee6a8, #00d26a)',
+                                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(0,210,106,0.3)',
+                                color: '#062514',
+                              } : {}),
+                            }}
                           >
                             {r}
                           </button>
@@ -785,7 +806,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     {/* Log set */}
                     <button
                       onClick={() => logSet(i)}
-                      className="w-full bg-[#00d26a] text-[var(--bg)] rounded-xl py-3 text-sm font-bold min-h-[44px] active:opacity-80 transition-opacity"
+                      className="btn-accent w-full rounded-xl py-3 text-sm font-bold min-h-[44px]"
                     >
                       Log set {s.loggedSets.length + 1}{setsTarget > 0 ? ` of ${setsTarget}` : ''} →
                     </button>

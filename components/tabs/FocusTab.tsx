@@ -531,7 +531,7 @@ export default function FocusTab() {
       {todos.some(t => !t.done) && (
         <button
           onClick={handlePushRemaining}
-          className="w-full border border-dashed border-[var(--border-hi)] text-[var(--text-faint)] rounded-xl py-3 text-[11px] font-semibold uppercase tracking-[0.14em] min-h-[44px] active:border-[var(--text-faint)] active:text-[var(--text-dim)] transition-colors"
+          className="glass w-full border border-[var(--border)] text-[var(--text-faint)] rounded-xl py-3 text-[11px] font-semibold uppercase tracking-[0.14em] min-h-[44px] transition-all active:scale-[0.98] active:text-[var(--text-dim)]"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
           push remaining to tomorrow
@@ -565,7 +565,7 @@ export default function FocusTab() {
           <button
             onClick={handlePolishAndAdd}
             disabled={!inputText.trim() || isPolishing}
-            className="flex-1 bg-[#00d26a] text-[var(--bg)] rounded-xl py-3 text-sm font-bold min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed active:opacity-80 transition-opacity"
+            className="btn-accent flex-1 rounded-xl py-3 text-sm font-bold min-h-[44px] disabled:cursor-not-allowed"
           >
             {isPolishing ? 'polishing...' : '✦ Polish & Add'}
           </button>

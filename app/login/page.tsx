@@ -46,7 +46,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <form onSubmit={submit} className="ticks panel space-y-3 rounded-2xl p-5">
+        <form onSubmit={submit} className="ticks glass-thick space-y-3 rounded-3xl border border-[var(--border)] p-5">
           <input
             id="lifeos-password"
             type="password"
@@ -66,11 +66,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading || !password}
-            className="display min-h-[46px] w-full rounded-xl py-3 text-[14px] font-bold text-[var(--bg)] transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
-            style={{
-              background: 'linear-gradient(135deg, #00d26a, #2ee6a8)',
-              boxShadow: '0 8px 28px rgba(0,210,106,0.3)',
-            }}
+            className="btn-accent display min-h-[46px] w-full rounded-xl py-3 text-[14px] font-bold"
           >
             {loading ? 'Unlocking…' : 'Unlock'}
           </button>

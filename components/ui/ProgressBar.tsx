@@ -19,7 +19,7 @@ export default function ProgressBar({
         style={{
           width: `${pct}%`,
           background: `linear-gradient(90deg, ${color}aa, ${color})`,
-          boxShadow: `0 0 10px ${color}66`,
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.3), 0 0 10px ${color}66`,
         }}
       />
     </div>

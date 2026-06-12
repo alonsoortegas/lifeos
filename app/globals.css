@@ -52,8 +52,15 @@
 
   --chrome: rgba(13, 16, 23, 0.84);
   --scrim: rgba(5, 7, 10, 0.72);
+
+  /* Liquid Glass materials — translucent surfaces for chrome and overlays. */
+  --material-thin: rgba(20, 23, 31, 0.55);
+  --material-regular: rgba(20, 23, 31, 0.68);
+  --material-thick: rgba(20, 23, 31, 0.82);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+
   --ring-track: rgba(255, 255, 255, 0.08);
-  --panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018) 38%), #14161d;
+  --panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018) 38%), rgba(22, 25, 33, 0.78);
   --panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px rgba(0, 0, 0, 0.35);
   --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --aurora-1: rgba(0, 210, 106, 0.13);
@@ -88,8 +95,14 @@ html.light {
 
   --chrome: rgba(248, 250, 253, 0.85);
   --scrim: rgba(20, 25, 35, 0.4);
+
+  --material-thin: rgba(255, 255, 255, 0.55);
+  --material-regular: rgba(255, 255, 255, 0.72);
+  --material-thick: rgba(248, 250, 253, 0.85);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
   --ring-track: rgba(15, 23, 32, 0.08);
-  --panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6) 38%), #ffffff;
+  --panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6) 38%), rgba(255, 255, 255, 0.72);
   --panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 10px 30px rgba(23, 30, 46, 0.08), 0 1px 2px rgba(23, 30, 46, 0.06);
   --shadow-pop: 0 16px 40px rgba(23, 30, 46, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.85);
   --aurora-1: rgba(0, 210, 106, 0.10);
@@ -135,6 +148,51 @@ body::after {
   background: var(--panel-bg);
   border: 1px solid var(--border);
   box-shadow: var(--panel-shadow);
+}
+
+/* Liquid Glass — true backdrop materials. Reserve for chrome (headers, docks,
+   sidebars) and overlays: stacking many backdrop-filters hurts scroll perf. */
+/* Borders are intentionally left to the caller (Tailwind utilities) — these
+   classes are un-layered and would otherwise out-cascade utility borders. */
+.glass {
+  background: var(--material-regular);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: var(--glass-edge);
+}
+.glass-thick {
+  background: var(--material-thick);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: var(--glass-edge), 0 16px 40px rgba(0, 0, 0, 0.25);
+}
+
+/* Glossy accent CTA — mint gradient with a specular top edge and glow. */
+.btn-accent {
+  background: linear-gradient(180deg, #2ee6a8, #00d26a 55%, #00b85d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 24px rgba(0, 210, 106, 0.3);
+  color: #062514;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.btn-accent:hover { filter: brightness(1.06); }
+.btn-accent:active { transform: scale(0.97); }
+.btn-accent:disabled { opacity: 0.4; }
+
+@supports not (backdrop-filter: blur(1px)) {
+  .glass,
+  .glass-thick {
+    background: var(--surface);
+  }
+}
+
+/* Apple convention: reduced transparency means opaque surfaces, no blur. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-thick {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* Gradient halo border for hero surfaces. */
@@ -204,6 +262,15 @@ body::after {
   animation: glint 8s ease-in-out infinite;
 }
 
+/* Apple-style sheet presentation — springs up from the bottom edge. */
+@keyframes sheet-rise {
+  0% { opacity: 0; transform: translateY(48px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.sheet {
+  animation: sheet-rise 0.45s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(0, 210, 106, 0.7); }
   50% { opacity: 0.5; box-shadow: 0 0 2px rgba(0, 210, 106, 0.25); }
@@ -216,7 +283,8 @@ body::after {
   .boot > *,
   .flicker,
   .glint-track::after,
-  .pulse-dot {
+  .pulse-dot,
+  .sheet {
     animation: none !important;
   }
   * {

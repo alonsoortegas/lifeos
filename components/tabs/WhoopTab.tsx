@@ -104,7 +104,7 @@ function BigSpark({
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{ display: 'block', overflow: 'visible' }}>
       <polygon
         points={fillPoints}
-        fill={colorByValue ? 'rgba(255,255,255,0.05)' : color}
+        style={{ fill: colorByValue ? 'var(--ink-04)' : color }}
         fillOpacity={colorByValue ? 1 : 0.08}
       />
       {colorByValue && min < 67 && max > 34 && (

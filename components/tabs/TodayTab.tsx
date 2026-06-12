@@ -148,7 +148,7 @@ function GoalTicker() {
         style={{
           fontFamily: 'var(--font-jetbrains-mono, monospace)',
           color: allDone ? '#00d26a' : 'var(--text-dim)',
-          background: 'rgba(255,255,255,0.04)',
+          background: 'var(--ink-04)',
         }}
       >
         {done}/{total}
@@ -203,7 +203,7 @@ function getDayRingState(now = new Date()) {
   const C = 2 * Math.PI * 50
 
   if (h < WAKE) {
-    return { percent: 0, stroke: 'rgba(255,255,255,0.08)', dashOffset: C, phase: 'SLEEPING', display: '—', remaining: null }
+    return { percent: 0, stroke: 'var(--ring-track)', dashOffset: C, phase: 'SLEEPING', display: '—', remaining: null }
   }
   if (h >= SLEEP) {
     return { percent: 100, stroke: '#2e3a66', dashOffset: 0, phase: 'PAST MIDNIGHT', display: '100%', remaining: null }
@@ -222,7 +222,7 @@ function getDayRingState(now = new Date()) {
 
 const INITIAL_DAY_RING_STATE = {
   percent: 0,
-  stroke: 'rgba(255,255,255,0.08)',
+  stroke: 'var(--ring-track)',
   dashOffset: 2 * Math.PI * 50,
   phase: 'DAY',
   display: '—',
@@ -247,13 +247,13 @@ function DayRing() {
     <div className="flex flex-col items-center gap-[6px]">
       <div className="relative" style={{ width: 140, height: 140 }}>
         <svg width="140" height="140" viewBox="0 0 120 120">
-          <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+          <circle cx="60" cy="60" r="50" fill="none" strokeWidth="8" style={{ stroke: 'var(--ring-track)' }} />
           <circle
             cx="60" cy="60" r="50" fill="none"
-            stroke={state.stroke} strokeWidth="8" strokeLinecap="round"
+            strokeWidth="8" strokeLinecap="round"
             strokeDasharray={C} strokeDashoffset={state.dashOffset}
             transform="rotate(-90 60 60)"
-            style={{ transition: 'stroke-dashoffset 0.7s cubic-bezier(0.22,1,0.36,1), stroke 0.7s ease' }}
+            style={{ stroke: state.stroke, transition: 'stroke-dashoffset 0.7s cubic-bezier(0.22,1,0.36,1), stroke 0.7s ease' }}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -394,7 +394,7 @@ function DayModeCard({
             style={{
               fontFamily: 'var(--font-jetbrains-mono, monospace)',
               color: 'var(--text-dim)',
-              background: 'rgba(255,255,255,0.04)',
+              background: 'var(--ink-04)',
               border: '1px solid var(--border)',
             }}
           >
@@ -541,10 +541,11 @@ export default function TodayTab() {
             type="button"
             onClick={() => setReviewOpen(true)}
             aria-label="Open monthly review"
-            className="flicker text-left text-[var(--text-dim)] uppercase text-[11px] tracking-[0.18em] underline decoration-[var(--border-hi)] decoration-dotted underline-offset-4"
+            className="flicker flex items-center gap-1 text-left text-[var(--text-dim)] uppercase text-[11px] tracking-[0.18em] transition-transform active:scale-[0.97]"
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             {dayName} · {dateStr}
+            <span className="text-[13px] leading-none text-[var(--text-faint)]">›</span>
           </button>
           <button
             type="button"
@@ -565,7 +566,7 @@ export default function TodayTab() {
                 window.setTimeout(() => setDayShared(false), 1800)
               })
             }}
-            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+            className={`glass rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-all active:scale-[0.95] ${
               dayShared ? 'border-[#00d26a] text-[#00d26a]' : 'border-[var(--border)] text-[var(--text-faint)]'
             }`}
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
@@ -635,7 +636,7 @@ export default function TodayTab() {
       {reauthRequired && (
         <a
           href="/api/whoop-auth"
-          className="block rounded-lg bg-[#00d26a] py-3 text-center text-[12px] font-bold text-[var(--bg)] no-underline"
+          className="btn-accent block rounded-xl py-3 text-center text-[12px] font-bold no-underline"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
           reconnect whoop

@@ -53,7 +53,7 @@ export default function MealTextLogger({ onApplied }: { onApplied: () => void | 
   }
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+    <div className="panel rounded-2xl p-3">
       <div className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-[var(--text-faint)]">
         Quick meal text
       </div>
@@ -65,20 +65,20 @@ export default function MealTextLogger({ onApplied }: { onApplied: () => void | 
             setProposal(null)
           }}
           placeholder="e.g. dinner: 2 eggs, banana, protein powder"
-          className="h-10 min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-faint)] focus:border-[#00d26a]"
+          className="h-10 min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-faint)] focus:border-[#00d26a]"
         />
         <button
           type="button"
           onClick={() => void parseMeal()}
           disabled={!text.trim() || busy}
-          className="rounded-md bg-[#00d26a] px-3 text-[11px] font-bold text-[var(--bg)] disabled:opacity-40"
+          className="btn-accent rounded-xl px-3 text-[11px] font-bold"
         >
           Review
         </button>
       </div>
 
       {proposal && (
-        <div className="mt-3 space-y-2 border-t border-[var(--border)] pt-3">
+        <div className="mt-3 space-y-2 border-t border-[var(--ink-06)] pt-3">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[9px] uppercase text-[var(--text-dim)]">{proposal.meal_name.replace('_', ' ')}</span>
             <span className="font-mono text-[8px] text-[var(--text-faint)]">{model}</span>
@@ -96,7 +96,7 @@ export default function MealTextLogger({ onApplied }: { onApplied: () => void | 
             type="button"
             onClick={() => void applyMeal()}
             disabled={proposal.items.length === 0 || busy}
-            className="h-9 w-full rounded-md border border-[#00d26a] text-[11px] font-bold text-[#00d26a] disabled:opacity-40"
+            className="glass h-9 w-full rounded-xl border border-[#00d26a] text-[11px] font-bold text-[#00d26a] transition-transform active:scale-[0.97] disabled:opacity-40"
           >
             Confirm and log
           </button>

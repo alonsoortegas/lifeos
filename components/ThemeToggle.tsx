@@ -2,65 +2,63 @@
 
 import { useEffect, useState } from 'react'
 
-type ThemeMode = 'auto' | 'light' | 'dark'
-
-const ORDER: ThemeMode[] = ['auto', 'light', 'dark']
-const GLYPH: Record<ThemeMode, string> = { auto: '◐', light: '○', dark: '●' }
-
-function storedMode(): ThemeMode {
-  if (typeof window === 'undefined') return 'auto'
-  const value = localStorage.getItem('lifeos-theme')
-  return value === 'light' || value === 'dark' ? value : 'auto'
+/** Reads the effective theme straight off the html element — single source
+ *  of truth, set by the pre-paint script in layout.tsx before hydration. */
+function effectiveLight(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.documentElement.classList.contains('light')
 }
 
-function applyMode(mode: ThemeMode) {
-  const light = mode === 'light' ||
-    (mode === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches)
-  document.documentElement.classList.toggle('light', light)
+function SunIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.4" />
+      <path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.2 5.2l1.9 1.9M16.9 16.9l1.9 1.9M18.8 5.2l-1.9 1.9M7.1 16.9l-1.9 1.9" />
+    </svg>
+  )
 }
 
-/** Cycles auto → light → dark. Persists to localStorage; the layout's
- *  pre-paint script applies the stored choice on the next load. */
-export default function ThemeToggle({ compact = false }: { compact?: boolean }) {
-  const [mode, setMode] = useState<ThemeMode>('auto')
+function MoonIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20.4 14.2A8.5 8.5 0 0 1 9.8 3.6a8.5 8.5 0 1 0 10.6 10.6Z" />
+    </svg>
+  )
+}
+
+/** One click flips light ↔ dark (from the currently effective theme) and
+ *  stores the choice. Until the first click, the pre-paint script follows
+ *  the system preference. */
+export default function ThemeToggle() {
+  const [light, setLight] = useState(false)
 
   useEffect(() => {
     // Deferred: avoids a synchronous setState during hydration.
-    const id = window.setTimeout(() => setMode(storedMode()), 0)
+    const id = window.setTimeout(() => setLight(effectiveLight()), 0)
     return () => window.clearTimeout(id)
   }, [])
 
-  // Follow system changes while in auto.
-  useEffect(() => {
-    if (mode !== 'auto') return
-    const mq = window.matchMedia('(prefers-color-scheme: light)')
-    const onChange = () => applyMode('auto')
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [mode])
-
-  function cycle() {
-    const next = ORDER[(ORDER.indexOf(mode) + 1) % ORDER.length]
-    setMode(next)
-    if (next === 'auto') localStorage.removeItem('lifeos-theme')
-    else localStorage.setItem('lifeos-theme', next)
-    applyMode(next)
+  function toggle() {
+    const next = !effectiveLight()
+    document.documentElement.classList.toggle('light', next)
+    localStorage.setItem('lifeos-theme', next ? 'light' : 'dark')
+    setLight(next)
   }
 
   return (
     <button
       type="button"
-      onClick={cycle}
-      aria-label={`Theme: ${mode}. Tap to change.`}
-      title={`Theme: ${mode}`}
-      className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--ink-04)] px-2.5 py-1.5 transition-colors hover:border-[var(--border-hi)]"
+      onClick={toggle}
+      aria-label={light ? 'Switch to dark mode' : 'Switch to light mode'}
+      title={light ? 'Switch to dark mode' : 'Switch to light mode'}
+      className="glass flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-dim)] transition-all duration-150 hover:text-[var(--text)] active:scale-[0.92]"
     >
-      <span className="font-mono text-[11px] leading-none text-[var(--text-dim)]">{GLYPH[mode]}</span>
-      {!compact && (
-        <span className="font-mono text-[10px] uppercase leading-none tracking-[0.1em] text-[var(--text-faint)]">
-          {mode}
-        </span>
-      )}
+      <span
+        key={light ? 'sun' : 'moon'}
+        className="flicker flex items-center justify-center"
+      >
+        {light ? <SunIcon /> : <MoonIcon />}
+      </span>
     </button>
   )
 }

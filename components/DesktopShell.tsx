@@ -53,15 +53,6 @@ function Kbd({ children }: { children: React.ReactNode }) {
   )
 }
 
-function FooterHint({ k, l }: { k: string; l: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <Kbd>{k}</Kbd>
-      <span>{l}</span>
-    </span>
-  )
-}
-
 // ─── Topbar status ────────────────────────────────────────────────────────────
 const supabaseTopbar = createClient()
 
@@ -158,12 +149,12 @@ function CommandPalette({
   return (
     <div
       className="absolute inset-0 z-50 flex items-start justify-center pt-28"
-      style={{ background: 'var(--scrim)', backdropFilter: 'blur(6px)' }}
+      style={{ background: 'var(--scrim)', backdropFilter: 'blur(12px) saturate(140%)', WebkitBackdropFilter: 'blur(12px) saturate(140%)' }}
       onClick={onClose}
     >
       <div
-        className="ticks w-[560px] rounded-2xl border border-[var(--border-hi)] overflow-hidden"
-        style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-pop), 0 0 50px rgba(0,210,106,0.07)' }}
+        className="glass-thick ticks sheet w-[560px] rounded-3xl border border-[var(--border-hi)] overflow-hidden"
+        style={{ boxShadow: 'var(--glass-edge), var(--shadow-pop), 0 0 50px rgba(0,210,106,0.07)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Input row */}
@@ -201,7 +192,7 @@ function CommandPalette({
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-lg mx-1.5 text-left text-sm transition-colors"
                     style={{
                       width: 'calc(100% - 12px)',
-                      background: active ? 'rgba(255,255,255,0.05)' : 'transparent',
+                      background: active ? 'var(--ink-06)' : 'transparent',
                       color: 'var(--text)',
                     }}
                   >
@@ -277,7 +268,7 @@ export default function DesktopShell() {
     <div className="h-screen text-[var(--text)] flex flex-col overflow-hidden relative">
 
       {/* Title bar */}
-      <div className="h-7 flex-shrink-0 flex items-center px-3 border-b border-[var(--border)] bg-[var(--ink-02)]">
+      <div className="glass h-7 flex-shrink-0 flex items-center px-3 border-b border-[var(--border)]">
         <div className="flex items-center gap-1.5" aria-hidden="true">
           <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-[#00d26a]" />
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--ink-08)]" />
@@ -294,8 +285,14 @@ export default function DesktopShell() {
 
         {/* Sidebar */}
         <aside
-          className="flex-shrink-0 border-r border-[var(--border)] flex flex-col bg-[var(--ink-01)]"
-          style={{ width: 196, padding: '18px 12px 16px' }}
+          className="flex-shrink-0 border-r border-[var(--border)] flex flex-col"
+          style={{
+            width: 196,
+            padding: '18px 12px 16px',
+            background: 'var(--material-thin)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          }}
         >
           {/* Brand */}
           <div className="flex items-center gap-2 px-2 pb-4">
@@ -309,16 +306,6 @@ export default function DesktopShell() {
               Life<span className="text-[#00d26a]">OS</span>
             </span>
           </div>
-
-          {/* ⌘K trigger */}
-          <button
-            onClick={() => setCmdkOpen(true)}
-            className="flex items-center gap-2 px-2.5 py-2 mb-3.5 rounded-lg border border-dashed border-[var(--border-hi)] text-[var(--text-dim)] text-[12px] hover:border-[var(--text-faint)] transition-colors text-left"
-          >
-            <span className="font-mono text-[11px]">⌕</span>
-            <span className="flex-1">jump to anything…</span>
-            <Kbd>⌘K</Kbd>
-          </button>
 
           {/* Nav */}
           <nav className="flex flex-col gap-0.5">
@@ -348,7 +335,6 @@ export default function DesktopShell() {
                     }}
                   >{t.icon}</span>
                   <span className="flex-1">{t.label}</span>
-                  <Kbd>⌘{t.kbd}</Kbd>
                 </button>
               )
             })}
@@ -368,7 +354,7 @@ export default function DesktopShell() {
 
           {/* User */}
           <div
-            className="flex items-center gap-2.5 px-2 border-t border-dashed border-[var(--border)]"
+            className="flex items-center gap-2.5 px-2 border-t border-[var(--ink-06)]"
             style={{ paddingTop: 14 }}
           >
             <div
@@ -400,7 +386,7 @@ export default function DesktopShell() {
             {/* Search button */}
             <button
               onClick={() => setCmdkOpen(true)}
-              className="ml-2 flex items-center gap-1.5 px-2.5 py-1 rounded border border-dashed border-[var(--border-hi)] text-[var(--text-dim)] text-[11px] hover:border-[var(--text-faint)] transition-colors"
+              className="glass ml-2 flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[var(--border)] text-[var(--text-dim)] text-[11px] hover:border-[var(--border-hi)] transition-all active:scale-[0.97]"
               style={{ fontFamily: 'var(--font-inter-tight, sans-serif)' }}
             >
               <span className="font-mono">⌕</span>
@@ -416,15 +402,6 @@ export default function DesktopShell() {
             </div>
           </main>
 
-          {/* Footer hints */}
-          <div
-            className="h-7 flex-shrink-0 flex items-center gap-4 px-4 border-t border-[var(--border)] font-mono text-[10px] text-[var(--text-faint)]"
-            style={{ background: 'var(--chrome)' }}
-          >
-            <FooterHint k="⌘K" l="commands" />
-            <FooterHint k="⌘1–5" l="tabs" />
-            <span className="ml-auto">v0.5</span>
-          </div>
         </div>
       </div>
 

@@ -409,11 +409,16 @@ export default function NutritionTab() {
           <button
             key={type.value}
             onClick={() => changeDayType(type.value)}
-            className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-bold transition-colors ${
+            className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-bold transition-all active:scale-[0.96] ${
               dayType === type.value
-                ? 'border-[#00d26a] bg-[#00d26a] text-[var(--bg)]'
-                : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-dim)]'
+                ? 'border-transparent'
+                : 'glass border-[var(--border)] text-[var(--text-dim)]'
             }`}
+            style={dayType === type.value ? {
+              background: 'linear-gradient(180deg, #2ee6a8, #00d26a)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 14px rgba(0,210,106,0.3)',
+              color: '#062514',
+            } : undefined}
           >
             {type.label}
           </button>
@@ -520,7 +525,7 @@ export default function NutritionTab() {
                             {logged ? (
                               <button
                                 onClick={() => removeLoggedItem(logged.id)}
-                                className="rounded-md border border-[var(--border)] px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[var(--text-dim)]"
+                                className="rounded-full border border-[var(--border)] bg-[var(--ink-04)] px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[var(--text-dim)] transition-transform active:scale-[0.94]"
                                 style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
                               >
                                 ate
@@ -529,7 +534,7 @@ export default function NutritionTab() {
                               <button
                                 onClick={() => logTemplateItem(meal.name, item)}
                                 disabled={savingKey === key}
-                                className="rounded-md bg-[#00d26a] px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[var(--bg)] disabled:opacity-50"
+                                className="btn-accent rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest"
                                 style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
                               >
                                 ate this
@@ -553,7 +558,7 @@ export default function NutritionTab() {
                                         groupName: sub.groupName,
                                       })
                                     }
-                                    className="flex-shrink-0 rounded-md border border-[var(--border)] px-2.5 py-1.5 text-left text-[11px] text-[var(--text-dim)]"
+                                    className="flex-shrink-0 rounded-full border border-[var(--border)] bg-[var(--ink-04)] px-2.5 py-1.5 text-left text-[11px] text-[var(--text-dim)] transition-transform active:scale-[0.94]"
                                     style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
                                   >
                                     swap: {sub.label}
@@ -600,7 +605,7 @@ function PortionAdder({
   const isSaving = selectedFood ? savingKey === `portion:${mealName}:${selectedFood.id}` : false
 
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--ink-02)] p-3">
       <div className="mb-2 text-[11px] uppercase tracking-widest text-[var(--text-faint)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
         add portion
       </div>
@@ -608,7 +613,7 @@ function PortionAdder({
         <select
           value={draft.foodItemId}
           onChange={(event) => onChange(mealName, { foodItemId: event.target.value })}
-          className="min-w-0 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-sm text-[var(--text)]"
+          className="min-w-0 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-2.5 py-2 text-sm text-[var(--text)]"
         >
           <option value="">Choose food</option>
           {foods.map((food) => (
@@ -624,7 +629,7 @@ function PortionAdder({
           type="number"
           min="0.25"
           step="0.25"
-          className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-sm text-[var(--text)]"
+          className="rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-2.5 py-2 text-sm text-[var(--text)]"
           aria-label="Portions"
         />
       </div>
@@ -635,7 +640,7 @@ function PortionAdder({
         <button
           onClick={() => onSubmit(mealName)}
           disabled={!selectedFood || isSaving}
-          className="flex-shrink-0 rounded-md bg-[#00d26a] px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[var(--bg)] disabled:opacity-50"
+          className="btn-accent flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
           add

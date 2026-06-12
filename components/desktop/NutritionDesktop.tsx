@@ -259,14 +259,15 @@ export default function NutritionDesktop({
                 key={opt.value}
                 onClick={() => setDayType(opt.value)}
                 style={{
-                  padding: '6px 14px', borderRadius: 7, cursor: 'pointer', border: 'none',
-                  background: dayType === opt.value ? '#00d26a' : 'transparent',
-                  color: dayType === opt.value ? 'var(--bg)' : 'var(--text-dim)',
+                  padding: '6px 14px', borderRadius: 10, cursor: 'pointer', border: 'none',
+                  background: dayType === opt.value ? 'linear-gradient(180deg, #2ee6a8, #00d26a)' : 'transparent',
+                  boxShadow: dayType === opt.value ? 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 14px rgba(0,210,106,0.3)' : 'none',
+                  color: dayType === opt.value ? '#062514' : 'var(--text-dim)',
                   display: 'flex', flexDirection: 'column', lineHeight: 1.2, alignItems: 'flex-start', minWidth: 100,
                 }}
               >
                 <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em' }}>{opt.label}</span>
-                <span style={{ fontFamily: mono, fontSize: 9, color: dayType === opt.value ? 'rgba(14,14,14,0.65)' : 'var(--text-faint)', marginTop: 2 }}>
+                <span style={{ fontFamily: mono, fontSize: 9, color: dayType === opt.value ? 'rgba(6,37,20,0.65)' : 'var(--text-faint)', marginTop: 2 }}>
                   {optionTargets.calories} kcal · {optionTargets.protein_g}p
                 </span>
               </button>
@@ -423,7 +424,7 @@ export default function NutritionDesktop({
                               {logged ? (
                                 <button onClick={() => removeLoggedItem(logged.id)} style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-dim)', border: '1px solid var(--border)', background: 'transparent', padding: '3px 9px', borderRadius: 6, cursor: 'pointer', letterSpacing: '0.14em', textTransform: 'uppercase', flexShrink: 0 }}>ate</button>
                               ) : (
-                                <button onClick={() => logTemplateItem(meal.name, item)} disabled={savingKey === key} style={{ fontFamily: mono, fontSize: 10, background: '#00d26a', color: 'var(--bg)', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', flexShrink: 0, opacity: savingKey === key ? 0.5 : 1 }}>ate this</button>
+                                <button onClick={() => logTemplateItem(meal.name, item)} disabled={savingKey === key} className="btn-accent" style={{ fontFamily: mono, fontSize: 10, border: 'none', padding: '4px 10px', borderRadius: 999, cursor: 'pointer', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', flexShrink: 0 }}>ate this</button>
                               )}
                             </div>
                             {substitutions.length > 0 && !logged && (
@@ -497,7 +498,8 @@ function PortionAdder({
       <button
         onClick={() => onSubmit(mealName)}
         disabled={!selectedFood || isSaving}
-        style={{ height: 32, border: 'none', borderRadius: 6, background: '#00d26a', color: 'var(--bg)', padding: '0 12px', fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', cursor: selectedFood ? 'pointer' : 'default', opacity: !selectedFood || isSaving ? 0.5 : 1 }}
+        className="btn-accent"
+        style={{ height: 32, border: 'none', borderRadius: 999, padding: '0 12px', fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', cursor: selectedFood ? 'pointer' : 'default' }}
       >
         add
       </button>

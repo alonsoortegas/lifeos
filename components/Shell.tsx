@@ -67,14 +67,7 @@ function MobileShell() {
 
   return (
     <div className="min-h-screen relative">
-      <header
-        className="fixed top-0 left-0 right-0 z-10 h-28"
-        style={{
-          background: 'var(--chrome)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-        }}
-      >
+      <header className="glass-thick fixed top-0 left-0 right-0 z-10 h-28">
         <div className="h-14" aria-hidden="true" />
         <div className="h-14 flex items-center px-4">
           <span
@@ -87,8 +80,8 @@ function MobileShell() {
             Life<span className="text-[#00d26a]">OS</span>
           </span>
           <span className="ml-auto flex items-center gap-2">
-            <ThemeToggle compact />
-            <span className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--ink-04)] px-3 py-1.5">
+            <ThemeToggle />
+            <span className="glass flex items-center gap-2 rounded-full border border-[var(--border)] px-3 py-1.5">
               <span
                 className="pulse-dot inline-block h-1.5 w-1.5 rounded-full bg-[#00d26a]"
                 aria-hidden="true"

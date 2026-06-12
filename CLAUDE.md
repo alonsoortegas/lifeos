@@ -58,7 +58,7 @@ Two-layer auth:
 
 Vibrant consumer UI with **dark and light modes**. Dark: deep blue-black under a soft aurora wash (mint → cyan → violet). Light: airy blue-white with the same hues as pastel washes. Glassy rounded surfaces, vivid per-metric channel colors, springy motion.
 
-**Theming:** every neutral is a CSS variable defined in `app/globals.css` — dark values on `:root`, light overrides on `html.light`. A pre-paint script in `app/layout.tsx` applies the stored choice (`localStorage['lifeos-theme']`) or system preference; `components/ThemeToggle.tsx` cycles auto → light → dark. **Never hardcode neutral hexes** — use the tokens:
+**Theming:** every neutral is a CSS variable defined in `app/globals.css` — dark values on `:root`, light overrides on `html.light`. A pre-paint script in `app/layout.tsx` applies the stored choice (`localStorage['lifeos-theme']`) or system preference; `components/ThemeToggle.tsx` flips light ↔ dark in one click (system preference applies only until the first explicit choice). **Never hardcode neutral hexes** — use the tokens:
 
 | Token | Dark | Light | Use |
 |---|---|---|---|
@@ -72,15 +72,17 @@ Vibrant consumer UI with **dark and light modes**. Dark: deep blue-black under a
 | `--text-faint` | `#5d6575` | `#97a0af` | Tertiary / timestamps |
 | `--ink-01…08` | white alphas | dark alphas | Subtle fills/hairlines |
 | `--chrome` / `--scrim` | dark glass | light glass | Header/dock/overlay backgrounds |
+| `--material-thin/regular/thick` | dark alphas | white alphas | Liquid Glass material fills (use via `.glass`/`.glass-thick`) |
+| `--glass-edge` | white inset | white inset | Specular top-edge highlight for glass surfaces |
 | `--ring-track` / `--shadow-pop` / `--panel-bg` / `--panel-shadow` | — | — | Component plumbing |
 
 Accents stay literal in both themes: `#00d26a` mint (brand), `#38bdf8` cyan, `#a78bfa` violet, `#fb7185` coral (bad), `#fbbf24` amber (warn). **Caution:** components that append alpha to a color prop (`${color}55`) or use it in SVG presentation attributes need literal hexes — pass theme vars only where the component is var-safe (Ring guards this via `isHex`).
 
 **Fonts:** `Geist` for everything textual — weight does the display work (class `.display` adds tight tracking). `Geist Mono` for all numbers and data values (`tabular-nums`). Legacy aliases keep old inline refs working: `--font-inter-tight` → Geist, `--font-jetbrains-mono` → Geist Mono. **Always give `var(--font-*)` references an explicit fallback** (`var(--font-geist-sans, system-ui)`) — an undefined font variable invalidates the whole declaration and drops the page to browser serif.
 
-**Utility classes (globals.css):** `.panel` (glass card), `.ticks` (gradient halo border), `.boot` (staggered rise-in of direct children), `.flicker` (soft fade-up), `.glint-track` (traveling shimmer on a hairline), `.pulse-dot` (live indicator), `.display` (display type).
+**Utility classes (globals.css):** `.panel` (gradient card — cheap, default for in-content cards), `.glass` / `.glass-thick` (Liquid Glass: true `backdrop-filter` blur+saturate — reserve for chrome [headers, docks, sidebars], overlays/sheets, and at most one hero card per view; stacking many backdrop-filters kills mobile scroll perf; borders are the caller's job via Tailwind, the classes set none), `.sheet` (Apple-style spring slide-up for bottom sheets/palettes), `.ticks` (gradient halo border), `.boot` (staggered rise-in of direct children), `.flicker` (soft fade-up), `.glint-track` (traveling shimmer on a hairline), `.pulse-dot` (live indicator), `.display` (display type).
 
-**Rules:** No emojis in UI. Gradients as atmosphere and accents only, in brand hues. Soft glow (`box-shadow` with channel-color alpha) is the highlight language. Radii: cards `rounded-2xl`, controls `rounded-xl`/`rounded-full`. All motion respects `prefers-reduced-motion` (handled globally).
+**Rules:** No emojis in UI. Gradients as atmosphere and accents only, in brand hues. Soft glow (`box-shadow` with channel-color alpha) is the highlight language. Radii: sheets/docks `rounded-3xl`, cards `rounded-2xl`, controls `rounded-xl`/`rounded-full`. Hairline separators inside cards/sheets use `--ink-06`, not `--border`. Interactive surfaces get `active:scale-[0.95–0.99]` pressed states. All motion respects `prefers-reduced-motion`; glass respects `prefers-reduced-transparency` (both handled globally in globals.css).
 
 ## Project structure
 

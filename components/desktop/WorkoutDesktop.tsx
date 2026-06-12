@@ -396,10 +396,11 @@ export default function WorkoutDesktop({
                           key={r}
                           onClick={() => updateState(activeExIdx, { selectedReps: r })}
                           style={{
-                            minWidth: 36, height: 34, padding: '0 8px', borderRadius: 7, cursor: 'pointer',
-                            background: activeState.selectedReps === r ? '#00d26a' : 'transparent',
-                            border: `1px solid ${activeState.selectedReps === r ? '#00d26a' : 'var(--border)'}`,
-                            color: activeState.selectedReps === r ? 'var(--bg)' : 'var(--text-dim)',
+                            minWidth: 36, height: 34, padding: '0 8px', borderRadius: 999, cursor: 'pointer',
+                            background: activeState.selectedReps === r ? 'linear-gradient(180deg, #2ee6a8, #00d26a)' : 'var(--ink-04)',
+                            border: `1px solid ${activeState.selectedReps === r ? 'transparent' : 'var(--border)'}`,
+                            boxShadow: activeState.selectedReps === r ? 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(0,210,106,0.3)' : 'none',
+                            color: activeState.selectedReps === r ? '#062514' : 'var(--text-dim)',
                             fontFamily: mono, fontSize: 12, fontWeight: activeState.selectedReps === r ? 700 : 500,
                           }}
                         >{r}</button>
@@ -427,10 +428,11 @@ export default function WorkoutDesktop({
                           key={r}
                           onClick={() => !overCap && updateState(activeExIdx, { selectedRpe: r })}
                           style={{
-                            flex: 1, height: 30, borderRadius: 6, cursor: overCap ? 'not-allowed' : 'pointer',
-                            background: selected ? '#00d26a' : 'transparent',
-                            border: `1px solid ${selected ? '#00d26a' : 'var(--border)'}`,
-                            color: selected ? 'var(--bg)' : overCap ? 'var(--border-hi)' : 'var(--text-dim)',
+                            flex: 1, height: 30, borderRadius: 8, cursor: overCap ? 'not-allowed' : 'pointer',
+                            background: selected ? 'linear-gradient(180deg, #2ee6a8, #00d26a)' : 'var(--ink-04)',
+                            border: `1px solid ${selected ? 'transparent' : 'var(--border)'}`,
+                            boxShadow: selected ? 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(0,210,106,0.3)' : 'none',
+                            color: selected ? '#062514' : overCap ? 'var(--border-hi)' : 'var(--text-dim)',
                             fontFamily: mono, fontSize: 11, fontWeight: selected ? 700 : 500,
                             textDecoration: overCap ? 'line-through' : 'none',
                             opacity: overCap ? 0.45 : 1,
@@ -444,7 +446,8 @@ export default function WorkoutDesktop({
                 {/* Log set CTA */}
                 <button
                   onClick={() => logSet(activeExIdx)}
-                  style={{ background: '#00d26a', color: 'var(--bg)', border: 'none', padding: '13px 0', fontFamily: sans, fontSize: 14, fontWeight: 700, borderRadius: 12, cursor: 'pointer', flexShrink: 0 }}
+                  className="btn-accent"
+                  style={{ border: 'none', padding: '13px 0', fontFamily: sans, fontSize: 14, fontWeight: 700, borderRadius: 12, cursor: 'pointer', flexShrink: 0 }}
                 >
                   Log set {activeState.loggedSets.length + 1}{activeEx.prescribed_sets ? ` of ${activeEx.prescribed_sets}` : ''} · {activeState.weight}kg × {activeState.selectedReps} @ {activeState.selectedRpe}  →
                 </button>

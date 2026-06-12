@@ -57,12 +57,17 @@ function ScoreInput({
             key={score}
             type="button"
             onClick={() => onChange(score)}
-            className="h-7 w-7 rounded-md border text-[10px] font-bold"
+            className="h-7 w-7 rounded-lg border text-[10px] font-bold transition-all active:scale-[0.92]"
             style={{
               fontFamily: 'var(--font-jetbrains-mono, monospace)',
-              borderColor: value === score ? '#00d26a' : 'var(--border)',
-              background: value === score ? '#00d26a' : 'var(--surface-2)',
-              color: value === score ? 'var(--bg)' : 'var(--text-dim)',
+              borderColor: value === score ? 'rgba(0,210,106,0.5)' : 'var(--border)',
+              background: value === score
+                ? 'linear-gradient(180deg, #2ee6a8, #00d26a)'
+                : 'var(--ink-04)',
+              boxShadow: value === score
+                ? 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(0,210,106,0.3)'
+                : undefined,
+              color: value === score ? '#062514' : 'var(--text-dim)',
             }}
           >
             {score}
@@ -209,7 +214,7 @@ export default function DailyBriefCard() {
 
   return (
     <section
-      className="panel relative overflow-hidden rounded-2xl"
+      className="glass relative overflow-hidden rounded-2xl border border-[var(--border)]"
       style={{ borderLeftWidth: 3, borderLeftColor: color }}
     >
       {/* Readiness-state aura */}
@@ -221,7 +226,7 @@ export default function DailyBriefCard() {
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
-        className="w-full p-4 text-left"
+        className="w-full p-4 text-left transition-transform duration-150 active:scale-[0.99]"
         aria-expanded={expanded}
       >
         <div className="flex items-center justify-between gap-3">
@@ -260,7 +265,7 @@ export default function DailyBriefCard() {
       </button>
 
       {expanded && (
-        <div className="space-y-4 border-t border-[var(--border)] px-4 py-4">
+        <div className="space-y-4 border-t border-[var(--ink-06)] px-4 py-4">
           <div className="grid gap-2 sm:grid-cols-2">
             {output.recommendations.map((recommendation) => (
               <div key={recommendation.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
@@ -308,7 +313,7 @@ export default function DailyBriefCard() {
                       type="button"
                       onClick={() => void resolveProposal(proposal, 'accept')}
                       disabled={busyProposal === proposal.id || proposal.id < 1}
-                      className="rounded-md bg-[#00d26a] px-2.5 py-1.5 text-[10px] font-bold text-[var(--bg)] disabled:opacity-40"
+                      className="btn-accent rounded-lg px-2.5 py-1.5 text-[10px] font-bold"
                     >
                       Apply
                     </button>
@@ -331,7 +336,7 @@ export default function DailyBriefCard() {
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
+          <div className="flex flex-wrap items-center gap-2 border-t border-[var(--ink-06)] pt-3">
             <span className="mr-1 text-[10px] text-[var(--text-faint)]">Useful?</span>
             {(['useful', 'not_useful'] as const).map((value) => (
               <button
@@ -389,7 +394,7 @@ export default function DailyBriefCard() {
                 type="button"
                 onClick={() => void saveCheckIn()}
                 disabled={savingCheckIn}
-                className="h-9 w-full rounded-md bg-[#00d26a] text-[11px] font-bold text-[var(--bg)] disabled:opacity-50"
+                className="btn-accent h-9 w-full rounded-lg text-[11px] font-bold"
               >
                 {savingCheckIn ? 'Saving…' : 'Save check-in and refresh brief'}
               </button>

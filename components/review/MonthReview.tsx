@@ -10,8 +10,16 @@ const CHANNELS: Array<{ key: 'goals' | 'training' | 'fuel'; label: string; color
   { key: 'fuel', label: 'Fuel', color: '#38bdf8' },
 ]
 
-const STATE_OPACITY: Record<ChannelState, number> = { on: 1, partial: 0.45, off: 0.18, none: 0 }
 const OFF_COLOR = '#fb7185'
+const WEEKDAYS = [
+  { key: 'mon', label: 'M' },
+  { key: 'tue', label: 'T' },
+  { key: 'wed', label: 'W' },
+  { key: 'thu', label: 'T' },
+  { key: 'fri', label: 'F' },
+  { key: 'sat', label: 'S' },
+  { key: 'sun', label: 'S' },
+]
 
 const READINESS_COLOR: Record<string, string> = {
   green: '#00d26a',
@@ -37,51 +45,67 @@ function shiftMonth(month: string, delta: number): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
-function channelBar(state: ChannelState, color: string) {
-  const off = state === 'off'
+/** Channel state on a visible track — states are structural, not opacity-only:
+ *  on = full bar · partial = half bar · off = coral bar · none = empty track. */
+function ChannelBar({ state, color }: { state: ChannelState; color: string }) {
+  const width = state === 'partial' ? '50%' : state === 'none' ? '0%' : '100%'
+  const fill = state === 'off' ? OFF_COLOR : color
   return (
-    <div
-      className="h-[3px] w-full rounded-full"
-      style={{
-        background: off ? OFF_COLOR : color,
-        opacity: off ? 0.55 : STATE_OPACITY[state],
-      }}
-    />
+    <div className="h-[4px] w-full overflow-hidden rounded-full bg-[var(--ink-06)]">
+      <div
+        className="h-full rounded-full"
+        style={{ width, background: fill, opacity: state === 'off' ? 0.7 : 1 }}
+      />
+    </div>
   )
 }
 
-function SummaryChip({ label, value }: { label: string; value: string }) {
+function SummaryStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-full border border-[var(--border)] bg-[var(--ink-04)] px-3 py-1.5">
-      <span className="text-[10px] uppercase tracking-[0.1em] text-[var(--text-faint)]">{label} </span>
-      <span className="font-mono text-[11px] font-bold text-[var(--text)]">{value}</span>
+    <div className="flex min-w-0 flex-col items-center gap-0.5 px-1">
+      <span className="font-mono text-[13px] font-bold tabular-nums text-[var(--text)]">{value}</span>
+      <span className="text-[9px] uppercase tracking-[0.12em] text-[var(--text-faint)]">
+        {label}{sub ? <span className="normal-case tracking-normal"> {sub}</span> : null}
+      </span>
     </div>
   )
 }
 
 function DaySheet({ day, onClose }: { day: DayScore; onClose: () => void }) {
   const date = new Date(`${day.date}T12:00:00`)
+  const channelState = { goals: day.goals, training: day.training, fuel: day.fuel }
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center" onClick={onClose}>
-      <div className="absolute inset-0" style={{ background: 'var(--scrim)' }} />
       <div
-        className="panel relative z-10 max-h-[80vh] w-full max-w-md overflow-y-auto rounded-t-2xl p-5 sm:rounded-2xl"
+        className="absolute inset-0"
+        style={{ background: 'var(--scrim)', backdropFilter: 'blur(12px) saturate(140%)', WebkitBackdropFilter: 'blur(12px) saturate(140%)' }}
+      />
+      <div
+        className="glass-thick sheet relative z-10 max-h-[82vh] w-full max-w-md overflow-y-auto rounded-t-3xl px-5 pb-6 pt-2.5 sm:rounded-3xl"
         onClick={e => e.stopPropagation()}
       >
-        <div className="mb-3 flex items-center justify-between">
-          <div className="display text-[16px] font-bold text-[var(--text)]">
+        {/* Grabber */}
+        <div className="mx-auto mb-3 h-[5px] w-9 rounded-full bg-[var(--ink-08)] sm:hidden" aria-hidden="true" />
+
+        <div className="mb-4 flex items-center justify-between">
+          <div className="display text-[17px] font-bold tracking-tight text-[var(--text)]">
             {date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-[var(--border)] px-2.5 py-1 text-[10px] font-bold text-[var(--text-dim)]">
-            Close
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close day details"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ink-06)] text-[13px] leading-none text-[var(--text-dim)] transition-transform active:scale-[0.92]"
+          >
+            ✕
           </button>
         </div>
 
         {day.detail.briefHeadline && (
-          <div className="mb-3 rounded-xl border border-[var(--border)] bg-[var(--ink-02)] p-3">
-            <div className="text-[12px] font-medium text-[var(--text)]">{day.detail.briefHeadline}</div>
+          <div className="mb-4 rounded-2xl bg-[var(--ink-04)] p-3.5">
+            <div className="text-[13px] font-medium leading-snug text-[var(--text)]">{day.detail.briefHeadline}</div>
             {day.detail.trainingVerdict && (
-              <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--text-faint)]">
+              <div className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--text-faint)]">
                 verdict: {day.detail.trainingVerdict}
                 {day.detail.adherence ? ` · actual: ${day.detail.adherence}` : ''}
               </div>
@@ -89,56 +113,66 @@ function DaySheet({ day, onClose }: { day: DayScore; onClose: () => void }) {
           </div>
         )}
 
-        <div className="space-y-3">
-          <div>
-            <div className="mb-1.5 flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full" style={{ background: CHANNELS[0].color }} />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">Goals</span>
-            </div>
-            {day.detail.todos.length ? (
-              <ul className="space-y-1">
-                {day.detail.todos.map((todo, i) => (
-                  <li key={i} className={`text-[12px] ${todo.done ? 'text-[var(--text-dim)] line-through' : 'text-[var(--text)]'}`}>
-                    {todo.done ? '✓ ' : '· '}{todo.text}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="text-[11px] text-[var(--text-faint)]">No goals set</div>
-            )}
-          </div>
-
-          <div>
-            <div className="mb-1.5 flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full" style={{ background: CHANNELS[1].color }} />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">Training</span>
-            </div>
-            <div className="font-mono text-[12px] text-[var(--text)]">
-              {day.detail.setsLogged > 0
-                ? `${day.detail.setsLogged} sets logged${day.detail.avgRpe != null ? ` · avg RPE ${day.detail.avgRpe}` : ''}`
-                : 'No sets logged'}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-1.5 flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full" style={{ background: CHANNELS[2].color }} />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">Fuel</span>
-            </div>
-            {day.detail.consumed && day.detail.targets ? (
-              <div className="font-mono text-[12px] text-[var(--text)]">
-                {Math.round(day.detail.consumed.calories)} / {day.detail.targets.calories} kcal
-                {' · '}
-                {Math.round(day.detail.consumed.protein_g)} / {day.detail.targets.protein_g} g protein
+        <div className="space-y-4">
+          {CHANNELS.map((channel, index) => (
+            <div key={channel.key} className={index > 0 ? 'border-t border-[var(--ink-06)] pt-4' : undefined}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">
+                  {channel.label}
+                </span>
+                <div className="w-12">
+                  <ChannelBar state={channelState[channel.key]} color={channel.color} />
+                </div>
               </div>
-            ) : (
-              <div className="text-[11px] text-[var(--text-faint)]">No nutrition logged</div>
-            )}
-          </div>
+
+              {channel.key === 'goals' && (
+                day.detail.todos.length ? (
+                  <ul className="space-y-1.5">
+                    {day.detail.todos.map((todo, i) => (
+                      <li key={i} className={`text-[13px] leading-snug ${todo.done ? 'text-[var(--text-dim)] line-through' : 'text-[var(--text)]'}`}>
+                        {todo.done ? '✓ ' : '· '}{todo.text}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-[12px] text-[var(--text-faint)]">No goals set</div>
+                )
+              )}
+
+              {channel.key === 'training' && (
+                <div className="font-mono text-[13px] tabular-nums text-[var(--text)]">
+                  {day.detail.setsLogged > 0
+                    ? `${day.detail.setsLogged} sets logged${day.detail.avgRpe != null ? ` · avg RPE ${day.detail.avgRpe}` : ''}`
+                    : <span className="text-[var(--text-faint)]">No sets logged</span>}
+                </div>
+              )}
+
+              {channel.key === 'fuel' && (
+                day.detail.consumed && day.detail.targets ? (
+                  <div className="font-mono text-[13px] tabular-nums text-[var(--text)]">
+                    {Math.round(day.detail.consumed.calories)} / {day.detail.targets.calories} kcal
+                    {' · '}
+                    {Math.round(day.detail.consumed.protein_g)} / {day.detail.targets.protein_g} g protein
+                  </div>
+                ) : (
+                  <div className="text-[12px] text-[var(--text-faint)]">No nutrition logged</div>
+                )
+              )}
+            </div>
+          ))}
 
           {day.recovery != null && (
-            <div className="font-mono text-[11px] text-[var(--text-faint)]">
-              Recovery {day.recovery}%{day.readiness_state ? ` · readiness ${day.readiness_state}` : ''}
+            <div className="flex items-center gap-2 border-t border-[var(--ink-06)] pt-4 font-mono text-[12px] tabular-nums text-[var(--text-dim)]">
+              {day.readiness_state && (
+                <span
+                  className="h-[5px] w-[5px] rounded-full"
+                  style={{
+                    background: READINESS_COLOR[day.readiness_state] ?? 'var(--text-faint)',
+                    boxShadow: `0 0 6px ${READINESS_COLOR[day.readiness_state] ?? 'transparent'}`,
+                  }}
+                />
+              )}
+              Recovery {day.recovery}%{day.readiness_state ? ` · ${day.readiness_state}` : ''}
             </div>
           )}
         </div>
@@ -190,46 +224,69 @@ export default function MonthReview({ onClose }: { onClose: () => void }) {
   const summary = data?.summary
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: 'var(--scrim)', backdropFilter: 'blur(8px)' }}>
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto"
+      style={{ background: 'var(--scrim)', backdropFilter: 'blur(14px) saturate(140%)', WebkitBackdropFilter: 'blur(14px) saturate(140%)' }}
+    >
       <div className="mx-auto w-full max-w-2xl px-4 py-8 pb-16">
         <div className="boot space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="display text-[22px] font-bold tracking-tight text-[var(--text)]">Monthly review</div>
-            <button type="button" onClick={onClose} aria-label="Close monthly review" className="rounded-full border border-[var(--border)] bg-[var(--ink-04)] px-3 py-1.5 text-[11px] font-bold text-[var(--text-dim)]">
-              Close
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close monthly review"
+              className="glass flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] text-[13px] leading-none text-[var(--text-dim)] transition-transform active:scale-[0.92]"
+            >
+              ✕
             </button>
           </div>
 
-          {/* Month nav */}
-          <div className="flex items-center justify-between">
-            <button type="button" onClick={() => setMonth(m => shiftMonth(m, -1))} aria-label="Previous month" className="rounded-lg border border-[var(--border)] px-3 py-1.5 font-mono text-[12px] text-[var(--text-dim)]">
+          {/* Month nav — single segmented pill */}
+          <div className="glass mx-auto flex w-fit items-center rounded-full border border-[var(--border)]">
+            <button
+              type="button"
+              onClick={() => setMonth(m => shiftMonth(m, -1))}
+              aria-label="Previous month"
+              className="flex h-10 w-11 items-center justify-center rounded-full font-mono text-[15px] text-[var(--text-dim)] transition-transform active:scale-[0.92]"
+            >
               ‹
             </button>
-            <div className="display text-[15px] font-semibold text-[var(--text)]">{monthLabel(month)}</div>
-            <button type="button" onClick={() => setMonth(m => shiftMonth(m, 1))} aria-label="Next month" className="rounded-lg border border-[var(--border)] px-3 py-1.5 font-mono text-[12px] text-[var(--text-dim)]">
+            <div className="display min-w-[148px] text-center text-[14px] font-semibold text-[var(--text)]">
+              {monthLabel(month)}
+            </div>
+            <button
+              type="button"
+              onClick={() => setMonth(m => shiftMonth(m, 1))}
+              aria-label="Next month"
+              className="flex h-10 w-11 items-center justify-center rounded-full font-mono text-[15px] text-[var(--text-dim)] transition-transform active:scale-[0.92]"
+            >
               ›
             </button>
           </div>
 
-          {/* Summary chips */}
+          {/* Summary strip */}
           {summary && (
-            <div className="flex flex-wrap gap-2">
-              {summary.goalsOnPct != null && <SummaryChip label="goals" value={`${summary.goalsOnPct}%`} />}
-              {summary.trainingOnPct != null && <SummaryChip label="training" value={`${summary.trainingOnPct}%`} />}
-              {summary.fuelOnPct != null && <SummaryChip label="fuel" value={`${summary.fuelOnPct}%`} />}
-              <SummaryChip label="streak" value={`${summary.currentStreak}d · best ${summary.bestStreak}d`} />
+            <div className="glass flex items-center justify-around rounded-2xl border border-[var(--border)] px-2 py-2.5">
+              {summary.goalsOnPct != null && <SummaryStat label="goals" value={`${summary.goalsOnPct}%`} />}
+              {summary.trainingOnPct != null && <SummaryStat label="training" value={`${summary.trainingOnPct}%`} />}
+              {summary.fuelOnPct != null && <SummaryStat label="fuel" value={`${summary.fuelOnPct}%`} />}
+              <SummaryStat label="streak" value={`${summary.currentStreak}d`} sub={`· best ${summary.bestStreak}d`} />
               {summary.avgRecovery != null && (
-                <SummaryChip
+                <SummaryStat
                   label="recovery"
-                  value={`${summary.avgRecovery}%${summary.prevAvgRecovery != null ? ` (${summary.avgRecovery - summary.prevAvgRecovery >= 0 ? '+' : ''}${summary.avgRecovery - summary.prevAvgRecovery} vs prev)` : ''}`}
+                  value={`${summary.avgRecovery}%`}
+                  sub={summary.prevAvgRecovery != null
+                    ? `${summary.avgRecovery - summary.prevAvgRecovery >= 0 ? '+' : ''}${summary.avgRecovery - summary.prevAvgRecovery} vs prev`
+                    : undefined}
                 />
               )}
             </div>
           )}
 
           {/* Grid */}
-          <div className="panel rounded-2xl p-4">
+          <div className="glass-thick rounded-3xl border border-[var(--border)] p-4">
             {loading && <div className="py-10 text-center text-[12px] text-[var(--text-faint)]">Loading month…</div>}
             {error && (
               <div className="py-10 text-center text-[12px] text-[var(--text-dim)]">
@@ -240,8 +297,10 @@ export default function MonthReview({ onClose }: { onClose: () => void }) {
             {!loading && !error && data && (
               <>
                 <div className="mb-2 grid grid-cols-7 gap-1.5">
-                  {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-                    <div key={i} className="text-center font-mono text-[9px] uppercase text-[var(--text-faint)]">{d}</div>
+                  {WEEKDAYS.map(day => (
+                    <div key={day.key} className="text-center font-mono text-[10px] uppercase text-[var(--text-faint)]">
+                      {day.label}
+                    </div>
                   ))}
                 </div>
                 <div className="grid grid-cols-7 gap-1.5">
@@ -256,24 +315,33 @@ export default function MonthReview({ onClose }: { onClose: () => void }) {
                         onClick={() => !future && setSelectedDay(day)}
                         aria-label={`Details for ${day.date}`}
                         disabled={future}
-                        className="flex flex-col gap-1 rounded-lg border p-1.5 transition-transform active:scale-95 disabled:opacity-30"
+                        className="flex min-h-[54px] flex-col justify-between gap-1.5 rounded-xl p-2 transition-transform duration-150 active:scale-[0.95] disabled:opacity-30"
                         style={{
-                          borderColor: isToday ? '#00d26a' : 'var(--border)',
-                          background: 'var(--ink-02)',
+                          background: isToday ? 'rgba(0, 210, 106, 0.08)' : 'var(--ink-02)',
+                          boxShadow: isToday ? 'inset 0 0 0 1.5px rgba(0, 210, 106, 0.6)' : 'inset 0 0 0 1px var(--ink-06)',
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-[9px] text-[var(--text-faint)]">{Number(day.date.slice(8, 10))}</span>
+                          <span
+                            className={`font-mono text-[11px] tabular-nums leading-none ${
+                              isToday ? 'font-semibold text-[#00d26a]' : 'text-[var(--text-dim)]'
+                            }`}
+                          >
+                            {Number(day.date.slice(8, 10))}
+                          </span>
                           {day.readiness_state && (
                             <span
-                              className="h-1 w-1 rounded-full"
-                              style={{ background: READINESS_COLOR[day.readiness_state] ?? 'var(--text-faint)' }}
+                              className="h-[5px] w-[5px] rounded-full"
+                              style={{
+                                background: READINESS_COLOR[day.readiness_state] ?? 'var(--text-faint)',
+                                boxShadow: `0 0 5px ${READINESS_COLOR[day.readiness_state] ?? 'transparent'}`,
+                              }}
                             />
                           )}
                         </div>
                         <div className="space-y-[3px]">
                           {CHANNELS.map(channel => (
-                            <div key={channel.key}>{channelBar(day[channel.key], channel.color)}</div>
+                            <ChannelBar key={channel.key} state={day[channel.key]} color={channel.color} />
                           ))}
                         </div>
                       </button>
@@ -281,16 +349,20 @@ export default function MonthReview({ onClose }: { onClose: () => void }) {
                   })}
                 </div>
                 {/* Legend */}
-                <div className="mt-3 flex flex-wrap items-center gap-3">
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[var(--ink-06)] pt-3">
                   {CHANNELS.map(channel => (
                     <span key={channel.key} className="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]">
-                      <span className="h-[3px] w-3 rounded-full" style={{ background: channel.color }} />
+                      <span className="h-[4px] w-4 rounded-full" style={{ background: channel.color }} />
                       {channel.label}
                     </span>
                   ))}
                   <span className="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]">
-                    <span className="h-[3px] w-3 rounded-full" style={{ background: OFF_COLOR, opacity: 0.55 }} />
+                    <span className="h-[4px] w-4 rounded-full" style={{ background: OFF_COLOR, opacity: 0.7 }} />
                     Slipped
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[10px] text-[var(--text-faint)]">
+                    <span className="h-[4px] w-2 rounded-full" style={{ background: 'var(--text-faint)' }} />
+                    Partial
                   </span>
                 </div>
               </>

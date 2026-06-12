@@ -319,7 +319,7 @@ export default function FocusDesktop() {
           {uncheckedCount > 0 && (
             <button
               onClick={handlePushRemaining}
-              style={{ flexShrink: 0, border: '1px dashed var(--border-hi)', background: 'transparent', color: 'var(--text-faint)', padding: '9px 0', fontSize: 11, fontFamily: mono, letterSpacing: '0.18em', textTransform: 'uppercase', borderRadius: 10, cursor: 'pointer' }}
+              style={{ flexShrink: 0, border: '1px solid var(--border)', background: 'var(--ink-04)', color: 'var(--text-faint)', padding: '9px 0', fontSize: 11, fontFamily: mono, letterSpacing: '0.18em', textTransform: 'uppercase', borderRadius: 10, cursor: 'pointer' }}
             >
               push {uncheckedCount} remaining → tomorrow
             </button>
@@ -344,7 +344,7 @@ export default function FocusDesktop() {
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {tomorrowTodos.map((todo, i) => (
                   <li key={todo.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 14px', borderBottom: i < tomorrowTodos.length - 1 ? '1px solid var(--border)' : 'none', gap: 10 }}>
-                    <span style={{ width: 18, height: 18, borderRadius: 5, border: '1px dashed var(--border-hi)', flexShrink: 0 }} />
+                    <span style={{ width: 18, height: 18, borderRadius: 6, border: '1px solid var(--border-hi)', background: 'var(--ink-02)', flexShrink: 0 }} />
                     <div style={{ flex: 1, cursor: 'text' }} onClick={() => { if (editingId !== todo.id) { setEditingId(todo.id); setEditText(todo.text) } }}>
                       {editingId === todo.id ? (
                         <input
