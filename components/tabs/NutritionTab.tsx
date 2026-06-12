@@ -3,15 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Card from '@/components/ui/Card'
 import ProgressBar from '@/components/ui/ProgressBar'
+import MealTextLogger from '@/components/nutrition/MealTextLogger'
 import { createClient } from '@/lib/supabase'
 import {
   calculateConsumed,
   calculateRemaining,
+  EMPTY_MACRO_TOTALS,
   generateDefaultMeals,
-  getDailyTargets,
   getSubstitutions,
   MEAL_LABELS,
+  normalizedNutritionKey,
   scaleFood,
+  targetMapFromRows,
   type DefaultMealItem,
   type MacroTotals,
 } from '@/lib/nutrition'
@@ -87,13 +90,22 @@ export default function NutritionTab() {
   const [portionDrafts, setPortionDrafts] = useState<Partial<Record<MealTemplateName, PortionDraft>>>({})
   const [loading, setLoading] = useState(true)
   const [mutError, setMutError] = useState<string | null>(null)
+  const [targetMap, setTargetMap] = useState<Partial<Record<NutritionDayType, MacroTotals>>>({})
 
   const showMutError = (msg: string) => {
     setMutError(msg)
     setTimeout(() => setMutError(null), 3500)
   }
 
-  const targets = useMemo(() => getDailyTargets(dayType, 'cut'), [dayType])
+  const targets = useMemo(
+    () => targetMap[dayType] ?? (nutritionDay ? {
+      calories: nutritionDay.calories_target,
+      protein_g: nutritionDay.protein_target,
+      carbs_g: nutritionDay.carbs_target,
+      fat_g: nutritionDay.fat_target,
+    } : EMPTY_MACRO_TOTALS),
+    [dayType, nutritionDay, targetMap],
+  )
   const defaultMeals = useMemo(() => generateDefaultMeals(dayType), [dayType])
   const consumed = useMemo(() => calculateConsumed(mealLogs), [mealLogs])
   const remaining = useMemo(() => calculateRemaining(targets, consumed), [targets, consumed])
@@ -132,8 +144,23 @@ export default function NutritionTab() {
     setMealLogs((data ?? []) as MealLog[])
   }, [])
 
-  const ensureDay = useCallback(async (nextDayType: NutritionDayType) => {
-    const nextTargets = getDailyTargets(nextDayType, 'cut')
+  const ensureDay = useCallback(async (
+    nextDayType: NutritionDayType,
+    targetsOverride?: Partial<Record<NutritionDayType, MacroTotals>>,
+  ) => {
+    let nextTargets = targetsOverride?.[nextDayType]
+    if (!nextTargets) {
+      const { data } = await supabase
+        .from('nutrition_day_types')
+        .select('key, kcal_target, protein_g, carbs_g, fat_g')
+        .eq('key', normalizedNutritionKey(nextDayType))
+        .maybeSingle()
+      nextTargets = data ? targetMapFromRows([data])[nextDayType] : undefined
+    }
+    if (!nextTargets) {
+      showMutError('nutrition targets are unavailable')
+      return null
+    }
     const payload = {
       date: todayISO(),
       day_type: nextDayType,
@@ -169,10 +196,11 @@ export default function NutritionTab() {
     async function init() {
       setLoading(true)
 
-      const [foodResult, substitutionResult, existingDayResult] = await Promise.all([
+      const [foodResult, substitutionResult, existingDayResult, targetResult] = await Promise.all([
         supabase.from('food_item').select('*').order('category').order('name'),
         supabase.from('food_substitution_group_item').select('*, food_substitution_group(*)').order('label'),
         supabase.from('nutrition_day').select('*').eq('date', todayISO()).maybeSingle(),
+        supabase.from('nutrition_day_types').select('key, kcal_target, protein_g, carbs_g, fat_g'),
       ])
 
       if (cancelled) return
@@ -182,6 +210,8 @@ export default function NutritionTab() {
 
       setFoods((foodResult.data ?? []) as FoodItem[])
       setSubstitutionRows((substitutionResult.data ?? []) as SubstitutionRow[])
+      const loadedTargets = targetMapFromRows(targetResult.data ?? [])
+      setTargetMap(loadedTargets)
 
       let day: NutritionDay | null = (existingDayResult.data as NutritionDay) ?? null
 
@@ -200,7 +230,7 @@ export default function NutritionTab() {
         setNutritionDay(day)
       } else {
         // First open of the day — create the row with the current default.
-        day = await ensureDay('moderate')
+        day = await ensureDay('moderate', loadedTargets)
       }
 
       if (day && !cancelled) await loadMealLogs(day.id)
@@ -368,8 +398,8 @@ export default function NutritionTab() {
   return (
     <div className="px-4 space-y-5">
       <div className="pt-2">
-        <h1 className="text-[22px] font-bold text-[#ededed]">Nutrition</h1>
-        <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+        <h1 className="text-[22px] font-bold text-[var(--text)]">Nutrition</h1>
+        <div className="text-[var(--text-faint)] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
           DAILY FUEL · TEMPLATES · SWAPS
         </div>
       </div>
@@ -381,8 +411,8 @@ export default function NutritionTab() {
             onClick={() => changeDayType(type.value)}
             className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-bold transition-colors ${
               dayType === type.value
-                ? 'border-[#00d26a] bg-[#00d26a] text-[#0e0e0e]'
-                : 'border-[#2a2a2a] bg-[#1a1a1a] text-[#888]'
+                ? 'border-[#00d26a] bg-[#00d26a] text-[var(--bg)]'
+                : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-dim)]'
             }`}
           >
             {type.label}
@@ -390,20 +420,24 @@ export default function NutritionTab() {
         ))}
       </div>
 
+      <MealTextLogger onApplied={async () => {
+        if (nutritionDay) await loadMealLogs(nutritionDay.id)
+      }} />
+
       <div className="grid grid-cols-2 gap-3">
         {macroCards.map((macro) => (
           <Card key={macro.label} className="p-4 space-y-2">
-            <div className="text-[#888] uppercase text-[11px] tracking-widest">{macro.label}</div>
+            <div className="text-[var(--text-dim)] uppercase text-[11px] tracking-widest">{macro.label}</div>
             <div className="flex items-baseline gap-1">
-              <span className="text-[24px] font-bold leading-none text-[#ededed]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+              <span className="text-[24px] font-bold leading-none text-[var(--text)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                 {macroValue(macro.consumed)}
               </span>
-              <span className="text-xs text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+              <span className="text-xs text-[var(--text-faint)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                 /{macro.target}{macro.unit}
               </span>
             </div>
             <ProgressBar value={macro.consumed} max={macro.target} color={macro.color} />
-            <div className="text-[11px] text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+            <div className="text-[11px] text-[var(--text-faint)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
               {macro.remaining >= 0 ? `${macroValue(macro.remaining)}${macro.unit} left` : `${macroValue(Math.abs(macro.remaining))}${macro.unit} over`}
             </div>
           </Card>
@@ -411,7 +445,7 @@ export default function NutritionTab() {
       </div>
 
       {loading && (
-        <div className="py-8 text-center text-sm text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+        <div className="py-8 text-center text-sm text-[var(--text-faint)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
           loading fuel plan…
         </div>
       )}
@@ -424,7 +458,7 @@ export default function NutritionTab() {
 
       {!loading && (
         <div className="space-y-2">
-          <div className="text-[#555] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+          <div className="text-[var(--text-faint)] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
             · meals ·
           </div>
 
@@ -440,16 +474,16 @@ export default function NutritionTab() {
                   className="flex min-h-[58px] w-full items-center justify-between px-4 py-3.5"
                 >
                   <div className="text-left">
-                    <div className="text-sm font-medium text-[#ededed]">{meal.label}</div>
-                    <div className="mt-0.5 text-[11px] text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                    <div className="text-sm font-medium text-[var(--text)]">{meal.label}</div>
+                    <div className="mt-0.5 text-[11px] text-[var(--text-faint)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                       {meal.defaultTime} · {macroValue(mealTotals.calories)}kcal · {macroValue(mealTotals.protein_g)}p · {macroValue(mealTotals.carbs_g)}c
                     </div>
                   </div>
-                  <span className="text-lg leading-none text-[#555]">{isExpanded ? '-' : '+'}</span>
+                  <span className="text-lg leading-none text-[var(--text-faint)]">{isExpanded ? '-' : '+'}</span>
                 </button>
 
                 {isExpanded && (
-                  <div className="space-y-3 border-t border-[#2a2a2a] px-4 py-3">
+                  <div className="space-y-3 border-t border-[var(--border)] px-4 py-3">
                     <PortionAdder
                       mealName={meal.name}
                       foods={foods}
@@ -460,7 +494,7 @@ export default function NutritionTab() {
                     />
 
                     {meal.items.length === 0 && (
-                      <div className="rounded-lg border border-[#2a2a2a] bg-[#151515] p-3 text-sm text-[#555]">
+                      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-faint)]">
                         No default fuel here for this day type.
                       </div>
                     )}
@@ -474,11 +508,11 @@ export default function NutritionTab() {
                       const key = foodKey(meal.name, food.id, item.label)
 
                       return (
-                        <div key={`${meal.name}-${item.label}`} className="rounded-lg border border-[#2a2a2a] bg-[#151515] p-3">
+                        <div key={`${meal.name}-${item.label}`} className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <div className="text-sm text-[#ededed]">{item.label}</div>
-                              <div className="mt-0.5 text-[11px] text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                              <div className="text-sm text-[var(--text)]">{item.label}</div>
+                              <div className="mt-0.5 text-[11px] text-[var(--text-faint)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                                 {scaled.calories}kcal · {scaled.protein_g}p · {scaled.carbs_g}c · {scaled.fat_g}f
                               </div>
                             </div>
@@ -486,7 +520,7 @@ export default function NutritionTab() {
                             {logged ? (
                               <button
                                 onClick={() => removeLoggedItem(logged.id)}
-                                className="rounded-md border border-[#2a2a2a] px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[#888]"
+                                className="rounded-md border border-[var(--border)] px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[var(--text-dim)]"
                                 style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
                               >
                                 ate
@@ -495,7 +529,7 @@ export default function NutritionTab() {
                               <button
                                 onClick={() => logTemplateItem(meal.name, item)}
                                 disabled={savingKey === key}
-                                className="rounded-md bg-[#00d26a] px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[#0e0e0e] disabled:opacity-50"
+                                className="rounded-md bg-[#00d26a] px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[var(--bg)] disabled:opacity-50"
                                 style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
                               >
                                 ate this
@@ -519,7 +553,7 @@ export default function NutritionTab() {
                                         groupName: sub.groupName,
                                       })
                                     }
-                                    className="flex-shrink-0 rounded-md border border-[#2a2a2a] px-2.5 py-1.5 text-left text-[11px] text-[#888]"
+                                    className="flex-shrink-0 rounded-md border border-[var(--border)] px-2.5 py-1.5 text-left text-[11px] text-[var(--text-dim)]"
                                     style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
                                   >
                                     swap: {sub.label}
@@ -566,15 +600,15 @@ function PortionAdder({
   const isSaving = selectedFood ? savingKey === `portion:${mealName}:${selectedFood.id}` : false
 
   return (
-    <div className="rounded-lg border border-[#2a2a2a] bg-[#101010] p-3">
-      <div className="mb-2 text-[11px] uppercase tracking-widest text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
+      <div className="mb-2 text-[11px] uppercase tracking-widest text-[var(--text-faint)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
         add portion
       </div>
       <div className="grid grid-cols-[1fr_86px] gap-2">
         <select
           value={draft.foodItemId}
           onChange={(event) => onChange(mealName, { foodItemId: event.target.value })}
-          className="min-w-0 rounded-md border border-[#2a2a2a] bg-[#151515] px-2.5 py-2 text-sm text-[#ededed]"
+          className="min-w-0 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-sm text-[var(--text)]"
         >
           <option value="">Choose food</option>
           {foods.map((food) => (
@@ -590,18 +624,18 @@ function PortionAdder({
           type="number"
           min="0.25"
           step="0.25"
-          className="rounded-md border border-[#2a2a2a] bg-[#151515] px-2.5 py-2 text-sm text-[#ededed]"
+          className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-sm text-[var(--text)]"
           aria-label="Portions"
         />
       </div>
       <div className="mt-2 flex items-center justify-between gap-3">
-        <div className="min-w-0 text-[11px] text-[#555]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+        <div className="min-w-0 text-[11px] text-[var(--text-faint)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
           {scaled ? `${scaled.calories}kcal · ${scaled.protein_g}p · ${scaled.carbs_g}c · ${scaled.fat_g}f` : 'select a food item'}
         </div>
         <button
           onClick={() => onSubmit(mealName)}
           disabled={!selectedFood || isSaving}
-          className="flex-shrink-0 rounded-md bg-[#00d26a] px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[#0e0e0e] disabled:opacity-50"
+          className="flex-shrink-0 rounded-md bg-[#00d26a] px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[var(--bg)] disabled:opacity-50"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
           add
@@ -623,18 +657,18 @@ function LoggedSummary({ mealLogs, totals }: { mealLogs: MealLog[]; totals: Macr
 
   return (
     <div className="space-y-2">
-      <div className="text-[#555] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+      <div className="text-[var(--text-faint)] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
         · consumed ·
       </div>
       <Card className="p-4">
-        <div className="text-sm text-[#ededed]">
+        <div className="text-sm text-[var(--text)]">
           {macroValue(totals.calories)}kcal · {macroValue(totals.protein_g)}g protein · {macroValue(totals.carbs_g)}g carbs · {macroValue(totals.fat_g)}g fat
         </div>
         <div className="mt-3 space-y-1.5">
           {loggedItems.map((item) => (
             <div
               key={item.id}
-              className="flex items-center justify-between gap-3 text-[11px] text-[#555]"
+              className="flex items-center justify-between gap-3 text-[11px] text-[var(--text-faint)]"
               style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
             >
               <span className="truncate">

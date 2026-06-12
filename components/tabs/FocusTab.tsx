@@ -386,13 +386,13 @@ export default function FocusTab() {
       {/* Anchor section */}
       <div>
         <div
-          className="text-[#555] text-[11px] tracking-widest uppercase mb-2"
+          className="text-[var(--text-faint)] text-[11px] tracking-widest uppercase mb-2"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
           · anchor ·
         </div>
         <Card className="p-4">
-          <p className="text-[#888] text-sm leading-relaxed italic">
+          <p className="text-[var(--text-dim)] text-sm leading-relaxed italic">
             &ldquo;{getDailyAnchor()}&rdquo;
           </p>
         </Card>
@@ -402,7 +402,7 @@ export default function FocusTab() {
       <div>
         <div className="flex items-center justify-between mb-2">
           <div
-            className="text-[#555] text-[11px] tracking-widest uppercase"
+            className="text-[var(--text-faint)] text-[11px] tracking-widest uppercase"
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             · today&apos;s goals ·
@@ -412,19 +412,19 @@ export default function FocusTab() {
         {/* Counter */}
         <div className="flex items-baseline gap-2 mb-2">
           <span
-            className={`text-[38px] font-medium leading-none tracking-[-0.025em] tabular-nums ${done === total && total > 0 ? 'text-[#00d26a]' : 'text-[#ededed]'}`}
+            className={`text-[38px] font-medium leading-none tracking-[-0.025em] tabular-nums ${done === total && total > 0 ? 'text-[#00d26a]' : 'text-[var(--text)]'}`}
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             {done}
           </span>
           <span
-            className="text-[16px] text-[#555]"
+            className="text-[16px] text-[var(--text-faint)]"
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             / {total}
           </span>
           <span
-            className={`ml-auto text-[10px] font-semibold uppercase tracking-[0.1em] ${done === total && total > 0 ? 'text-[#00d26a]' : 'text-[#555]'}`}
+            className={`ml-auto text-[10px] font-semibold uppercase tracking-[0.1em] ${done === total && total > 0 ? 'text-[#00d26a]' : 'text-[var(--text-faint)]'}`}
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             {total === 0 ? 'no goals yet' : done === total ? 'all done' : 'complete'}
@@ -439,7 +439,7 @@ export default function FocusTab() {
                 key={i}
                 className="h-[6px] flex-1 rounded-full transition-all duration-300"
                 style={{
-                  background: i < done ? '#00d26a' : '#2a2a2a',
+                  background: i < done ? '#00d26a' : 'var(--border)',
                   boxShadow: i < done ? '0 0 6px rgba(0,210,106,0.35)' : 'none',
                 }}
               />
@@ -449,11 +449,11 @@ export default function FocusTab() {
 
         <Card style={done === total && total > 0 ? { background: 'rgba(0,210,106,0.04)' } : {}}>
           {todos.length === 0 ? (
-            <div className="p-4 text-[#555] text-sm text-center">
+            <div className="p-4 text-[var(--text-faint)] text-sm text-center">
               No goals yet. Add one below.
             </div>
           ) : (
-            <ul className="divide-y divide-[#2a2a2a]">
+            <ul className="divide-y divide-[var(--border)]">
               {todos.map((todo) => (
                 <li key={todo.id} className="group flex items-center">
                   <button
@@ -463,12 +463,12 @@ export default function FocusTab() {
                   >
                     <span
                       className={`w-5 h-5 rounded border flex items-center justify-center ${
-                        todo.done ? 'bg-[#00d26a] border-[#00d26a]' : 'bg-transparent border-[#3a3a3a]'
+                        todo.done ? 'bg-[#00d26a] border-[#00d26a]' : 'bg-transparent border-[var(--border-hi)]'
                       }`}
                     >
                       {todo.done && (
                         <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
-                          <path d="M1 4L4 7L10 1" stroke="#0e0e0e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M1 4L4 7L10 1" stroke="#0b0f0d" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       )}
                     </span>
@@ -487,10 +487,10 @@ export default function FocusTab() {
                           if (e.key === 'Enter') { e.preventDefault(); saveEdit(todo.id, editText) }
                           if (e.key === 'Escape') setEditingId(null)
                         }}
-                        className="w-full bg-transparent text-sm text-[#ededed] outline-none border-b border-[#3a3a3a] pb-0.5"
+                        className="w-full bg-transparent text-sm text-[var(--text)] outline-none border-b border-[var(--border-hi)] pb-0.5"
                       />
                     ) : (
-                      <span className={`text-sm leading-snug ${todo.done ? 'text-[#555] line-through cursor-default' : 'text-[#ededed] cursor-text'}`}>
+                      <span className={`text-sm leading-snug ${todo.done ? 'text-[var(--text-faint)] line-through cursor-default' : 'text-[var(--text)] cursor-text'}`}>
                         {todo.text}
                       </span>
                     )}
@@ -499,7 +499,7 @@ export default function FocusTab() {
                     <button
                       onClick={() => moveItem(todo.id, todos, setTodos, 'up')}
                       disabled={todos.indexOf(todo) === 0}
-                      className="text-[#555] hover:text-[#888] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
+                      className="text-[var(--text-faint)] hover:text-[var(--text-dim)] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
                       aria-label="Move up"
                     >
                       ↑
@@ -507,7 +507,7 @@ export default function FocusTab() {
                     <button
                       onClick={() => moveItem(todo.id, todos, setTodos, 'down')}
                       disabled={todos.indexOf(todo) === todos.length - 1}
-                      className="text-[#555] hover:text-[#888] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
+                      className="text-[var(--text-faint)] hover:text-[var(--text-dim)] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
                       aria-label="Move down"
                     >
                       ↓
@@ -515,7 +515,7 @@ export default function FocusTab() {
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteTodo(todo.id) }}
-                    className="opacity-0 group-hover:opacity-100 text-[#555] hover:text-[#ef4444] text-[14px] leading-none px-3 py-3 transition-opacity min-h-[44px] flex items-center"
+                    className="opacity-0 group-hover:opacity-100 text-[var(--text-faint)] hover:text-[#ef4444] text-[14px] leading-none px-3 py-3 transition-opacity min-h-[44px] flex items-center"
                     aria-label="Delete goal"
                   >
                     ×
@@ -531,7 +531,7 @@ export default function FocusTab() {
       {todos.some(t => !t.done) && (
         <button
           onClick={handlePushRemaining}
-          className="w-full border border-dashed border-[#3a3a3a] text-[#555] rounded-xl py-3 text-[11px] font-semibold uppercase tracking-[0.14em] min-h-[44px] active:border-[#555] active:text-[#888] transition-colors"
+          className="w-full border border-dashed border-[var(--border-hi)] text-[var(--text-faint)] rounded-xl py-3 text-[11px] font-semibold uppercase tracking-[0.14em] min-h-[44px] active:border-[var(--text-faint)] active:text-[var(--text-dim)] transition-colors"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
           push remaining to tomorrow
@@ -551,21 +551,21 @@ export default function FocusTab() {
             }
           }}
           placeholder="add a goal..."
-          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#ededed] rounded-xl px-4 py-3 text-sm placeholder:text-[#555] focus:outline-none focus:border-[#3a3a3a] min-h-[44px]"
+          className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] rounded-xl px-4 py-3 text-sm placeholder:text-[var(--text-faint)] focus:outline-none focus:border-[var(--border-hi)] min-h-[44px]"
           disabled={isPolishing}
         />
         <div className="flex gap-2">
           <button
             onClick={handleAdd}
             disabled={!inputText.trim() || isPolishing}
-            className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-[#ededed] rounded-xl py-3 text-sm font-medium min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed active:bg-[#2a2a2a] transition-colors"
+            className="flex-1 bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] rounded-xl py-3 text-sm font-medium min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed active:bg-[var(--border)] transition-colors"
           >
             + Add
           </button>
           <button
             onClick={handlePolishAndAdd}
             disabled={!inputText.trim() || isPolishing}
-            className="flex-1 bg-[#00d26a] text-[#0e0e0e] rounded-xl py-3 text-sm font-bold min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed active:opacity-80 transition-opacity"
+            className="flex-1 bg-[#00d26a] text-[var(--bg)] rounded-xl py-3 text-sm font-bold min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed active:opacity-80 transition-opacity"
           >
             {isPolishing ? 'polishing...' : '✦ Polish & Add'}
           </button>
@@ -576,31 +576,31 @@ export default function FocusTab() {
       <div>
         <div className="flex items-center justify-between mb-2">
           <div
-            className="text-[#555] text-[11px] tracking-widest uppercase"
+            className="text-[var(--text-faint)] text-[11px] tracking-widest uppercase"
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             plan tomorrow — {formatGoalDateEyebrow(getNextGoalDate())}
           </div>
           <div
-            className="text-[#555] text-[11px] tabular-nums"
+            className="text-[var(--text-faint)] text-[11px] tabular-nums"
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             {tomorrowTodos.length} planned
           </div>
         </div>
-        <div className="text-[#555] text-[11px] mb-3">Write tonight, locked until 6 AM.</div>
+        <div className="text-[var(--text-faint)] text-[11px] mb-3">Write tonight, locked until 6 AM.</div>
 
         <Card>
           {tomorrowTodos.length === 0 ? (
-            <div className="p-4 text-[#555] text-sm text-center">
+            <div className="p-4 text-[var(--text-faint)] text-sm text-center">
               Nothing planned for tomorrow yet.
             </div>
           ) : (
-            <ul className="divide-y divide-[#2a2a2a]">
+            <ul className="divide-y divide-[var(--border)]">
               {tomorrowTodos.map((todo) => (
                 <li key={todo.id} className="group flex items-center">
                   <span
-                    className="flex-shrink-0 mx-4 w-5 h-5 rounded border border-[#3a3a3a] bg-transparent opacity-55"
+                    className="flex-shrink-0 mx-4 w-5 h-5 rounded border border-[var(--border-hi)] bg-transparent opacity-55"
                     title="Activates at 6 AM"
                   />
                   <div
@@ -617,17 +617,17 @@ export default function FocusTab() {
                           if (e.key === 'Enter') { e.preventDefault(); saveEdit(todo.id, editText, true) }
                           if (e.key === 'Escape') setEditingId(null)
                         }}
-                        className="w-full bg-transparent text-sm text-[#ededed] outline-none border-b border-[#3a3a3a] pb-0.5"
+                        className="w-full bg-transparent text-sm text-[var(--text)] outline-none border-b border-[var(--border-hi)] pb-0.5"
                       />
                     ) : (
-                      <span className="text-sm text-[#ededed] opacity-55 cursor-text">{todo.text}</span>
+                      <span className="text-sm text-[var(--text)] opacity-55 cursor-text">{todo.text}</span>
                     )}
                   </div>
                   <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => moveItem(todo.id, tomorrowTodos, setTomorrowTodos, 'up')}
                       disabled={tomorrowTodos.indexOf(todo) === 0}
-                      className="text-[#555] hover:text-[#888] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
+                      className="text-[var(--text-faint)] hover:text-[var(--text-dim)] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
                       aria-label="Move up"
                     >
                       ↑
@@ -635,7 +635,7 @@ export default function FocusTab() {
                     <button
                       onClick={() => moveItem(todo.id, tomorrowTodos, setTomorrowTodos, 'down')}
                       disabled={tomorrowTodos.indexOf(todo) === tomorrowTodos.length - 1}
-                      className="text-[#555] hover:text-[#888] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
+                      className="text-[var(--text-faint)] hover:text-[var(--text-dim)] text-[11px] px-1.5 py-3 min-h-[44px] flex items-center disabled:opacity-20"
                       aria-label="Move down"
                     >
                       ↓
@@ -643,7 +643,7 @@ export default function FocusTab() {
                   </div>
                   <button
                     onClick={() => deleteTomorrowTodo(todo.id)}
-                    className="opacity-0 group-hover:opacity-100 text-[#555] hover:text-[#ef4444] text-[14px] leading-none px-3 py-3 transition-opacity min-h-[44px] flex items-center"
+                    className="opacity-0 group-hover:opacity-100 text-[var(--text-faint)] hover:text-[#ef4444] text-[14px] leading-none px-3 py-3 transition-opacity min-h-[44px] flex items-center"
                     aria-label="Delete"
                   >
                     ×
@@ -666,12 +666,12 @@ export default function FocusTab() {
               }
             }}
             placeholder="add to tomorrow..."
-            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#ededed] rounded-xl px-4 py-3 text-sm placeholder:text-[#555] focus:outline-none focus:border-[#3a3a3a] min-h-[44px]"
+            className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] rounded-xl px-4 py-3 text-sm placeholder:text-[var(--text-faint)] focus:outline-none focus:border-[var(--border-hi)] min-h-[44px]"
           />
           <button
             onClick={handleAddTomorrow}
             disabled={!tomorrowInput.trim()}
-            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#ededed] rounded-xl py-3 text-sm font-medium min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed active:bg-[#2a2a2a] transition-colors"
+            className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] rounded-xl py-3 text-sm font-medium min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed active:bg-[var(--border)] transition-colors"
           >
             + Add to Tomorrow
           </button>
@@ -683,10 +683,10 @@ export default function FocusTab() {
         className="text-center pb-2"
         style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
       >
-        <span className="text-[#555] text-[10px]">
+        <span className="text-[var(--text-faint)] text-[10px]">
           resets daily at 6 AM ·{' '}
         </span>
-        <span className="text-[#3a3a3a] text-[10px]">
+        <span className="text-[var(--border-hi)] text-[10px]">
           war room, not mood board
         </span>
       </div>

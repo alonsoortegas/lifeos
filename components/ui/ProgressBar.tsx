@@ -4,6 +4,7 @@ interface ProgressBarProps {
   color?: string
 }
 
+/** Rounded gradient bar with a soft glow. */
 export default function ProgressBar({
   value,
   max,
@@ -12,10 +13,14 @@ export default function ProgressBar({
   const pct = Math.min(100, Math.max(0, (value / max) * 100))
 
   return (
-    <div className="w-full h-1 bg-[#2a2a2a] rounded-full overflow-hidden">
+    <div className="h-[6px] w-full overflow-hidden rounded-full bg-[var(--ink-06)]">
       <div
-        className="h-full rounded-full transition-all duration-300"
-        style={{ width: `${pct}%`, backgroundColor: color }}
+        className="h-full rounded-full transition-all duration-500"
+        style={{
+          width: `${pct}%`,
+          background: `linear-gradient(90deg, ${color}aa, ${color})`,
+          boxShadow: `0 0 10px ${color}66`,
+        }}
       />
     </div>
   )

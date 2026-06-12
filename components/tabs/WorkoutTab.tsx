@@ -5,6 +5,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import Card from '@/components/ui/Card'
 import type { WorkoutSession, WorkoutExercise, WorkoutLog } from '@/lib/types'
 import { getCurrentWeek, getTodayKey, DAY_ORDER, DAY_META } from '@/lib/workout'
+import { formatWorkoutText, shareText, type ShareExercise } from '@/lib/share'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -95,6 +96,34 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
   const [addError, setAddError] = useState<string | null>(null)
   const [logError, setLogError] = useState<string | null>(null)
   const [exerciseForm, setExerciseForm] = useState<ExerciseFormState>(EMPTY_EXERCISE_FORM)
+  const [shareState, setShareState] = useState<'idle' | 'shared' | 'copied'>('idle')
+
+  async function shareWorkout() {
+    if (!session) return
+    const shareExercises: ShareExercise[] = exercises.map((ex, i) => ({
+      name: ex.exercise_name,
+      modality: ex.modality,
+      sets: (exerciseStates[i]?.loggedSets ?? []).map(s => ({
+        setNum: s.setNum,
+        weight: s.weight,
+        reps: s.reps,
+        rpe: s.rpe,
+        distance_m: s.distance_m,
+        duration_s: s.duration_s,
+      })),
+    }))
+    const result = await shareText(formatWorkoutText({
+      title: session.title,
+      sessionType: session.session_type,
+      weekNumber: currentWeek,
+      date: new Date(),
+      exercises: shareExercises,
+    }))
+    if (result !== 'failed') {
+      setShareState(result)
+      window.setTimeout(() => setShareState('idle'), 1800)
+    }
+  }
 
   const loadSession = useCallback(async (day: string) => {
     setLoading(true)
@@ -104,6 +133,11 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
     setAddOpen(false)
     setAddError(null)
     setLogError(null)
+
+    if (currentWeek == null) {
+      setLoading(false)
+      return
+    }
 
     const dbKey = DAY_META[day]?.dbKey ?? day
 
@@ -206,6 +240,10 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
   const addExercise = async () => {
     if (addSaving) return
+    if (currentWeek == null) {
+      setAddError('Start a new training block before adding planned exercises')
+      return
+    }
 
     const name = exerciseForm.name.trim()
     if (!name) {
@@ -361,12 +399,12 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                 onClick={() => setSelectedDay(day)}
                 className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
                   isSelected
-                    ? 'bg-[#00d26a] border-[#00d26a] text-[#0e0e0e]'
+                    ? 'bg-[#00d26a] border-[#00d26a] text-[var(--bg)]'
                     : isToday
                     ? 'bg-transparent border-[#00d26a] text-[#00d26a]'
                     : isGym
-                    ? 'bg-transparent border-[#2a2a2a] text-[#888]'
-                    : 'bg-transparent border-[#1a1a1a] text-[#555]'
+                    ? 'bg-transparent border-[var(--border)] text-[var(--text-dim)]'
+                    : 'bg-transparent border-[var(--surface)] text-[var(--text-faint)]'
                 }`}
                 style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
               >
@@ -382,10 +420,10 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
         <Card className="p-6">
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-1.5">
-              <div className="text-[#555] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+              <div className="text-[var(--text-faint)] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                 · {meta?.restLabel} ·
               </div>
-              <div className="text-[#888] text-sm" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+              <div className="text-[var(--text-dim)] text-sm" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                 {meta?.restSub}
               </div>
             </div>
@@ -399,8 +437,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                 aria-label={addOpen ? 'Close add exercise form' : 'Add exercise'}
                 className={`flex-shrink-0 h-10 w-10 rounded-lg border text-xl leading-none flex items-center justify-center transition-colors ${
                   addOpen
-                    ? 'border-[#00d26a] bg-[#00d26a] text-[#0e0e0e]'
-                    : 'border-[#2a2a2a] bg-transparent text-[#00d26a]'
+                    ? 'border-[#00d26a] bg-[#00d26a] text-[var(--bg)]'
+                    : 'border-[var(--border)] bg-transparent text-[#00d26a]'
                 }`}
               >
                 {addOpen ? '−' : '+'}
@@ -412,7 +450,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
       {/* Loading */}
       {loading && (
-        <div className="text-[#555] text-sm text-center py-8" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+        <div className="text-[var(--text-faint)] text-sm text-center py-8" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
           loading…
         </div>
       )}
@@ -420,11 +458,11 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
       {/* No session for this week/day */}
       {isGymDay && !loading && !session && (
         <Card className="p-6 flex flex-col items-center gap-2 text-center">
-          <div className="text-[#555] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-            · REST DAY ·
+          <div className="text-[var(--text-faint)] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+            · {currentWeek == null ? 'NO ACTIVE TRAINING BLOCK' : 'REST DAY'} ·
           </div>
-          <div className="text-[#888] text-sm" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-            No session scheduled
+          <div className="text-[var(--text-dim)] text-sm" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+            {currentWeek == null ? 'The previous six-week plan has ended' : 'No session scheduled'}
           </div>
         </Card>
       )}
@@ -437,31 +475,48 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
               <div className="text-[#00d26a] uppercase text-[11px] tracking-widest mb-1" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                 WEEK {currentWeek} · {session.session_type.toUpperCase()}
               </div>
-              <h1 className="text-[22px] font-bold text-[#ededed]">{session.title}</h1>
+              <h1 className="text-[22px] font-bold text-[var(--text)]">{session.title}</h1>
             </div>
-            {canAddExercises && (
-              <button
-                type="button"
-                onClick={() => {
-                  setAddOpen(open => !open)
-                  setAddError(null)
-                }}
-                aria-label={addOpen ? 'Close add exercise form' : 'Add exercise'}
-                className={`flex-shrink-0 h-10 w-10 rounded-lg border text-xl leading-none flex items-center justify-center transition-colors ${
-                  addOpen
-                    ? 'border-[#00d26a] bg-[#00d26a] text-[#0e0e0e]'
-                    : 'border-[#2a2a2a] bg-transparent text-[#00d26a]'
-                }`}
-              >
-                {addOpen ? '−' : '+'}
-              </button>
-            )}
+            <div className="flex flex-shrink-0 items-center gap-2">
+              {totalSets > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void shareWorkout()}
+                  aria-label="Copy workout summary"
+                  className={`h-10 rounded-lg border px-3 text-[11px] font-semibold transition-colors ${
+                    shareState !== 'idle'
+                      ? 'border-[#00d26a] text-[#00d26a]'
+                      : 'border-[var(--border)] text-[var(--text-dim)]'
+                  }`}
+                  style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+                >
+                  {shareState === 'copied' ? 'Copied ✓' : shareState === 'shared' ? 'Shared ✓' : 'Copy'}
+                </button>
+              )}
+              {canAddExercises && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddOpen(open => !open)
+                    setAddError(null)
+                  }}
+                  aria-label={addOpen ? 'Close add exercise form' : 'Add exercise'}
+                  className={`h-10 w-10 rounded-lg border text-xl leading-none flex items-center justify-center transition-colors ${
+                    addOpen
+                      ? 'border-[#00d26a] bg-[#00d26a] text-[var(--bg)]'
+                      : 'border-[var(--border)] bg-transparent text-[#00d26a]'
+                  }`}
+                >
+                  {addOpen ? '−' : '+'}
+                </button>
+              )}
+            </div>
           </div>
-          <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+          <div className="text-[var(--text-faint)] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
             {exercises.length} exercises · {totalSets} sets logged
           </div>
           {session.notes && (
-            <div className="text-[#555] text-[11px] mt-1 leading-relaxed" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+            <div className="text-[var(--text-faint)] text-[11px] mt-1 leading-relaxed" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
               {session.notes}
             </div>
           )}
@@ -479,7 +534,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                 }}
               >
                 <div>
-                  <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-name">
+                  <label className="text-[var(--text-dim)] text-xs uppercase tracking-wider" htmlFor="exercise-name">
                     Exercise
                   </label>
                   <input
@@ -487,13 +542,13 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     value={exerciseForm.name}
                     onChange={event => updateExerciseForm({ name: event.target.value })}
                     placeholder="e.g. Farmers Carry"
-                    className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none placeholder:text-[#3a3a3a] focus:border-[#00d26a]"
+                    className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none placeholder:text-[var(--border-hi)] focus:border-[#00d26a]"
                   />
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-sets">
+                    <label className="text-[var(--text-dim)] text-xs uppercase tracking-wider" htmlFor="exercise-sets">
                       Sets
                     </label>
                     <input
@@ -503,22 +558,22 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       min="0"
                       value={exerciseForm.sets}
                       onChange={event => updateExerciseForm({ sets: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                   <div>
-                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-reps">
+                    <label className="text-[var(--text-dim)] text-xs uppercase tracking-wider" htmlFor="exercise-reps">
                       Reps
                     </label>
                     <input
                       id="exercise-reps"
                       value={exerciseForm.reps}
                       onChange={event => updateExerciseForm({ reps: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                   <div>
-                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-weight">
+                    <label className="text-[var(--text-dim)] text-xs uppercase tracking-wider" htmlFor="exercise-weight">
                       KG
                     </label>
                     <input
@@ -529,14 +584,14 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       step="0.5"
                       value={exerciseForm.weight}
                       onChange={event => updateExerciseForm({ weight: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-[88px_1fr] gap-2">
                   <div>
-                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-rpe">
+                    <label className="text-[var(--text-dim)] text-xs uppercase tracking-wider" htmlFor="exercise-rpe">
                       RPE
                     </label>
                     <input
@@ -544,18 +599,18 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       inputMode="decimal"
                       value={exerciseForm.rpe}
                       onChange={event => updateExerciseForm({ rpe: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                   <div>
-                    <label className="text-[#888] text-xs uppercase tracking-wider" htmlFor="exercise-notes">
+                    <label className="text-[var(--text-dim)] text-xs uppercase tracking-wider" htmlFor="exercise-notes">
                       Notes
                     </label>
                     <input
                       id="exercise-notes"
                       value={exerciseForm.notes}
                       onChange={event => updateExerciseForm({ notes: event.target.value })}
-                      className="mt-2 w-full h-11 rounded-lg border border-[#2a2a2a] bg-[#0e0e0e] px-3 text-[#ededed] outline-none focus:border-[#00d26a]"
+                      className="mt-2 w-full h-11 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
                     />
                   </div>
                 </div>
@@ -573,14 +628,14 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       setAddOpen(false)
                       setAddError(null)
                     }}
-                    className="h-11 flex-1 rounded-lg border border-[#2a2a2a] text-[#888] text-sm font-bold active:opacity-70"
+                    className="h-11 flex-1 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-sm font-bold active:opacity-70"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={addSaving}
-                    className="h-11 flex-1 rounded-lg bg-[#00d26a] text-[#0e0e0e] text-sm font-bold active:opacity-80 disabled:opacity-50"
+                    className="h-11 flex-1 rounded-lg bg-[#00d26a] text-[var(--bg)] text-sm font-bold active:opacity-80 disabled:opacity-50"
                   >
                     {addSaving ? 'Adding…' : 'Add exercise'}
                   </button>
@@ -604,15 +659,15 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                   className="w-full flex items-center justify-between px-4 py-4 min-h-[56px]"
                 >
                   <div className="text-left flex-1 min-w-0 pr-3">
-                    <div className="text-[#ededed] text-sm font-medium">{ex.exercise_name}</div>
-                    <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                    <div className="text-[var(--text)] text-sm font-medium">{ex.exercise_name}</div>
+                    <div className="text-[var(--text-faint)] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                       {ex.prescribed_sets && ex.prescribed_reps ? `${ex.prescribed_sets}×${ex.prescribed_reps}` : ''}
                       {ex.prescribed_weight ? ` · ${ex.prescribed_weight}${ex.weight_unit}` : ''}
                       {ex.target_rpe ? ` · RPE ${ex.target_rpe}` : ''}
                     </div>
                     {last && (
                       <div className="text-[10px] mt-0.5 flex items-center gap-2" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                        <span className="text-[#3a3a3a]">last {last.weight_lbs}{last.weight_unit} × {last.reps} @ {last.rpe}</span>
+                        <span className="text-[var(--border-hi)]">last {last.weight_lbs}{last.weight_unit} × {last.reps} @ {last.rpe}</span>
                         {suggestion !== null && (
                           <span className="text-[#00d26a]">→ try {suggestion}kg</span>
                         )}
@@ -621,26 +676,26 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     {s.loggedSets.length > 0 && (
-                      <span className={`text-[11px] ${s.loggedSets.length >= setsTarget ? 'text-[#00d26a]' : 'text-[#888]'}`} style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                      <span className={`text-[11px] ${s.loggedSets.length >= setsTarget ? 'text-[#00d26a]' : 'text-[var(--text-dim)]'}`} style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                         {s.loggedSets.length}{setsTarget > 0 ? `/${setsTarget}` : ''}
                       </span>
                     )}
-                    <span className="text-[#555] text-lg leading-none">{s.expanded ? '−' : '+'}</span>
+                    <span className="text-[var(--text-faint)] text-lg leading-none">{s.expanded ? '−' : '+'}</span>
                   </div>
                 </button>
 
                 {s.expanded && (
-                  <div className="border-t border-[#2a2a2a] px-4 pb-4 space-y-4 pt-4">
+                  <div className="border-t border-[var(--border)] px-4 pb-4 space-y-4 pt-4">
                     {/* Modality: strength — weight + reps */}
                     {(ex.modality === 'strength' || ex.modality === 'carry' || !ex.modality) && (
                       <div className="flex items-center justify-between">
-                        <span className="text-[#888] text-xs uppercase tracking-wider">Weight</span>
+                        <span className="text-[var(--text-dim)] text-xs uppercase tracking-wider">Weight</span>
                         <div className="flex items-center gap-3">
-                          <button onClick={() => updateState(i, { weight: Math.max(0, s.weight - 2.5) })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">−</button>
-                          <span className="text-[#ededed] text-2xl font-bold min-w-[64px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                            {s.weight}<span className="text-[#555] text-sm ml-0.5">kg</span>
+                          <button onClick={() => updateState(i, { weight: Math.max(0, s.weight - 2.5) })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">−</button>
+                          <span className="text-[var(--text)] text-2xl font-bold min-w-[64px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                            {s.weight}<span className="text-[var(--text-faint)] text-sm ml-0.5">kg</span>
                           </span>
-                          <button onClick={() => updateState(i, { weight: s.weight + 2.5 })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">+</button>
+                          <button onClick={() => updateState(i, { weight: s.weight + 2.5 })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">+</button>
                         </div>
                       </div>
                     )}
@@ -648,13 +703,13 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     {/* Distance — erg + carry */}
                     {(ex.modality === 'erg' || ex.modality === 'carry') && (
                       <div className="flex items-center justify-between">
-                        <span className="text-[#888] text-xs uppercase tracking-wider">Distance</span>
+                        <span className="text-[var(--text-dim)] text-xs uppercase tracking-wider">Distance</span>
                         <div className="flex items-center gap-3">
-                          <button onClick={() => updateState(i, { selectedDistance: Math.max(50, s.selectedDistance - 50) })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">−</button>
-                          <span className="text-[#ededed] text-2xl font-bold min-w-[72px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                            {s.selectedDistance}<span className="text-[#555] text-sm ml-0.5">m</span>
+                          <button onClick={() => updateState(i, { selectedDistance: Math.max(50, s.selectedDistance - 50) })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">−</button>
+                          <span className="text-[var(--text)] text-2xl font-bold min-w-[72px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                            {s.selectedDistance}<span className="text-[var(--text-faint)] text-sm ml-0.5">m</span>
                           </span>
-                          <button onClick={() => updateState(i, { selectedDistance: s.selectedDistance + 50 })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">+</button>
+                          <button onClick={() => updateState(i, { selectedDistance: s.selectedDistance + 50 })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">+</button>
                         </div>
                       </div>
                     )}
@@ -662,13 +717,13 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     {/* Duration — erg only */}
                     {ex.modality === 'erg' && (
                       <div className="flex items-center justify-between">
-                        <span className="text-[#888] text-xs uppercase tracking-wider">Time</span>
+                        <span className="text-[var(--text-dim)] text-xs uppercase tracking-wider">Time</span>
                         <div className="flex items-center gap-3">
-                          <button onClick={() => updateState(i, { selectedDuration: Math.max(10, s.selectedDuration - 10) })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">−</button>
-                          <span className="text-[#ededed] text-2xl font-bold min-w-[72px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                          <button onClick={() => updateState(i, { selectedDuration: Math.max(10, s.selectedDuration - 10) })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">−</button>
+                          <span className="text-[var(--text)] text-2xl font-bold min-w-[72px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                             {Math.floor(s.selectedDuration / 60)}:{String(s.selectedDuration % 60).padStart(2, '0')}
                           </span>
-                          <button onClick={() => updateState(i, { selectedDuration: s.selectedDuration + 10 })} className="w-8 h-8 rounded-lg border border-[#2a2a2a] text-[#888] text-lg flex items-center justify-center active:opacity-60">+</button>
+                          <button onClick={() => updateState(i, { selectedDuration: s.selectedDuration + 10 })} className="w-8 h-8 rounded-lg border border-[var(--border)] text-[var(--text-dim)] text-lg flex items-center justify-center active:opacity-60">+</button>
                         </div>
                       </div>
                     )}
@@ -676,7 +731,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     {/* Reps — strength + bodyweight + carry */}
                     {ex.modality !== 'erg' && (
                       <div>
-                        <div className="text-[#888] text-xs uppercase tracking-wider mb-2">Reps</div>
+                        <div className="text-[var(--text-dim)] text-xs uppercase tracking-wider mb-2">Reps</div>
                         <div className="flex flex-wrap gap-2">
                           {[3, 4, 5, 6, 7, 8, 9, 10, 12, 15].map(r => (
                             <button
@@ -684,8 +739,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                               onClick={() => updateState(i, { selectedReps: r })}
                               className={`min-w-[40px] min-h-[36px] px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                                 s.selectedReps === r
-                                  ? 'bg-[#00d26a] border-[#00d26a] text-[#0e0e0e] font-bold'
-                                  : 'bg-transparent border-[#2a2a2a] text-[#888]'
+                                  ? 'bg-[#00d26a] border-[#00d26a] text-[var(--bg)] font-bold'
+                                  : 'bg-transparent border-[var(--border)] text-[var(--text-dim)]'
                               }`}
                               style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
                             >
@@ -699,8 +754,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     {/* RPE */}
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-[#888] text-xs uppercase tracking-wider">RPE</span>
-                        <span className="text-[#ededed] text-sm font-bold" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>{s.selectedRpe}</span>
+                        <span className="text-[var(--text-dim)] text-xs uppercase tracking-wider">RPE</span>
+                        <span className="text-[var(--text)] text-sm font-bold" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>{s.selectedRpe}</span>
                       </div>
                       <div className="flex gap-2">
                         {RPE_OPTIONS.map(r => (
@@ -709,8 +764,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                             onClick={() => updateState(i, { selectedRpe: r })}
                             className={`flex-1 h-8 rounded text-[10px] border transition-colors ${
                               s.selectedRpe === r
-                                ? 'bg-[#00d26a] border-[#00d26a] text-[#0e0e0e] font-bold'
-                                : 'bg-transparent border-[#2a2a2a] text-[#555]'
+                                ? 'bg-[#00d26a] border-[#00d26a] text-[var(--bg)] font-bold'
+                                : 'bg-transparent border-[var(--border)] text-[var(--text-faint)]'
                             }`}
                             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
                           >
@@ -722,7 +777,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
                     {/* Notes */}
                     {ex.notes && (
-                      <div className="text-[#555] text-[11px] leading-relaxed" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                      <div className="text-[var(--text-faint)] text-[11px] leading-relaxed" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                         {ex.notes}
                       </div>
                     )}
@@ -730,7 +785,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     {/* Log set */}
                     <button
                       onClick={() => logSet(i)}
-                      className="w-full bg-[#00d26a] text-[#0e0e0e] rounded-xl py-3 text-sm font-bold min-h-[44px] active:opacity-80 transition-opacity"
+                      className="w-full bg-[#00d26a] text-[var(--bg)] rounded-xl py-3 text-sm font-bold min-h-[44px] active:opacity-80 transition-opacity"
                     >
                       Log set {s.loggedSets.length + 1}{setsTarget > 0 ? ` of ${setsTarget}` : ''} →
                     </button>
@@ -744,9 +799,9 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     {/* Logged sets */}
                     {s.loggedSets.length > 0 && (
                       <div className="space-y-1.5">
-                        <div className="text-[#555] text-[11px] uppercase tracking-wider">Logged</div>
+                        <div className="text-[var(--text-faint)] text-[11px] uppercase tracking-wider">Logged</div>
                         {s.loggedSets.map(ls => (
-                          <div key={ls.setNum} className="flex items-center justify-between text-[#888] text-[11px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                          <div key={ls.setNum} className="flex items-center justify-between text-[var(--text-dim)] text-[11px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                             <span>Set {ls.setNum}</span>
                             {ls.distance_m != null
                               ? <span>{ls.distance_m}m{ls.duration_s != null ? ` · ${Math.floor(ls.duration_s / 60)}:${String(ls.duration_s % 60).padStart(2, '0')}` : ''}</span>

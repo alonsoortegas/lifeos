@@ -29,38 +29,50 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center px-6">
-      <div className="w-full max-w-xs space-y-6">
-        <div className="text-center space-y-1">
-          <div className="text-[#00d26a] text-2xl font-bold" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-            ◆ LIFEOS
+    <div className="flex min-h-screen items-center justify-center px-6">
+      <div className="boot w-full max-w-xs space-y-7">
+        <div className="space-y-2 text-center">
+          <div
+            className="mx-auto h-12 w-12 rounded-[14px] bg-cover bg-center"
+            style={{ backgroundImage: 'url(/lifeos-icon.svg)', boxShadow: '0 0 30px rgba(0,210,106,0.35)' }}
+            role="img"
+            aria-label="LifeOS"
+          />
+          <div className="display pt-1 text-[30px] font-bold tracking-tight text-[var(--text)]">
+            Life<span className="text-[#00d26a]" style={{ textShadow: '0 0 20px rgba(0,210,106,0.5)' }}>OS</span>
           </div>
-          <div className="text-[#555] text-xs tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-            personal dashboard
+          <div className="flicker text-[13px] text-[var(--text-dim)]">
+            Welcome back. Ready when you are.
           </div>
         </div>
 
-        <form onSubmit={submit} className="space-y-3">
+        <form onSubmit={submit} className="ticks panel space-y-3 rounded-2xl p-5">
           <input
+            id="lifeos-password"
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            placeholder="password"
+            placeholder="Password"
             autoFocus
-            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-3 text-[#ededed] text-sm outline-none focus:border-[#00d26a] transition-colors"
-            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+            className="w-full rounded-xl border border-[var(--border-hi)] bg-[var(--bg)] px-4 py-3 text-sm text-[var(--text)] outline-none transition-all placeholder:text-[var(--text-faint)] focus:border-[#00d26a]"
+            onFocus={e => { e.currentTarget.style.boxShadow = '0 0 0 4px rgba(0,210,106,0.12), 0 0 20px rgba(0,210,106,0.1)' }}
+            onBlur={e => { e.currentTarget.style.boxShadow = 'none' }}
           />
           {error && (
-            <div className="text-[#ef4444] text-xs text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-              wrong password
+            <div className="text-center text-xs text-[#fb7185]">
+              That&apos;s not it — try again
             </div>
           )}
           <button
             type="submit"
             disabled={loading || !password}
-            className="w-full bg-[#00d26a] text-[#0e0e0e] rounded-xl py-3 text-sm font-bold min-h-[44px] disabled:opacity-40 transition-opacity"
+            className="display min-h-[46px] w-full rounded-xl py-3 text-[14px] font-bold text-[var(--bg)] transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
+            style={{
+              background: 'linear-gradient(135deg, #00d26a, #2ee6a8)',
+              boxShadow: '0 8px 28px rgba(0,210,106,0.3)',
+            }}
           >
-            {loading ? '...' : 'enter →'}
+            {loading ? 'Unlocking…' : 'Unlock'}
           </button>
         </form>
       </div>

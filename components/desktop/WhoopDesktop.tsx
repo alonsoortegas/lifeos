@@ -12,9 +12,11 @@ import {
   Legend,
   type ChartOptions,
 } from 'chart.js'
+import { useEffect } from 'react'
 import { Line, Bar } from 'react-chartjs-2'
 import { useWhoopData } from '@/lib/whoop-data'
 import { sportColor, avg, shortDate } from '@/lib/whoop-utils'
+import { useThemeColors } from '@/lib/theme-colors'
 
 ChartJS.register(
   CategoryScale, LinearScale,
@@ -22,55 +24,17 @@ ChartJS.register(
   Filler, Tooltip, Legend,
 )
 
+// DOM-context tokens — CSS variables are fine here (helper components below).
+// Chart.js paints to <canvas>, where var() does NOT resolve: every color or
+// font that reaches a chart option must be a literal, supplied per-render by
+// useThemeColors() inside the component (shadowed names: C, TOOLTIP_STYLE,
+// SCALE_DEFAULTS, lineOpts, barOpts).
 const C = {
-  bg: '#0e0e0e', card: '#1a1a1a', border: '#2a2a2a', borderHi: '#3a3a3a',
-  text: '#ededed', dim: '#888', faint: '#555', accent: '#00d26a',
+  bg: 'var(--bg)', card: 'var(--surface)', border: 'var(--border)', borderHi: 'var(--border-hi)',
+  text: 'var(--text)', dim: 'var(--text-dim)', faint: 'var(--text-faint)', accent: '#00d26a',
 }
 const mono = 'var(--font-jetbrains-mono, monospace)'
 const sans = 'var(--font-inter-tight, sans-serif)'
-
-ChartJS.defaults.color = C.dim
-ChartJS.defaults.borderColor = C.border
-ChartJS.defaults.font.family = mono
-ChartJS.defaults.font.size = 10
-
-const TOOLTIP_STYLE = {
-  backgroundColor: '#1a1a1a',
-  borderColor: '#2a2a2a',
-  borderWidth: 1,
-  titleColor: '#ededed',
-  bodyColor: '#888',
-  padding: 10,
-  cornerRadius: 8,
-  boxPadding: 4,
-}
-
-const SCALE_DEFAULTS = {
-  grid: { color: 'rgba(255,255,255,0.04)' },
-  ticks: { color: C.faint, font: { family: mono, size: 9 } },
-}
-
-function lineOpts(overrides: Partial<ChartOptions<'line'>> = {}): ChartOptions<'line'> {
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    plugins: { legend: { display: false }, tooltip: { ...TOOLTIP_STYLE } },
-    scales: { x: { ...SCALE_DEFAULTS }, y: { ...SCALE_DEFAULTS } },
-    ...overrides,
-  } as ChartOptions<'line'>
-}
-
-function barOpts(overrides: Partial<ChartOptions<'bar'>> = {}): ChartOptions<'bar'> {
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    plugins: { legend: { display: false }, tooltip: { ...TOOLTIP_STYLE } },
-    scales: { x: { ...SCALE_DEFAULTS }, y: { ...SCALE_DEFAULTS } },
-    ...overrides,
-  } as ChartOptions<'bar'>
-}
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 function StatCard({ label, value, unit, color }: { label: string; value: string; unit?: string; color: string }) {
@@ -123,7 +87,54 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function WhoopDesktop() {
-  const { snap, history, workouts, syncing, syncMsg, needsReconnect, loadError, syncNow } = useWhoopData()
+  const { snap, history, workouts, bodyMeasurements, syncing, syncMsg, needsReconnect, loadError, syncNow } = useWhoopData()
+  const theme = useThemeColors()
+
+  // Canvas-safe chart styling: shadows the module-level DOM tokens with
+  // literal resolved colors so every chart option below gets real values.
+  const C = {
+    bg: theme.bg, card: theme.surface, border: theme.border, borderHi: theme.borderHi,
+    text: theme.text, dim: theme.dim, faint: theme.faint, accent: '#00d26a',
+  }
+  const TOOLTIP_STYLE = {
+    backgroundColor: theme.surface,
+    borderColor: theme.borderHi,
+    borderWidth: 1,
+    titleColor: theme.text,
+    bodyColor: theme.dim,
+    titleFont: { family: theme.fontMono, size: 11 },
+    bodyFont: { family: theme.fontMono, size: 10 },
+    padding: 10,
+    cornerRadius: 8,
+    boxPadding: 4,
+  }
+  const SCALE_DEFAULTS = {
+    grid: { color: theme.grid },
+    ticks: { color: theme.dim, font: { family: theme.fontMono, size: 9 } },
+  }
+  const lineOpts = (overrides: Partial<ChartOptions<'line'>> = {}): ChartOptions<'line'> => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: { legend: { display: false }, tooltip: { ...TOOLTIP_STYLE } },
+    scales: { x: { ...SCALE_DEFAULTS }, y: { ...SCALE_DEFAULTS } },
+    ...overrides,
+  } as ChartOptions<'line'>)
+  const barOpts = (overrides: Partial<ChartOptions<'bar'>> = {}): ChartOptions<'bar'> => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: { legend: { display: false }, tooltip: { ...TOOLTIP_STYLE } },
+    scales: { x: { ...SCALE_DEFAULTS }, y: { ...SCALE_DEFAULTS } },
+    ...overrides,
+  } as ChartOptions<'bar'>)
+
+  useEffect(() => {
+    ChartJS.defaults.color = theme.dim
+    ChartJS.defaults.borderColor = theme.border
+    ChartJS.defaults.font.family = theme.fontMono
+    ChartJS.defaults.font.size = 10
+  }, [theme])
 
   const hasData = history.length > 0
   const workoutsChron = [...workouts].reverse()
@@ -139,6 +150,12 @@ export default function WhoopDesktop() {
   const avgStrain = avg(history.map(h => h.strain), 1)
   const avgSleep = avg(history.map(h => h.sleep_score))
   const avgKcal = avg(history.map(h => h.kilojoule != null ? Math.round(h.kilojoule / 4.184) : null))
+
+  const weightSeries = bodyMeasurements.filter(m => m.weight_kg != null)
+  const latestWeight = weightSeries.length ? Number(weightSeries[weightSeries.length - 1].weight_kg) : null
+  const weightDelta = weightSeries.length >= 2
+    ? latestWeight! - Number(weightSeries[0].weight_kg)
+    : null
 
   const sportCounts: Record<string, number> = {}
   workouts.forEach(w => {
@@ -203,13 +220,14 @@ export default function WhoopDesktop() {
       ) : (
         <>
           {/* Stats row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10, marginBottom: 20 }}>
             <StatCard label="Avg Recovery" value={avgRecovery} unit="%" color={recoveryColor} />
             <StatCard label="Avg HRV" value={avgHrv} unit="ms" color="#3b82f6" />
             <StatCard label="Avg RHR" value={avgRhr} unit="bpm" color="#f97316" />
             <StatCard label="Avg Strain" value={avgStrain} color="#a78bfa" />
             <StatCard label="Avg Sleep Perf" value={avgSleep} unit="%" color="#06b6d4" />
             <StatCard label="Avg Daily Calories" value={avgKcal} unit="kcal" color="#f43f5e" />
+            <StatCard label="Weight" value={latestWeight != null ? latestWeight.toFixed(1) : '—'} unit={latestWeight != null ? 'kg' : undefined} color="#2dd4bf" />
           </div>
 
           {/* Recovery */}
@@ -428,6 +446,54 @@ export default function WhoopDesktop() {
               })}
             />
           </ChartCard>
+
+          {/* Body */}
+          <SectionLabel>Body</SectionLabel>
+          <div style={{ marginBottom: 20 }}>
+            <ChartCard
+              title="Weight"
+              height={160}
+              right={latestWeight != null && (
+                <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.text }}>
+                  {latestWeight.toFixed(1)} kg
+                  {weightDelta != null && Math.abs(weightDelta) >= 0.1 && (
+                    <span style={{ fontSize: 10, color: weightDelta < 0 ? '#00d26a' : C.dim, marginLeft: 6 }}>
+                      {weightDelta > 0 ? '+' : ''}{weightDelta.toFixed(1)}
+                    </span>
+                  )}
+                </span>
+              )}
+            >
+              {weightSeries.length >= 2 ? (
+                <Line
+                  data={{
+                    labels: weightSeries.map(m => shortDate(`${m.measured_on}T12:00:00`)),
+                    datasets: [{
+                      label: 'Weight kg',
+                      data: weightSeries.map(m => Number(m.weight_kg)),
+                      borderColor: '#2dd4bf',
+                      backgroundColor: 'rgba(45,212,191,0.08)',
+                      fill: true,
+                      tension: 0.35,
+                      pointRadius: 3,
+                      pointBackgroundColor: '#2dd4bf',
+                      pointBorderColor: C.card,
+                    }],
+                  }}
+                  options={lineOpts({
+                    scales: {
+                      x: { ...SCALE_DEFAULTS },
+                      y: { ...SCALE_DEFAULTS, title: { display: true, text: 'kg', color: C.faint } },
+                    },
+                  })}
+                />
+              ) : (
+                <div style={{ fontFamily: mono, fontSize: 11, color: C.faint, paddingTop: 8 }}>
+                  weight syncs from WHOOP daily — the trend appears after a few synced days
+                </div>
+              )}
+            </ChartCard>
+          </div>
 
           {/* Strain & Activity */}
           <SectionLabel>Strain &amp; Activity</SectionLabel>

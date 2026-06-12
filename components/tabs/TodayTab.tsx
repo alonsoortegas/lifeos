@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
+import DailyBriefCard from '@/components/brief/DailyBriefCard'
 import Ring from '@/components/ui/Ring'
 import StatCard from '@/components/ui/StatCard'
 import type { WhoopSnapshot, Todo } from '@/lib/types'
@@ -9,6 +10,8 @@ import { getCurrentGoalDate, getMillisecondsUntilNextGoalReset } from '@/lib/goa
 import { getCurrentWeek, getTodayKey, DAY_META } from '@/lib/workout'
 import { sleepHM } from '@/lib/whoop-utils'
 import { computeReadiness, stateColor, stateLabel, stateTone, type Readiness } from '@/lib/readiness'
+import { formatDayText, shareText } from '@/lib/share'
+import MonthReview from '@/components/review/MonthReview'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -97,19 +100,19 @@ function GoalTicker() {
   let textColor: string
   if (total === 0) {
     text = 'No goals set yet — add one in Focus.'
-    textColor = '#555'
+    textColor = 'var(--text-faint)'
   } else if (pending.length === 0) {
     text = 'All goals complete.'
     textColor = '#00d26a'
   } else {
     text = pending[idx % pending.length]?.text ?? ''
-    textColor = '#ededed'
+    textColor = 'var(--text)'
   }
 
   const allDone = total > 0 && pending.length === 0
 
   return (
-    <div className="relative flex items-center gap-2 px-3 py-[6px] rounded-[10px] bg-[#1a1a1a] border border-[#2a2a2a] overflow-hidden">
+    <div className="relative flex items-center gap-2 px-3 py-[6px] rounded-[10px] bg-[var(--surface)] border border-[var(--border)] overflow-hidden">
       <style>{`
         @keyframes tickerPulse { 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:0.4; transform:scale(0.85);} }
         @keyframes tickerSlideIn { from{ transform:translateY(100%); opacity:0;} to{ transform:translateY(0); opacity:1;} }
@@ -123,7 +126,7 @@ function GoalTicker() {
       />
       <div
         className="text-[9px] font-bold tracking-[0.18em] uppercase flex-shrink-0"
-        style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: '#555' }}
+        style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: 'var(--text-faint)' }}
       >
         GOALS
       </div>
@@ -144,7 +147,7 @@ function GoalTicker() {
         className="text-[11px] px-[7px] py-[2px] rounded-full flex-shrink-0 transition-colors duration-300"
         style={{
           fontFamily: 'var(--font-jetbrains-mono, monospace)',
-          color: allDone ? '#00d26a' : '#888',
+          color: allDone ? '#00d26a' : 'var(--text-dim)',
           background: 'rgba(255,255,255,0.04)',
         }}
       >
@@ -255,20 +258,20 @@ function DayRing() {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <span
-            className="text-[32px] font-extrabold leading-none tracking-[-0.04em] tabular-nums text-[#ededed]"
+            className="text-[32px] font-extrabold leading-none tracking-[-0.04em] tabular-nums text-[var(--text)]"
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             {state.display}
           </span>
           <span
-            className="text-[8px] font-bold uppercase tracking-[0.16em] text-[#555] mt-[3px]"
+            className="text-[8px] font-bold uppercase tracking-[0.16em] text-[var(--text-faint)] mt-[3px]"
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             {state.phase}
           </span>
           {state.remaining && (
             <span
-              className="text-[7px] tracking-[0.1em] text-[#555] mt-[2px]"
+              className="text-[7px] tracking-[0.1em] text-[var(--text-faint)] mt-[2px]"
               style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
             >
               {state.remaining}
@@ -277,7 +280,7 @@ function DayRing() {
         </div>
       </div>
       <div
-        className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#555]"
+        className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-faint)]"
         style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
       >
         Day Progress
@@ -352,7 +355,7 @@ function DayModeCard({
   return (
     <div
       style={{
-        background: '#1a1a1a',
+        background: 'var(--surface)',
         border: `1px solid ${c}55`,
         borderLeft: `3px solid ${c}`,
         borderRadius: 14,
@@ -362,7 +365,7 @@ function DayModeCard({
       <div className="flex items-center justify-between mb-2">
         <span
           className="text-[9px] font-bold tracking-[0.2em] uppercase"
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: '#555' }}
+          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: 'var(--text-faint)' }}
           >
           DAY MODE
         </span>
@@ -379,7 +382,7 @@ function DayModeCard({
         </span>
       </div>
 
-      <div className="text-[18px] font-semibold leading-[1.25] text-[#ededed] mb-2" style={{ letterSpacing: '-0.01em' }}>
+      <div className="text-[18px] font-semibold leading-[1.25] text-[var(--text)] mb-2" style={{ letterSpacing: '-0.01em' }}>
         {readiness.headline}
       </div>
 
@@ -390,9 +393,9 @@ function DayModeCard({
             className="text-[10px] px-[7px] py-[3px] rounded-full"
             style={{
               fontFamily: 'var(--font-jetbrains-mono, monospace)',
-              color: '#888',
+              color: 'var(--text-dim)',
               background: 'rgba(255,255,255,0.04)',
-              border: '1px solid #2a2a2a',
+              border: '1px solid var(--border)',
             }}
           >
             {r}
@@ -400,30 +403,30 @@ function DayModeCard({
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-1.5 pt-3 border-t border-[#2a2a2a]">
+      <div className="grid grid-cols-1 gap-1.5 pt-3 border-t border-[var(--border)]">
         {rows.map((row) => (
           <div
             key={row.label}
             className="grid grid-cols-[82px_1fr] gap-2 rounded-lg px-2.5 py-2"
-            style={{ background: '#151515', border: '1px solid #2a2a2a' }}
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
           >
             <span
               className="text-[9px] font-bold tracking-[0.16em] uppercase"
-              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: '#555' }}
+              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: 'var(--text-faint)' }}
             >
               {row.label}
             </span>
-            <span className="text-[12px] leading-[1.3] text-[#ededed]">{row.value}</span>
+            <span className="text-[12px] leading-[1.3] text-[var(--text)]">{row.value}</span>
           </div>
         ))}
       </div>
 
       {readiness.rpeCap != null && readiness.rpeCap > 0 && (
         <div
-          className="flex items-center justify-between pt-2 mt-2 border-t border-[#2a2a2a]"
+          className="flex items-center justify-between pt-2 mt-2 border-t border-[var(--border)]"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
-          <span className="text-[10px] text-[#555]">RPE cap → Workout</span>
+          <span className="text-[10px] text-[var(--text-faint)]">RPE cap → Workout</span>
           <span className="text-[10px] font-bold" style={{ color: toneColor }}>RPE ≤ {readiness.rpeCap}</span>
         </div>
       )}
@@ -440,6 +443,8 @@ export default function TodayTab() {
   const [now, setNow] = useState<Date | null>(null)
   const [topTodo, setTopTodo] = useState<string | null>(null)
   const [nutritionRemaining, setNutritionRemaining] = useState<NutritionRemaining | null>(null)
+  const [dayShared, setDayShared] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
 
   const snap = snapshots[0] ?? null
   const readiness = snapshots.length >= 3 ? computeReadiness(snapshots) : null
@@ -529,24 +534,60 @@ export default function TodayTab() {
   const ringColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
 
   return (
-    <div className="px-4 space-y-5">
+    <div className="boot px-4 space-y-5">
       <div className="pt-2">
-        <div className="text-[#888] uppercase text-[11px] tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-          {dayName} · {dateStr}
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setReviewOpen(true)}
+            aria-label="Open monthly review"
+            className="flicker text-left text-[var(--text-dim)] uppercase text-[11px] tracking-[0.18em] underline decoration-[var(--border-hi)] decoration-dotted underline-offset-4"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            {dayName} · {dateStr}
+          </button>
+          <button
+            type="button"
+            aria-label="Copy day summary"
+            onClick={() => {
+              void shareText(formatDayText({
+                date: now ?? new Date(),
+                readiness,
+                recovery: snap?.recovery_score ?? null,
+                hrv: snap?.hrv_rmssd ?? null,
+                rhr: snap?.rhr ?? null,
+                sleepScore: snap?.sleep_score ?? null,
+                topTodo,
+                nutritionRemaining,
+              })).then(result => {
+                if (result === 'failed') return
+                setDayShared(true)
+                window.setTimeout(() => setDayShared(false), 1800)
+              })
+            }}
+            className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+              dayShared ? 'border-[#00d26a] text-[#00d26a]' : 'border-[var(--border)] text-[var(--text-faint)]'
+            }`}
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            {dayShared ? 'Copied ✓' : 'Copy day'}
+          </button>
         </div>
-        <h1 className="text-[22px] font-bold text-[#ededed] mt-1">{greeting}</h1>
-        <div className="text-[#555] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-          WEEK {trainingWeek} · {blockLabel}
+        <h1 className="display text-[28px] font-bold tracking-tight text-[var(--text)] mt-1">{greeting}</h1>
+        <div className="text-[var(--text-faint)] text-[11px] mt-0.5 tracking-[0.12em]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+          {trainingWeek ? `WEEK ${trainingWeek} · ${blockLabel}` : 'NO ACTIVE TRAINING BLOCK'}
         </div>
       </div>
+
+      <DailyBriefCard />
 
       <GoalTicker />
 
       <div className="flex flex-col items-center py-4 gap-2">
         <div className="flex flex-row items-end justify-around gap-6 w-full flex-wrap">
           <div className="flex flex-col items-center gap-2">
-            <Ring value={snap ? recovery : 0} size={140} thickness={8} color={snap ? ringColor : '#2a2a2a'} />
-            <div className="text-[#888] uppercase text-[11px] tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+            <Ring value={snap ? recovery : 0} size={140} thickness={8} color={snap ? ringColor : 'var(--border)'} />
+            <div className="text-[var(--text-dim)] uppercase text-[11px] tracking-widest" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
               Recovery Score
             </div>
           </div>
@@ -594,7 +635,7 @@ export default function TodayTab() {
       {reauthRequired && (
         <a
           href="/api/whoop-auth"
-          className="block rounded-lg bg-[#00d26a] py-3 text-center text-[12px] font-bold text-[#0e0e0e] no-underline"
+          className="block rounded-lg bg-[#00d26a] py-3 text-center text-[12px] font-bold text-[var(--bg)] no-underline"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >
           reconnect whoop
@@ -602,6 +643,8 @@ export default function TodayTab() {
       )}
 
       <div className="h-4" />
+
+      {reviewOpen && <MonthReview onClose={() => setReviewOpen(false)} />}
     </div>
   )
 }

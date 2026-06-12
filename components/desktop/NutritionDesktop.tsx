@@ -1,15 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import MealTextLogger from '@/components/nutrition/MealTextLogger'
 import { createClient } from '@/lib/supabase'
 import {
   calculateConsumed,
   calculateRemaining,
+  EMPTY_MACRO_TOTALS,
   generateDefaultMeals,
-  getDailyTargets,
   getSubstitutions,
   MEAL_LABELS,
+  normalizedNutritionKey,
   scaleFood,
+  targetMapFromRows,
   type DefaultMealItem,
   type MacroTotals,
 } from '@/lib/nutrition'
@@ -83,8 +86,17 @@ export default function NutritionDesktop({
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [portionDrafts, setPortionDrafts] = useState<Partial<Record<MealTemplateName, PortionDraft>>>({})
   const [loading, setLoading] = useState(true)
+  const [targetMap, setTargetMap] = useState<Partial<Record<NutritionDayType, MacroTotals>>>({})
 
-  const targets = useMemo(() => getDailyTargets(dayType, 'cut'), [dayType])
+  const targets = useMemo(
+    () => targetMap[dayType] ?? (nutritionDay ? {
+      calories: nutritionDay.calories_target,
+      protein_g: nutritionDay.protein_target,
+      carbs_g: nutritionDay.carbs_target,
+      fat_g: nutritionDay.fat_target,
+    } : EMPTY_MACRO_TOTALS),
+    [dayType, nutritionDay, targetMap],
+  )
   const defaultMeals = useMemo(() => generateDefaultMeals(dayType), [dayType])
   const consumed = useMemo(() => calculateConsumed(mealLogs), [mealLogs])
   const remaining = useMemo(() => calculateRemaining(targets, consumed), [targets, consumed])
@@ -105,8 +117,20 @@ export default function NutritionDesktop({
     setMealLogs((data ?? []) as MealLog[])
   }, [])
 
-  const ensureDay = useCallback(async (nextDayType: NutritionDayType) => {
-    const nextTargets = getDailyTargets(nextDayType, 'cut')
+  const ensureDay = useCallback(async (
+    nextDayType: NutritionDayType,
+    targetsOverride?: Partial<Record<NutritionDayType, MacroTotals>>,
+  ) => {
+    let nextTargets = targetsOverride?.[nextDayType]
+    if (!nextTargets) {
+      const { data } = await supabase
+        .from('nutrition_day_types')
+        .select('key, kcal_target, protein_g, carbs_g, fat_g')
+        .eq('key', normalizedNutritionKey(nextDayType))
+        .maybeSingle()
+      nextTargets = data ? targetMapFromRows([data])[nextDayType] : undefined
+    }
+    if (!nextTargets) return null
     const payload = { date: todayISO(), day_type: nextDayType, goal: 'cut', calories_target: nextTargets.calories, protein_target: nextTargets.protein_g, carbs_target: nextTargets.carbs_g, fat_target: nextTargets.fat_g }
     const { data, error } = await supabase.from('nutrition_day').upsert(payload, { onConflict: 'date' }).select('*').single()
     if (error) { console.error('nutrition day upsert failed:', error.message); return null }
@@ -117,12 +141,15 @@ export default function NutritionDesktop({
     let cancelled = false
     async function load() {
       setLoading(true)
-      const [foodResult, subResult, day] = await Promise.all([
+      const [foodResult, subResult, targetResult] = await Promise.all([
         supabase.from('food_item').select('*').order('category').order('name'),
         supabase.from('food_substitution_group_item').select('*, food_substitution_group(*)').order('label'),
-        ensureDay(dayType),
+        supabase.from('nutrition_day_types').select('key, kcal_target, protein_g, carbs_g, fat_g'),
       ])
       if (cancelled) return
+      const loadedTargets = targetMapFromRows(targetResult.data ?? [])
+      setTargetMap(loadedTargets)
+      const day = await ensureDay(dayType, loadedTargets)
       setFoods((foodResult.data ?? []) as FoodItem[])
       setSubstitutionRows((subResult.data ?? []) as SubstitutionRow[])
       if (day) await loadMealLogs(day.id)
@@ -218,15 +245,15 @@ export default function NutritionDesktop({
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '18px 28px 24px', gap: 14, overflow: 'hidden', fontFamily: sans }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid #2a2a2a', paddingBottom: 10, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 10, flexShrink: 0 }}>
         <div>
-          <div style={{ fontFamily: mono, fontSize: 10, color: '#555', letterSpacing: '0.16em', textTransform: 'uppercase' }}>DAILY FUEL · TEMPLATES · SWAPS</div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#ededed', margin: '3px 0 0', letterSpacing: '-0.01em' }}>Nutrition</h1>
+          <div style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>DAILY FUEL · TEMPLATES · SWAPS</div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', margin: '3px 0 0', letterSpacing: '-0.01em' }}>Nutrition</h1>
         </div>
         {/* Day type toggle */}
-        <div style={{ display: 'flex', gap: 3, padding: 3, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 10 }}>
+        <div style={{ display: 'flex', gap: 3, padding: 3, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
           {DAY_TYPE_OPTIONS.map(opt => {
-            const optionTargets = getDailyTargets(opt.value, 'cut')
+            const optionTargets = targetMap[opt.value] ?? EMPTY_MACRO_TOTALS
             return (
               <button
                 key={opt.value}
@@ -234,12 +261,12 @@ export default function NutritionDesktop({
                 style={{
                   padding: '6px 14px', borderRadius: 7, cursor: 'pointer', border: 'none',
                   background: dayType === opt.value ? '#00d26a' : 'transparent',
-                  color: dayType === opt.value ? '#0e0e0e' : '#888',
+                  color: dayType === opt.value ? 'var(--bg)' : 'var(--text-dim)',
                   display: 'flex', flexDirection: 'column', lineHeight: 1.2, alignItems: 'flex-start', minWidth: 100,
                 }}
               >
                 <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em' }}>{opt.label}</span>
-                <span style={{ fontFamily: mono, fontSize: 9, color: dayType === opt.value ? 'rgba(14,14,14,0.65)' : '#555', marginTop: 2 }}>
+                <span style={{ fontFamily: mono, fontSize: 9, color: dayType === opt.value ? 'rgba(14,14,14,0.65)' : 'var(--text-faint)', marginTop: 2 }}>
                   {optionTargets.calories} kcal · {optionTargets.protein_g}p
                 </span>
               </button>
@@ -253,10 +280,14 @@ export default function NutritionDesktop({
 
         {/* LEFT — macros + consumed */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflow: 'auto' }}>
+          <MealTextLogger onApplied={async () => {
+            if (nutritionDay) await loadMealLogs(nutritionDay.id)
+          }} />
+
           {/* Macros label */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid #2a2a2a', paddingBottom: 6, flexShrink: 0 }}>
-            <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: '#555', textTransform: 'uppercase' }}>Macros · today</span>
-            <span style={{ fontFamily: mono, fontSize: 9, color: '#555' }}>{macroVal(consumed.calories)}/{targets.calories} kcal</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid var(--border)', paddingBottom: 6, flexShrink: 0 }}>
+            <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase' }}>Macros · today</span>
+            <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-faint)' }}>{macroVal(consumed.calories)}/{targets.calories} kcal</span>
           </div>
 
           {/* Macro cards 2×2 */}
@@ -271,20 +302,20 @@ export default function NutritionDesktop({
               // Simple delta heuristic
               const deltaPct = targetVal > 0 ? (consumedVal / targetVal) * 100 : 0
               const deltaTone = deltaPct >= 85 ? 'good' : deltaPct >= 50 ? 'neutral' : 'warn'
-              const deltaColor = deltaTone === 'good' ? '#00d26a' : deltaTone === 'warn' ? '#f59e0b' : '#888'
+              const deltaColor = deltaTone === 'good' ? '#00d26a' : deltaTone === 'warn' ? '#f59e0b' : 'var(--text-dim)'
 
               return (
-                <div key={m.key} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div key={m.key} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontFamily: mono, fontSize: 9, color: '#888', letterSpacing: '0.16em', textTransform: 'uppercase' }}>{m.label}</span>
-                    <span style={{ fontFamily: mono, fontSize: 10, color: '#555' }}>{Math.round(pct * 100)}%</span>
+                    <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>{m.label}</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>{Math.round(pct * 100)}%</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-                    <span style={{ fontFamily: mono, fontSize: 24, fontWeight: 800, color: '#ededed', lineHeight: 1, letterSpacing: '-0.02em' }}>{macroVal(consumedVal)}</span>
-                    <span style={{ fontFamily: mono, fontSize: 10, color: '#555' }}>/ {macroVal(targetVal)}{m.unit}</span>
+                    <span style={{ fontFamily: mono, fontSize: 24, fontWeight: 800, color: 'var(--text)', lineHeight: 1, letterSpacing: '-0.02em' }}>{macroVal(consumedVal)}</span>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>/ {macroVal(targetVal)}{m.unit}</span>
                   </div>
                   {/* Progress bar */}
-                  <div style={{ height: 4, background: '#2a2a2a', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
                     <div style={{ width: `${pct * 100}%`, height: '100%', background: m.color, borderRadius: 2 }} />
                   </div>
                   {/* Delta row */}
@@ -292,7 +323,7 @@ export default function NutritionDesktop({
                     <span style={{ fontFamily: mono, fontSize: 10, color: deltaColor, fontWeight: 700 }}>
                       {Math.round(pct * 100)}%
                     </span>
-                    <span style={{ fontFamily: mono, fontSize: 10, color: '#555' }}>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>
                       {over ? `${macroVal(Math.abs(remainingVal))}${m.unit} over` : `${macroVal(remainingVal)}${m.unit} left`}
                     </span>
                   </div>
@@ -303,19 +334,19 @@ export default function NutritionDesktop({
 
           {/* Consumed summary */}
           {mealLogs.flatMap(l => l.meal_log_item ?? []).length > 0 && (
-            <div style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 14, flexShrink: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid #2a2a2a', paddingBottom: 6, marginBottom: 10 }}>
-                <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: '#555', textTransform: 'uppercase' }}>Consumed</span>
-                <span style={{ fontFamily: mono, fontSize: 9, color: '#555' }}>{mealLogs.flatMap(l => l.meal_log_item ?? []).length} items</span>
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid var(--border)', paddingBottom: 6, marginBottom: 10 }}>
+                <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase' }}>Consumed</span>
+                <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-faint)' }}>{mealLogs.flatMap(l => l.meal_log_item ?? []).length} items</span>
               </div>
-              <div style={{ fontFamily: mono, fontSize: 12, color: '#ededed', marginBottom: 10 }}>
+              <div style={{ fontFamily: mono, fontSize: 12, color: 'var(--text)', marginBottom: 10 }}>
                 {macroVal(consumed.calories)} kcal · {macroVal(consumed.protein_g)}g protein · {macroVal(consumed.carbs_g)}g carbs · {macroVal(consumed.fat_g)}g fat
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {mealLogs.flatMap(log => (log.meal_log_item ?? []).map(item => ({
                   mealName: MEAL_LABELS[log.meal_name], item,
                 }))).map(({ mealName, item }) => (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: mono, fontSize: 10, color: '#555' }}>
+                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{mealName} · {loggedFoodLabel(item)}</span>
                     <span style={{ flexShrink: 0 }}>{macroVal(Number(item.protein_g))}p/{macroVal(Number(item.carbs_g))}c</span>
                   </div>
@@ -327,13 +358,13 @@ export default function NutritionDesktop({
 
         {/* RIGHT — meals */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid #2a2a2a', paddingBottom: 6, flexShrink: 0 }}>
-            <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: '#555', textTransform: 'uppercase' }}>Meals</span>
-            <span style={{ fontFamily: mono, fontSize: 9, color: '#555' }}>{loggedMealsCount} of {defaultMeals.length} meals logged</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid var(--border)', paddingBottom: 6, flexShrink: 0 }}>
+            <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase' }}>Meals</span>
+            <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-faint)' }}>{loggedMealsCount} of {defaultMeals.length} meals logged</span>
           </div>
           <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
             {loading ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, fontFamily: mono, fontSize: 12, color: '#555' }}>loading fuel plan…</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, fontFamily: mono, fontSize: 12, color: 'var(--text-faint)' }}>loading fuel plan…</div>
             ) : defaultMeals.map(meal => {
               const mealLog = mealLogs.find(log => log.meal_name === meal.name)
               const mealTotals = calculateConsumed(mealLog ? [mealLog] : [])
@@ -341,26 +372,26 @@ export default function NutritionDesktop({
               const isLogged = (mealLog?.meal_log_item?.length ?? 0) > 0
 
               return (
-                <div key={meal.name} style={{ background: '#1a1a1a', border: `1px solid ${isLogged ? '#2a2a2a' : '#2a2a2a'}`, borderRadius: 12, overflow: 'hidden' }}>
+                <div key={meal.name} style={{ background: 'var(--surface)', border: `1px solid ${isLogged ? 'var(--border)' : 'var(--border)'}`, borderRadius: 12, overflow: 'hidden' }}>
                   <button
                     onClick={() => toggleMeal(meal.name)}
                     style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', background: 'transparent', border: 'none', textAlign: 'left' }}
                   >
-                    <span style={{ width: 8, height: 8, borderRadius: 999, background: isLogged ? '#555' : '#2a2a2a', border: isLogged ? 'none' : '1px solid #3a3a3a', flexShrink: 0 }} />
+                    <span style={{ width: 8, height: 8, borderRadius: 999, background: isLogged ? 'var(--text-faint)' : 'var(--border)', border: isLogged ? 'none' : '1px solid var(--border-hi)', flexShrink: 0 }} />
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: '#ededed' }}>{meal.label}</span>
-                        <span style={{ fontFamily: mono, fontSize: 10, color: '#555' }}>{meal.defaultTime}</span>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{meal.label}</span>
+                        <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>{meal.defaultTime}</span>
                       </div>
-                      <div style={{ fontFamily: mono, fontSize: 10, color: isLogged ? '#888' : '#555', marginTop: 2 }}>
+                      <div style={{ fontFamily: mono, fontSize: 10, color: isLogged ? 'var(--text-dim)' : 'var(--text-faint)', marginTop: 2 }}>
                         {isLogged ? `${macroVal(mealTotals.calories)} kcal · ${macroVal(mealTotals.protein_g)}p · ${macroVal(mealTotals.carbs_g)}c` : `${meal.items.length} items`}
                       </div>
                     </div>
-                    <span style={{ fontFamily: mono, color: '#555', fontSize: 16, lineHeight: 1 }}>{isExpanded ? '−' : '+'}</span>
+                    <span style={{ fontFamily: mono, color: 'var(--text-faint)', fontSize: 16, lineHeight: 1 }}>{isExpanded ? '−' : '+'}</span>
                   </button>
 
                   {isExpanded && (
-                    <div style={{ borderTop: '1px solid #2a2a2a', padding: '8px 14px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ borderTop: '1px solid var(--border)', padding: '8px 14px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <PortionAdder
                         mealName={meal.name}
                         foods={foods}
@@ -371,7 +402,7 @@ export default function NutritionDesktop({
                       />
 
                       {meal.items.length === 0 && (
-                        <div style={{ padding: '8px 0', fontSize: 12, color: '#555' }}>No items for this day type.</div>
+                        <div style={{ padding: '8px 0', fontSize: 12, color: 'var(--text-faint)' }}>No items for this day type.</div>
                       )}
                       {meal.items.map(item => {
                         const food = foodsByName.get(item.foodName); if (!food) return null
@@ -381,18 +412,18 @@ export default function NutritionDesktop({
                         const key = foodKey(meal.name, food.id, item.label)
 
                         return (
-                          <div key={`${meal.name}-${item.label}`} style={{ background: '#151515', border: '1px solid #2a2a2a', borderRadius: 8, padding: '8px 10px' }}>
+                          <div key={`${meal.name}-${item.label}`} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                               <div>
-                                <div style={{ fontSize: 12.5, color: logged ? '#555' : '#ededed', textDecoration: logged ? 'line-through' : 'none', opacity: logged ? 0.7 : 1 }}>{item.label}</div>
-                                <div style={{ fontFamily: mono, fontSize: 10, color: '#555', marginTop: 2 }}>
+                                <div style={{ fontSize: 12.5, color: logged ? 'var(--text-faint)' : 'var(--text)', textDecoration: logged ? 'line-through' : 'none', opacity: logged ? 0.7 : 1 }}>{item.label}</div>
+                                <div style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)', marginTop: 2 }}>
                                   {scaled.calories} kcal · {scaled.protein_g}p · {scaled.carbs_g}c · {scaled.fat_g}f
                                 </div>
                               </div>
                               {logged ? (
-                                <button onClick={() => removeLoggedItem(logged.id)} style={{ fontFamily: mono, fontSize: 10, color: '#888', border: '1px solid #2a2a2a', background: 'transparent', padding: '3px 9px', borderRadius: 6, cursor: 'pointer', letterSpacing: '0.14em', textTransform: 'uppercase', flexShrink: 0 }}>ate</button>
+                                <button onClick={() => removeLoggedItem(logged.id)} style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-dim)', border: '1px solid var(--border)', background: 'transparent', padding: '3px 9px', borderRadius: 6, cursor: 'pointer', letterSpacing: '0.14em', textTransform: 'uppercase', flexShrink: 0 }}>ate</button>
                               ) : (
-                                <button onClick={() => logTemplateItem(meal.name, item)} disabled={savingKey === key} style={{ fontFamily: mono, fontSize: 10, background: '#00d26a', color: '#0e0e0e', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', flexShrink: 0, opacity: savingKey === key ? 0.5 : 1 }}>ate this</button>
+                                <button onClick={() => logTemplateItem(meal.name, item)} disabled={savingKey === key} style={{ fontFamily: mono, fontSize: 10, background: '#00d26a', color: 'var(--bg)', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', flexShrink: 0, opacity: savingKey === key ? 0.5 : 1 }}>ate this</button>
                               )}
                             </div>
                             {substitutions.length > 0 && !logged && (
@@ -400,7 +431,7 @@ export default function NutritionDesktop({
                                 {substitutions.slice(0, 4).map(sub => {
                                   const subFood = foods.find(f => f.id === sub.foodItemId); if (!subFood) return null
                                   return (
-                                    <button key={`${sub.groupName}-${sub.foodItemId}-${sub.label}`} onClick={() => logTemplateItem(meal.name, item, { food: subFood, quantity: sub.quantity, label: sub.label, groupName: sub.groupName })} style={{ fontFamily: mono, fontSize: 9, color: '#888', border: '1px solid #2a2a2a', background: 'transparent', padding: '2px 7px', borderRadius: 5, cursor: 'pointer' }}>
+                                    <button key={`${sub.groupName}-${sub.foodItemId}-${sub.label}`} onClick={() => logTemplateItem(meal.name, item, { food: subFood, quantity: sub.quantity, label: sub.label, groupName: sub.groupName })} style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', border: '1px solid var(--border)', background: 'transparent', padding: '2px 7px', borderRadius: 5, cursor: 'pointer' }}>
                                       swap: {sub.label}
                                     </button>
                                   )
@@ -443,11 +474,11 @@ function PortionAdder({
   const isSaving = selectedFood ? savingKey === `portion:${mealName}:${selectedFood.id}` : false
 
   return (
-    <div style={{ background: '#101010', border: '1px solid #2a2a2a', borderRadius: 8, padding: 10, display: 'grid', gridTemplateColumns: '1fr 90px auto', gap: 8, alignItems: 'center' }}>
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, display: 'grid', gridTemplateColumns: '1fr 90px auto', gap: 8, alignItems: 'center' }}>
       <select
         value={draft.foodItemId}
         onChange={event => onChange(mealName, { foodItemId: event.target.value })}
-        style={{ minWidth: 0, height: 32, borderRadius: 6, border: '1px solid #2a2a2a', background: '#151515', color: '#ededed', padding: '0 9px', fontSize: 12, fontFamily: sans }}
+        style={{ minWidth: 0, height: 32, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', padding: '0 9px', fontSize: 12, fontFamily: sans }}
       >
         <option value="">Add portion</option>
         {foods.map(food => (
@@ -461,16 +492,16 @@ function PortionAdder({
         min="0.25"
         step="0.25"
         aria-label="Portions"
-        style={{ height: 32, borderRadius: 6, border: '1px solid #2a2a2a', background: '#151515', color: '#ededed', padding: '0 9px', fontSize: 12, fontFamily: mono }}
+        style={{ height: 32, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', padding: '0 9px', fontSize: 12, fontFamily: mono }}
       />
       <button
         onClick={() => onSubmit(mealName)}
         disabled={!selectedFood || isSaving}
-        style={{ height: 32, border: 'none', borderRadius: 6, background: '#00d26a', color: '#0e0e0e', padding: '0 12px', fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', cursor: selectedFood ? 'pointer' : 'default', opacity: !selectedFood || isSaving ? 0.5 : 1 }}
+        style={{ height: 32, border: 'none', borderRadius: 6, background: '#00d26a', color: 'var(--bg)', padding: '0 12px', fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', cursor: selectedFood ? 'pointer' : 'default', opacity: !selectedFood || isSaving ? 0.5 : 1 }}
       >
         add
       </button>
-      <div style={{ gridColumn: '1 / -1', fontFamily: mono, fontSize: 10, color: '#555', minHeight: 13 }}>
+      <div style={{ gridColumn: '1 / -1', fontFamily: mono, fontSize: 10, color: 'var(--text-faint)', minHeight: 13 }}>
         {scaled ? `${scaled.calories} kcal · ${scaled.protein_g}p · ${scaled.carbs_g}c · ${scaled.fat_g}f` : 'Select a food, then set how many standard portions you ate.'}
       </div>
     </div>

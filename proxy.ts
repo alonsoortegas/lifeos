@@ -10,6 +10,19 @@ const PUBLIC_PREFIXES = [LOGIN, '/api/auth', '/api/whoop-auth', '/api/whoop-call
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
+  // Vercel cron authorizes with `Authorization: Bearer $CRON_SECRET` alone —
+  // no query marker, so nothing depends on query strings surviving the cron
+  // invocation. The route re-validates the same header.
+  const cronSecret = process.env.CRON_SECRET
+  const isAuthorizedBriefCron =
+    pathname === '/api/brief' &&
+    !!cronSecret &&
+    req.headers.get('authorization') === `Bearer ${cronSecret}`
+
+  if (isAuthorizedBriefCron) {
+    return NextResponse.next()
+  }
+
   if (PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p + '/'))) {
     return NextResponse.next()
   }

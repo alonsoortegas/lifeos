@@ -5,6 +5,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import type { WorkoutSession, WorkoutExercise, WorkoutLog, WhoopSnapshot } from '@/lib/types'
 import { getCurrentWeek, getTodayKey, DAY_ORDER, DAY_META } from '@/lib/workout'
 import { computeReadiness, stateColor, stateLabel } from '@/lib/readiness'
+import { formatWorkoutText, shareText, type ShareExercise } from '@/lib/share'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -75,6 +76,29 @@ export default function WorkoutDesktop({
   const [activeExIdx, setActiveExIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [snapshots, setSnapshots] = useState<WhoopSnapshot[]>([])
+  const [shareState, setShareState] = useState<'idle' | 'shared' | 'copied'>('idle')
+
+  async function shareWorkout() {
+    if (!session) return
+    const shareExercises: ShareExercise[] = exercises.map((ex, i) => ({
+      name: ex.exercise_name,
+      modality: ex.modality,
+      sets: (exerciseStates[i]?.loggedSets ?? []).map(s => ({
+        setNum: s.setNum, weight: s.weight, reps: s.reps, rpe: s.rpe,
+      })),
+    }))
+    const result = await shareText(formatWorkoutText({
+      title: session.title,
+      sessionType: session.session_type,
+      weekNumber: currentWeek,
+      date: new Date(),
+      exercises: shareExercises,
+    }))
+    if (result !== 'failed') {
+      setShareState(result)
+      window.setTimeout(() => setShareState('idle'), 1800)
+    }
+  }
 
   // Load readiness snapshots once
   useEffect(() => {
@@ -88,7 +112,7 @@ export default function WorkoutDesktop({
   const loadSession = useCallback(async (day: string) => {
     setLoading(true); setSession(null); setExercises([]); setExerciseStates([]); setActiveExIdx(0)
     const dbKey = DAY_META[day]?.dbKey
-    if (!dbKey) { setLoading(false); return }
+    if (!dbKey || currentWeek == null) { setLoading(false); return }
     const { data: sessionData } = await supabase.from('workout_sessions').select('*').eq('week_number', currentWeek).eq('day_of_week', dbKey).single()
     if (!sessionData) { setLoading(false); return }
     setSession(sessionData as WorkoutSession)
@@ -185,18 +209,18 @@ export default function WorkoutDesktop({
               key={day}
               onClick={() => setSelectedDay(day)}
               style={{
-                flex: 1, padding: '9px 10px', background: isSelected ? 'rgba(0,210,106,0.06)' : '#1a1a1a',
-                border: `1px solid ${isSelected ? '#00d26a' : isToday ? '#00d26a44' : '#2a2a2a'}`, borderRadius: 10,
+                flex: 1, padding: '9px 10px', background: isSelected ? 'rgba(0,210,106,0.06)' : 'var(--surface)',
+                border: `1px solid ${isSelected ? '#00d26a' : isToday ? '#00d26a44' : 'var(--border)'}`, borderRadius: 10,
                 display: 'flex', flexDirection: 'column', gap: 2, cursor: 'pointer', minWidth: 0,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.16em', color: isSelected ? '#00d26a' : isToday ? '#00d26a' : '#888', fontWeight: 700 }}>
+                <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.16em', color: isSelected ? '#00d26a' : isToday ? '#00d26a' : 'var(--text-dim)', fontWeight: 700 }}>
                   {meta?.label?.slice(0, 3).toUpperCase()}
                 </span>
                 {isToday && <span style={{ fontFamily: mono, fontSize: 9, color: '#00d26a', marginLeft: 'auto' }}>TODAY</span>}
               </div>
-              <div style={{ fontFamily: sans, fontSize: 11, color: isSelected ? '#00d26a' : isGym ? '#ededed' : '#555', fontWeight: isSelected ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'capitalize' }}>
+              <div style={{ fontFamily: sans, fontSize: 11, color: isSelected ? '#00d26a' : isGym ? 'var(--text)' : 'var(--text-faint)', fontWeight: isSelected ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'capitalize' }}>
                 {meta?.dbKey ? meta.dbKey.replace(/_/g, ' ') : meta?.restLabel ?? 'rest'}
               </div>
             </button>
@@ -208,21 +232,23 @@ export default function WorkoutDesktop({
       {!isGymDay && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: '0.2em', color: '#555', textTransform: 'uppercase' }}>· {DAY_META[selectedDay]?.restLabel} ·</div>
-            <div style={{ fontFamily: mono, fontSize: 12, color: '#3a3a3a', marginTop: 6 }}>{DAY_META[selectedDay]?.restSub}</div>
+            <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: '0.2em', color: 'var(--text-faint)', textTransform: 'uppercase' }}>· {DAY_META[selectedDay]?.restLabel} ·</div>
+            <div style={{ fontFamily: mono, fontSize: 12, color: 'var(--border-hi)', marginTop: 6 }}>{DAY_META[selectedDay]?.restSub}</div>
           </div>
         </div>
       )}
 
       {/* Loading */}
       {isGymDay && loading && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: mono, fontSize: 12, color: '#555' }}>loading…</div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: mono, fontSize: 12, color: 'var(--text-faint)' }}>loading…</div>
       )}
 
       {/* No session */}
       {isGymDay && !loading && !session && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ textAlign: 'center', fontFamily: mono, fontSize: 11, color: '#555', letterSpacing: '0.14em' }}>NO SESSION SCHEDULED</div>
+          <div style={{ textAlign: 'center', fontFamily: mono, fontSize: 11, color: 'var(--text-faint)', letterSpacing: '0.14em' }}>
+            {currentWeek == null ? 'NO ACTIVE TRAINING BLOCK' : 'NO SESSION SCHEDULED'}
+          </div>
         </div>
       )}
 
@@ -230,15 +256,33 @@ export default function WorkoutDesktop({
       {isGymDay && !loading && session && (
         <>
           {/* Session header */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid #2a2a2a', paddingBottom: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 8, flexShrink: 0 }}>
             <div>
               <div style={{ fontFamily: mono, fontSize: 10, color: '#00d26a', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
                 WEEK {currentWeek} · {session.session_type.toUpperCase()}
               </div>
-              <h1 style={{ fontSize: 22, fontWeight: 700, color: '#ededed', margin: '3px 0 0', letterSpacing: '-0.01em' }}>{session.title}</h1>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', margin: '3px 0 0', letterSpacing: '-0.01em' }}>{session.title}</h1>
             </div>
-            <span style={{ fontFamily: mono, fontSize: 11, color: '#555' }}>
-              <span style={{ color: '#00d26a' }}>{totalSets}</span> / {totalTarget} sets
+            <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {totalSets > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void shareWorkout()}
+                  aria-label="Copy workout summary"
+                  style={{
+                    fontFamily: mono, fontSize: 10, fontWeight: 600, padding: '5px 10px',
+                    borderRadius: 8, border: '1px solid var(--border)', background: 'transparent',
+                    color: shareState !== 'idle' ? '#00d26a' : 'var(--text-dim)',
+                    borderColor: shareState !== 'idle' ? '#00d26a' : 'var(--border)',
+                    cursor: 'pointer', transition: 'color 0.2s ease, border-color 0.2s ease',
+                  }}
+                >
+                  {shareState === 'copied' ? 'Copied ✓' : shareState === 'shared' ? 'Shared ✓' : 'Copy'}
+                </button>
+              )}
+              <span style={{ fontFamily: mono, fontSize: 11, color: 'var(--text-faint)' }}>
+                <span style={{ color: '#00d26a' }}>{totalSets}</span> / {totalTarget} sets
+              </span>
             </span>
           </div>
 
@@ -247,7 +291,7 @@ export default function WorkoutDesktop({
 
             {/* LEFT — exercise list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
-              <div style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: '#555', textTransform: 'uppercase', borderBottom: '1px solid #2a2a2a', paddingBottom: 6, flexShrink: 0 }}>
+              <div style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)', paddingBottom: 6, flexShrink: 0 }}>
                 Session · {exercises.length} exercises
               </div>
               <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 5, minHeight: 0 }}>
@@ -260,20 +304,20 @@ export default function WorkoutDesktop({
                       key={ex.id}
                       onClick={() => setActiveExIdx(i)}
                       style={{
-                        background: isActive ? 'rgba(0,210,106,0.05)' : '#1a1a1a',
-                        border: `1px solid ${isActive ? '#00d26a' : '#2a2a2a'}`,
+                        background: isActive ? 'rgba(0,210,106,0.05)' : 'var(--surface)',
+                        border: `1px solid ${isActive ? '#00d26a' : 'var(--border)'}`,
                         borderRadius: 10, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 10,
                         cursor: 'pointer', opacity: isDone ? 0.7 : 1, textAlign: 'left',
                       }}
                     >
-                      <span style={{ width: 8, height: 8, borderRadius: 999, background: isDone ? '#555' : isActive ? '#00d26a' : 'transparent', border: !isDone && !isActive ? '1px solid #3a3a3a' : 'none', flexShrink: 0 }} />
+                      <span style={{ width: 8, height: 8, borderRadius: 999, background: isDone ? 'var(--text-faint)' : isActive ? '#00d26a' : 'transparent', border: !isDone && !isActive ? '1px solid var(--border-hi)' : 'none', flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, color: '#ededed', fontWeight: isActive ? 600 : 500, textDecoration: isDone ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.exercise_name}</div>
-                        <div style={{ fontFamily: mono, fontSize: 10, color: '#555', marginTop: 1 }}>
+                        <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: isActive ? 600 : 500, textDecoration: isDone ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.exercise_name}</div>
+                        <div style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)', marginTop: 1 }}>
                           {ex.prescribed_sets}×{ex.prescribed_reps}{ex.prescribed_weight ? ` · ${ex.prescribed_weight}kg` : ''}{ex.target_rpe ? ` · RPE ${ex.target_rpe}` : ''}
                         </div>
                       </div>
-                      <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: isDone ? '#555' : isActive ? '#00d26a' : '#888', flexShrink: 0 }}>
+                      <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: isDone ? 'var(--text-faint)' : isActive ? '#00d26a' : 'var(--text-dim)', flexShrink: 0 }}>
                         {s?.loggedSets.length ?? 0}/{ex.prescribed_sets ?? '?'}
                       </span>
                     </button>
@@ -291,33 +335,33 @@ export default function WorkoutDesktop({
                   borderRadius: 8, flexShrink: 0,
                 }}>
                   <span style={{ width: 7, height: 7, borderRadius: 999, background: stateColor(readiness.state), flexShrink: 0 }} />
-                  <div style={{ fontFamily: mono, fontSize: 10, color: '#888', lineHeight: 1.5, flex: 1 }}>
+                  <div style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.5, flex: 1 }}>
                     <span style={{ color: stateColor(readiness.state), fontWeight: 700, letterSpacing: '0.14em' }}>{stateLabel(readiness.state)} · </span>
                     {rpeCap != null && rpeCap > 0 ? `cap RPE at ${rpeCap}` : 'full rest today'}
                   </div>
-                  <span style={{ fontFamily: mono, fontSize: 10, color: '#555' }}>→ Today</span>
+                  <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>→ Today</span>
                 </div>
               )}
             </div>
 
             {/* RIGHT — active logger */}
             {activeEx && activeState && (
-              <div style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: 22, display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0, overflow: 'auto' }}>
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 22, display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0, overflow: 'auto' }}>
                 {/* Exercise header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
                   <div>
                     <div style={{ fontFamily: mono, fontSize: 10, color: '#00d26a', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
                       · NOW · SET {activeState.loggedSets.length + 1} OF {activeEx.prescribed_sets ?? '?'} ·
                     </div>
-                    <h2 style={{ fontFamily: sans, fontSize: 24, fontWeight: 700, color: '#ededed', margin: '4px 0 0', letterSpacing: '-0.01em' }}>{activeEx.exercise_name}</h2>
-                    <div style={{ fontFamily: mono, fontSize: 11, color: '#888', marginTop: 5 }}>
+                    <h2 style={{ fontFamily: sans, fontSize: 24, fontWeight: 700, color: 'var(--text)', margin: '4px 0 0', letterSpacing: '-0.01em' }}>{activeEx.exercise_name}</h2>
+                    <div style={{ fontFamily: mono, fontSize: 11, color: 'var(--text-dim)', marginTop: 5 }}>
                       prescribed: {activeEx.prescribed_sets}×{activeEx.prescribed_reps}{activeEx.prescribed_weight ? ` · ${activeEx.prescribed_weight}kg` : ''}{activeEx.target_rpe ? ` · RPE ${activeEx.target_rpe}` : ''}
                     </div>
                   </div>
                   {lastSets[activeEx.exercise_name] && (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                      <span style={{ fontFamily: mono, fontSize: 10, color: '#555' }}>last session</span>
-                      <span style={{ fontFamily: mono, fontSize: 12, color: '#888' }}>
+                      <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>last session</span>
+                      <span style={{ fontFamily: mono, fontSize: 12, color: 'var(--text-dim)' }}>
                         {lastSets[activeEx.exercise_name].weight_lbs}kg × {lastSets[activeEx.exercise_name].reps} @ {lastSets[activeEx.exercise_name].rpe}
                       </span>
                       {getProgressionSuggestion(activeEx, lastSets[activeEx.exercise_name]) !== null && (
@@ -332,20 +376,20 @@ export default function WorkoutDesktop({
                 {/* Weight + Reps */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 14, flexShrink: 0 }}>
                   {/* Weight stepper */}
-                  <div style={{ background: '#151515', border: '1px solid #2a2a2a', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <span style={{ fontFamily: mono, fontSize: 9, color: '#888', letterSpacing: '0.16em', textTransform: 'uppercase' }}>Weight</span>
+                  <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>Weight</span>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <button onClick={() => updateState(activeExIdx, { weight: Math.max(0, activeState.weight - 2.5) })} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid #3a3a3a', background: 'transparent', color: '#888', fontSize: 18, cursor: 'pointer' }}>−</button>
+                      <button onClick={() => updateState(activeExIdx, { weight: Math.max(0, activeState.weight - 2.5) })} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-dim)', fontSize: 18, cursor: 'pointer' }}>−</button>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-                        <span style={{ fontFamily: mono, fontSize: 38, fontWeight: 800, letterSpacing: '-0.03em', color: '#ededed', lineHeight: 1 }}>{activeState.weight}</span>
-                        <span style={{ fontFamily: mono, fontSize: 12, color: '#555' }}>kg</span>
+                        <span style={{ fontFamily: mono, fontSize: 38, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', lineHeight: 1 }}>{activeState.weight}</span>
+                        <span style={{ fontFamily: mono, fontSize: 12, color: 'var(--text-faint)' }}>kg</span>
                       </div>
-                      <button onClick={() => updateState(activeExIdx, { weight: activeState.weight + 2.5 })} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid #3a3a3a', background: 'transparent', color: '#888', fontSize: 18, cursor: 'pointer' }}>+</button>
+                      <button onClick={() => updateState(activeExIdx, { weight: activeState.weight + 2.5 })} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-dim)', fontSize: 18, cursor: 'pointer' }}>+</button>
                     </div>
                   </div>
                   {/* Reps grid */}
-                  <div style={{ background: '#151515', border: '1px solid #2a2a2a', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <span style={{ fontFamily: mono, fontSize: 9, color: '#888', letterSpacing: '0.16em', textTransform: 'uppercase' }}>Reps</span>
+                  <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>Reps</span>
                     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                       {[3, 4, 5, 6, 7, 8, 9, 10, 12, 15].map(r => (
                         <button
@@ -354,8 +398,8 @@ export default function WorkoutDesktop({
                           style={{
                             minWidth: 36, height: 34, padding: '0 8px', borderRadius: 7, cursor: 'pointer',
                             background: activeState.selectedReps === r ? '#00d26a' : 'transparent',
-                            border: `1px solid ${activeState.selectedReps === r ? '#00d26a' : '#2a2a2a'}`,
-                            color: activeState.selectedReps === r ? '#0e0e0e' : '#888',
+                            border: `1px solid ${activeState.selectedReps === r ? '#00d26a' : 'var(--border)'}`,
+                            color: activeState.selectedReps === r ? 'var(--bg)' : 'var(--text-dim)',
                             fontFamily: mono, fontSize: 12, fontWeight: activeState.selectedReps === r ? 700 : 500,
                           }}
                         >{r}</button>
@@ -365,9 +409,9 @@ export default function WorkoutDesktop({
                 </div>
 
                 {/* RPE */}
-                <div style={{ background: '#151515', border: '1px solid #2a2a2a', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+                <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <span style={{ fontFamily: mono, fontSize: 9, color: '#888', letterSpacing: '0.16em', textTransform: 'uppercase' }}>RPE</span>
+                    <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>RPE</span>
                     {rpeCap != null && rpeCap > 0 && (
                       <span style={{ fontFamily: mono, fontSize: 10, color: '#f59e0b' }}>
                         readiness cap: <span style={{ fontWeight: 700 }}>≤ {rpeCap}</span>
@@ -385,8 +429,8 @@ export default function WorkoutDesktop({
                           style={{
                             flex: 1, height: 30, borderRadius: 6, cursor: overCap ? 'not-allowed' : 'pointer',
                             background: selected ? '#00d26a' : 'transparent',
-                            border: `1px solid ${selected ? '#00d26a' : '#2a2a2a'}`,
-                            color: selected ? '#0e0e0e' : overCap ? '#3a3a3a' : '#888',
+                            border: `1px solid ${selected ? '#00d26a' : 'var(--border)'}`,
+                            color: selected ? 'var(--bg)' : overCap ? 'var(--border-hi)' : 'var(--text-dim)',
                             fontFamily: mono, fontSize: 11, fontWeight: selected ? 700 : 500,
                             textDecoration: overCap ? 'line-through' : 'none',
                             opacity: overCap ? 0.45 : 1,
@@ -400,7 +444,7 @@ export default function WorkoutDesktop({
                 {/* Log set CTA */}
                 <button
                   onClick={() => logSet(activeExIdx)}
-                  style={{ background: '#00d26a', color: '#0e0e0e', border: 'none', padding: '13px 0', fontFamily: sans, fontSize: 14, fontWeight: 700, borderRadius: 12, cursor: 'pointer', flexShrink: 0 }}
+                  style={{ background: '#00d26a', color: 'var(--bg)', border: 'none', padding: '13px 0', fontFamily: sans, fontSize: 14, fontWeight: 700, borderRadius: 12, cursor: 'pointer', flexShrink: 0 }}
                 >
                   Log set {activeState.loggedSets.length + 1}{activeEx.prescribed_sets ? ` of ${activeEx.prescribed_sets}` : ''} · {activeState.weight}kg × {activeState.selectedReps} @ {activeState.selectedRpe}  →
                 </button>
@@ -408,18 +452,18 @@ export default function WorkoutDesktop({
                 {/* Logged sets */}
                 {activeState.loggedSets.length > 0 && (
                   <div style={{ flexShrink: 0 }}>
-                    <div style={{ fontFamily: mono, fontSize: 9, color: '#555', letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 6 }}>Logged this session</div>
-                    <div style={{ border: '1px solid #2a2a2a', borderRadius: 8, overflow: 'hidden' }}>
+                    <div style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-faint)', letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 6 }}>Logged this session</div>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
                       {activeState.loggedSets.map((ls, i) => (
                         <div key={ls.setNum} style={{
                           display: 'grid', gridTemplateColumns: '36px 1fr 60px 60px',
-                          fontFamily: mono, fontSize: 11, color: '#888',
-                          padding: '9px 12px', borderBottom: i < activeState.loggedSets.length - 1 ? '1px solid #2a2a2a' : 'none',
+                          fontFamily: mono, fontSize: 11, color: 'var(--text-dim)',
+                          padding: '9px 12px', borderBottom: i < activeState.loggedSets.length - 1 ? '1px solid var(--border)' : 'none',
                         }}>
-                          <span style={{ color: '#555' }}>{ls.setNum}</span>
+                          <span style={{ color: 'var(--text-faint)' }}>{ls.setNum}</span>
                           <span>{ls.weight}kg × {ls.reps}</span>
                           <span style={{ textAlign: 'right' }}>{ls.rpe}</span>
-                          <span style={{ textAlign: 'right', color: '#555' }}>done</span>
+                          <span style={{ textAlign: 'right', color: 'var(--text-faint)' }}>done</span>
                         </div>
                       ))}
                     </div>
@@ -429,7 +473,7 @@ export default function WorkoutDesktop({
             )}
 
             {!activeEx && !loading && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', fontFamily: mono, fontSize: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)', fontFamily: mono, fontSize: 12 }}>
                 select an exercise to log
               </div>
             )}

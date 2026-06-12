@@ -8,8 +8,8 @@ const ZONE_COLORS = ['#1e293b', '#3b82f6', '#22c55e', '#f59e0b', '#f97316', '#ef
 const ZONE_LABELS = ['Z0', 'Z1', 'Z2', 'Z3', 'Z4', 'Z5']
 
 const C = {
-  bg: '#0e0e0e', card: '#1a1a1a', border: '#2a2a2a', borderHi: '#3a3a3a',
-  text: '#ededed', dim: '#888', faint: '#555', accent: '#00d26a',
+  bg: 'var(--bg)', card: 'var(--surface)', border: 'var(--border)', borderHi: 'var(--border-hi)',
+  text: 'var(--text)', dim: 'var(--text-dim)', faint: 'var(--text-faint)', accent: '#00d26a',
 }
 const mono = 'var(--font-jetbrains-mono, monospace)'
 const sans = 'var(--font-inter-tight, sans-serif)'
@@ -117,10 +117,11 @@ function BigSpark({
           )}
         </>
       )}
+      {/* var(--token) is invalid in SVG presentation attributes — use style */}
       <polyline
         points={polylinePoints}
         fill="none"
-        stroke={colorByValue ? C.dim : color}
+        style={{ stroke: colorByValue ? C.dim : color }}
         strokeWidth={1.5}
         strokeLinejoin="round"
         strokeLinecap="round"
@@ -131,8 +132,7 @@ function BigSpark({
           cx={x}
           cy={y}
           r={3}
-          fill={colorByValue ? dotColor(data[i]) : color}
-          stroke={C.card}
+          style={{ fill: colorByValue ? dotColor(data[i]) : color, stroke: C.card }}
           strokeWidth={1}
         />
       ))}
@@ -186,10 +186,10 @@ function DualSpark({
       <polyline points={toPolyline(ptsA)} fill="none" stroke={colorA} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
       <polyline points={toPolyline(ptsB)} fill="none" stroke={colorB} strokeWidth={1.5} strokeDasharray="5 3" strokeLinejoin="round" strokeLinecap="round" />
       {ptsA.map(([x, y], i) => (
-        <circle key={`a${i}`} cx={x} cy={y} r={2.5} fill={colorA} stroke={C.card} strokeWidth={1} />
+        <circle key={`a${i}`} cx={x} cy={y} r={2.5} fill={colorA} style={{ stroke: C.card }} strokeWidth={1} />
       ))}
       {ptsB.map(([x, y], i) => (
-        <circle key={`b${i}`} cx={x} cy={y} r={2.5} fill={colorB} stroke={C.card} strokeWidth={1} />
+        <circle key={`b${i}`} cx={x} cy={y} r={2.5} fill={colorB} style={{ stroke: C.card }} strokeWidth={1} />
       ))}
     </svg>
   )
@@ -253,7 +253,14 @@ function Legend({ items }: { items: { label: string; color: string; dashed?: boo
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function WhoopTab() {
-  const { snap, history, workouts, syncing, syncMsg, reauthRequired, hasOffline, tokenExpired, needsReconnect, loadError, syncNow } = useWhoopData()
+  const { snap, history, workouts, bodyMeasurements, syncing, syncMsg, reauthRequired, hasOffline, tokenExpired, needsReconnect, loadError, syncNow } = useWhoopData()
+
+  const weightSeries = bodyMeasurements.filter(m => m.weight_kg != null)
+  const weightData = weightSeries.map(m => Number(m.weight_kg))
+  const latestWeight = weightSeries.length ? weightData[weightData.length - 1] : null
+  const weightDelta = weightData.length >= 2 ? latestWeight! - weightData[0] : null
+  const weightFirst = weightSeries.length ? shortDate(`${weightSeries[0].measured_on}T12:00:00`) : ''
+  const weightLast = weightSeries.length ? shortDate(`${weightSeries[weightSeries.length - 1].measured_on}T12:00:00`) : ''
 
   const recovery = snap?.recovery_score ?? 0
   const recoveryColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
@@ -284,7 +291,7 @@ export default function WhoopTab() {
     { name: 'rem', color: '#6366f1', pct: snap?.sleep_rem_pct ?? 0 },
     { name: 'deep', color: '#0ea5e9', pct: snap?.sleep_deep_pct ?? 0 },
     { name: 'light', color: '#5a8a8a', pct: snap?.sleep_light_pct ?? 0 },
-    { name: 'awake', color: '#555', pct: snap?.sleep_awake_pct ?? 0 },
+    { name: 'awake', color: 'var(--text-faint)', pct: snap?.sleep_awake_pct ?? 0 },
   ]
 
   function stageHours(pct: number | null): string {
@@ -340,6 +347,15 @@ export default function WhoopTab() {
         <MiniStat label="Strain" value={avgStrain} color="#a78bfa" />
         <MiniStat label="Sleep" value={avgSleep} unit="%" color="#06b6d4" />
         <MiniStat label="kcal" value={avgKcal} color="#f43f5e" />
+        <MiniStat
+          label="Weight"
+          value={latestWeight != null ? latestWeight.toFixed(1) : '—'}
+          unit={latestWeight != null ? 'kg' : undefined}
+          color="#2dd4bf"
+          sub={weightDelta != null && Math.abs(weightDelta) >= 0.1
+            ? `${weightDelta > 0 ? '+' : ''}${weightDelta.toFixed(1)} kg over period`
+            : 'from whoop'}
+        />
       </div>
       {history.length === 0 && (
         <div style={{ fontFamily: mono, fontSize: 11, color: C.faint, padding: '4px 0' }}>
@@ -441,6 +457,37 @@ export default function WhoopTab() {
           </Card>
         </>
       )}
+
+      {/* Body */}
+      <SectionLabel>Body</SectionLabel>
+
+      <Card className="p-4">
+        <ChartTitle
+          title="Weight"
+          right={latestWeight != null && (
+            <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.text }}>
+              {latestWeight.toFixed(1)} kg
+              {weightDelta != null && Math.abs(weightDelta) >= 0.1 && (
+                <span style={{ fontSize: 10, color: weightDelta < 0 ? '#00d26a' : C.dim, marginLeft: 6 }}>
+                  {weightDelta > 0 ? '+' : ''}{weightDelta.toFixed(1)}
+                </span>
+              )}
+            </span>
+          )}
+        />
+        {weightData.length >= 2 ? (
+          <>
+            <BigSpark data={weightData} color="#2dd4bf" height={80} />
+            <AxisRow first={weightFirst} last={weightLast} />
+          </>
+        ) : (
+          <div style={{ fontFamily: mono, fontSize: 11, color: C.faint }}>
+            {latestWeight != null
+              ? `${latestWeight.toFixed(1)} kg — trend appears after a few synced days`
+              : 'weight syncs from WHOOP daily — appears after the next sync'}
+          </div>
+        )}
+      </Card>
 
       {/* Workouts */}
       <SectionLabel>Workouts</SectionLabel>

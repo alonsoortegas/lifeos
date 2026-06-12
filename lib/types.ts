@@ -19,6 +19,15 @@ export interface WhoopSnapshot {
   created_at: string
 }
 
+export interface WhoopBodyMeasurement {
+  id: number
+  measured_on: string
+  weight_kg: number | null
+  height_m: number | null
+  max_heart_rate: number | null
+  created_at: string
+}
+
 export interface WhoopWorkout {
   id: number
   workout_id: number

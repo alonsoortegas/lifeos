@@ -298,7 +298,27 @@ serve(async (req) => {
       else snapshotsUpserted++
     }
 
-    // 5. Upsert workouts
+    // 5. Body measurement (weight) — the API returns only the current value,
+    // so store one row per day to accumulate a trend. Optional: a failure
+    // (e.g. token without read:body_measurement) never fails the sync.
+    let bodyMeasurementSynced = false
+    const body = await whoopGetGuarded(accessToken, '/user/measurement/body', true)
+      .catch(() => null)
+    if (body && (body.weight_kilogram != null || body.height_meter != null)) {
+      const today = new Date().toISOString().slice(0, 10)
+      const { error: bodyErr } = await supabase
+        .from('whoop_body_measurements')
+        .upsert({
+          measured_on: today,
+          weight_kg: body.weight_kilogram ?? null,
+          height_m: body.height_meter ?? null,
+          max_heart_rate: body.max_heart_rate ?? null,
+        }, { onConflict: 'measured_on' })
+      if (bodyErr) console.warn('body measurement upsert error:', bodyErr.message)
+      else bodyMeasurementSynced = true
+    }
+
+    // 6. Upsert workouts
     let workoutCount = 0
     for (const w of workoutData?.records ?? []) {
       if (!w?.id || !w?.start) continue
@@ -335,6 +355,7 @@ serve(async (req) => {
       days_requested: days,
       snapshots_synced: snapshotsUpserted,
       workouts_synced: workoutCount,
+      body_measurement_synced: bodyMeasurementSynced,
       recovery_score: latestScore?.recovery_score,
       synced_at: new Date().toISOString(),
     })

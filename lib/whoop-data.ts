@@ -2,7 +2,7 @@
 
 import { useCallback, useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import type { WhoopSnapshot, WhoopWorkout } from '@/lib/types'
+import type { WhoopBodyMeasurement, WhoopSnapshot, WhoopWorkout } from '@/lib/types'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -13,6 +13,7 @@ export function useWhoopData() {
   const [snap, setSnap] = useState<WhoopSnapshot | null>(null)
   const [history, setHistory] = useState<WhoopSnapshot[]>([])
   const [workouts, setWorkouts] = useState<WhoopWorkout[]>([])
+  const [bodyMeasurements, setBodyMeasurements] = useState<WhoopBodyMeasurement[]>([])
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const [reauthRequired, setReauthRequired] = useState(false)
@@ -23,15 +24,17 @@ export function useWhoopData() {
   const autoSyncStarted = useRef(false)
 
   const load = useCallback(async () => {
-    const [snapRes, histRes, wktRes] = await Promise.all([
+    const [snapRes, histRes, wktRes, bodyRes] = await Promise.all([
       supabase.from('whoop_snapshots').select('*').order('recorded_at', { ascending: false }).limit(1).single(),
       supabase.from('whoop_snapshots').select('*').order('recorded_at', { ascending: false }).limit(30),
       supabase.from('whoop_workouts').select('*').order('started_at', { ascending: false }).limit(25),
+      supabase.from('whoop_body_measurements').select('*').order('measured_on', { ascending: false }).limit(90),
     ])
 
     if (snapRes.data) setSnap(snapRes.data as WhoopSnapshot)
     if (histRes.data) setHistory([...(histRes.data as WhoopSnapshot[])].reverse())
     if (wktRes.data) setWorkouts(wktRes.data as WhoopWorkout[])
+    if (bodyRes.data) setBodyMeasurements([...(bodyRes.data as WhoopBodyMeasurement[])].reverse())
 
     // PGRST116 = "no rows" — expected when Whoop hasn't synced yet, not a real error
     const hasError = [snapRes.error, histRes.error, wktRes.error].some(
@@ -99,5 +102,5 @@ export function useWhoopData() {
 
   const needsReconnect = reauthRequired || tokenExpired || syncNeedsReconnect
 
-  return { snap, history, workouts, syncing, syncMsg, reauthRequired, hasOffline, tokenExpired, needsReconnect, loadError, syncNow }
+  return { snap, history, workouts, bodyMeasurements, syncing, syncMsg, reauthRequired, hasOffline, tokenExpired, needsReconnect, loadError, syncNow }
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import TabBar from '@/components/TabBar'
+import ThemeToggle from '@/components/ThemeToggle'
 import TodayTab from '@/components/tabs/TodayTab'
 import FocusTab from '@/components/tabs/FocusTab'
 import WorkoutTab from '@/components/tabs/WorkoutTab'
@@ -9,7 +10,7 @@ import NutritionTab from '@/components/tabs/NutritionTab'
 import WhoopTab from '@/components/tabs/WhoopTab'
 import DesktopShell from '@/components/DesktopShell'
 
-const TAB_LABELS = ['TODAY', 'FOCUS', 'WORKOUT', 'NUTRITION', 'WHOOP']
+const TAB_LABELS = ['Today', 'Focus', 'Workout', 'Fuel', 'Whoop']
 const DESKTOP_QUERY = '(min-width: 1024px)'
 const TAB_QUERY_INDEX: Record<string, number> = {
   today: 0,
@@ -65,13 +66,13 @@ function MobileShell() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0e0e0e] relative">
+    <div className="min-h-screen relative">
       <header
-        className="fixed top-0 left-0 right-0 z-10 h-28 border-b border-[#2a2a2a]"
+        className="fixed top-0 left-0 right-0 z-10 h-28"
         style={{
-          background: 'rgba(14,14,14,0.92)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
+          background: 'var(--chrome)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
         }}
       >
         <div className="h-14" aria-hidden="true" />
@@ -79,22 +80,27 @@ function MobileShell() {
           <span
             role="img"
             aria-label="LifeOS"
-            className="h-8 w-8 rounded-[7px] bg-cover bg-center"
-            style={{ backgroundImage: 'url(/lifeos-icon.svg)' }}
+            className="h-8 w-8 rounded-[9px] bg-cover bg-center"
+            style={{ backgroundImage: 'url(/lifeos-icon.svg)', boxShadow: '0 0 16px rgba(0,210,106,0.25)' }}
           />
-          <span
-            className="ml-2 text-[15px] text-[#ededed] tracking-[0.03em]"
-            style={{ fontFamily: 'var(--font-inter-tight, sans-serif)' }}
-          >
-            LifeOS
+          <span className="display ml-2.5 text-[17px] font-bold tracking-tight text-[var(--text)]">
+            Life<span className="text-[#00d26a]">OS</span>
           </span>
-          <span
-            className="ml-3 text-[#555] text-[11px] uppercase tracking-widest"
-            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-          >
-            · {TAB_LABELS[activeTab]}
+          <span className="ml-auto flex items-center gap-2">
+            <ThemeToggle compact />
+            <span className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--ink-04)] px-3 py-1.5">
+              <span
+                className="pulse-dot inline-block h-1.5 w-1.5 rounded-full bg-[#00d26a]"
+                aria-hidden="true"
+              />
+              <span className="display text-[11px] font-semibold text-[var(--text-dim)]">
+                {TAB_LABELS[activeTab]}
+              </span>
+            </span>
           </span>
         </div>
+        {/* Hairline with traveling shimmer */}
+        <div className="glint-track absolute bottom-0 left-0 right-0 h-px bg-[var(--ink-06)]" aria-hidden="true" />
       </header>
 
       <main

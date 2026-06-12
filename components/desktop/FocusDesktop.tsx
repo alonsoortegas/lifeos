@@ -16,14 +16,14 @@ function Checkbox({ done }: { done: boolean }) {
     <span
       style={{
         width: 18, height: 18, borderRadius: 5, flexShrink: 0,
-        border: `1px solid ${done ? '#00d26a' : '#3a3a3a'}`,
+        border: `1px solid ${done ? '#00d26a' : 'var(--border-hi)'}`,
         background: done ? '#00d26a' : 'transparent',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       }}
     >
       {done && (
         <svg width="10" height="8" viewBox="0 0 11 8">
-          <path d="M1 4L4 7L10 1" stroke="#0e0e0e" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          <path d="M1 4L4 7L10 1" stroke="#0b0f0d" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
         </svg>
       )}
     </span>
@@ -205,16 +205,16 @@ export default function FocusDesktop() {
       {/* Anchor strip */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px',
-        background: '#151515', border: '1px solid #2a2a2a', borderRadius: 10,
+        background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10,
         flexShrink: 0,
       }}>
-        <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: '#555', textTransform: 'uppercase', flexShrink: 0 }}>
+        <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase', flexShrink: 0 }}>
           · ANCHOR ·
         </span>
-        <p style={{ margin: 0, color: '#888', fontStyle: 'italic', fontSize: 13, lineHeight: 1.4, flex: 1 }}>
+        <p style={{ margin: 0, color: 'var(--text-dim)', fontStyle: 'italic', fontSize: 13, lineHeight: 1.4, flex: 1 }}>
           &ldquo;{anchor}&rdquo;
         </p>
-        <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', color: '#555', textTransform: 'uppercase', flexShrink: 0 }}>
+        <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--text-faint)', textTransform: 'uppercase', flexShrink: 0 }}>
           {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase()}
         </span>
       </div>
@@ -225,27 +225,27 @@ export default function FocusDesktop() {
         {/* LEFT — Today */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, borderBottom: '1px solid #2a2a2a', paddingBottom: 6, flexShrink: 0 }}>
-            <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', color: '#888' }}>TODAY</span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, borderBottom: '1px solid var(--border)', paddingBottom: 6, flexShrink: 0 }}>
+            <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--text-dim)' }}>TODAY</span>
             <span style={{ flex: 1 }} />
-            <span style={{ fontFamily: mono, fontSize: 10, color: done === total && total > 0 ? '#00d26a' : '#888' }}>{done}/{total}</span>
-            <span style={{ fontFamily: mono, fontSize: 10, color: '#555' }}>· {done === total && total > 0 ? 'all done' : 'in progress'}</span>
+            <span style={{ fontFamily: mono, fontSize: 10, color: done === total && total > 0 ? '#00d26a' : 'var(--text-dim)' }}>{done}/{total}</span>
+            <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>· {done === total && total > 0 ? 'all done' : 'in progress'}</span>
           </div>
 
           {/* Counter + segmented bar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-              <span style={{ fontFamily: mono, fontSize: 44, fontWeight: 500, letterSpacing: '-0.03em', color: done === total && total > 0 ? '#00d26a' : '#ededed', lineHeight: 1 }}>
+              <span style={{ fontFamily: mono, fontSize: 44, fontWeight: 500, letterSpacing: '-0.03em', color: done === total && total > 0 ? '#00d26a' : 'var(--text)', lineHeight: 1 }}>
                 {done}
               </span>
-              <span style={{ fontFamily: mono, fontSize: 18, color: '#555' }}>/ {total}</span>
+              <span style={{ fontFamily: mono, fontSize: 18, color: 'var(--text-faint)' }}>/ {total}</span>
             </div>
             {total > 0 && (
               <div style={{ flex: 1, display: 'flex', gap: 4 }}>
                 {Array.from({ length: total }).map((_, i) => (
                   <div key={i} style={{
                     flex: 1, height: 6, borderRadius: 3,
-                    background: i < done ? '#00d26a' : '#2a2a2a',
+                    background: i < done ? '#00d26a' : 'var(--border)',
                     boxShadow: i < done ? '0 0 6px rgba(0,210,106,0.35)' : 'none',
                   }} />
                 ))}
@@ -254,9 +254,9 @@ export default function FocusDesktop() {
           </div>
 
           {/* List */}
-          <div style={{ flex: 1, overflow: 'auto', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, minHeight: 0 }}>
+          <div style={{ flex: 1, overflow: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, minHeight: 0 }}>
             {todos.length === 0 ? (
-              <div style={{ padding: 24, color: '#555', fontSize: 13, textAlign: 'center' }}>No goals yet. Add one below.</div>
+              <div style={{ padding: 24, color: 'var(--text-faint)', fontSize: 13, textAlign: 'center' }}>No goals yet. Add one below.</div>
             ) : (
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {todos.map((todo, i) => (
@@ -264,7 +264,7 @@ export default function FocusDesktop() {
                     key={todo.id}
                     style={{
                       display: 'flex', alignItems: 'center', padding: '11px 14px',
-                      borderBottom: i < todos.length - 1 ? '1px solid #2a2a2a' : 'none',
+                      borderBottom: i < todos.length - 1 ? '1px solid var(--border)' : 'none',
                       gap: 10,
                     }}
                   >
@@ -278,15 +278,15 @@ export default function FocusDesktop() {
                           onChange={e => setEditText(e.target.value)}
                           onBlur={() => saveEdit(todo.id, editText)}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveEdit(todo.id, editText) } if (e.key === 'Escape') setEditingId(null) }}
-                          style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid #3a3a3a', color: '#ededed', fontSize: 13, outline: 'none', padding: '0 0 2px', fontFamily: sans }}
+                          style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border-hi)', color: 'var(--text)', fontSize: 13, outline: 'none', padding: '0 0 2px', fontFamily: sans }}
                         />
                       ) : (
-                        <span style={{ fontSize: 13.5, color: todo.done ? '#555' : '#ededed', textDecoration: todo.done ? 'line-through' : 'none', lineHeight: 1.3 }}>
+                        <span style={{ fontSize: 13.5, color: todo.done ? 'var(--text-faint)' : 'var(--text)', textDecoration: todo.done ? 'line-through' : 'none', lineHeight: 1.3 }}>
                           {todo.text}
                         </span>
                       )}
                     </div>
-                    <button onClick={() => deleteTodo(todo.id)} style={{ background: 'none', border: 'none', color: '#555', fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1, flexShrink: 0, opacity: 0.6 }}>×</button>
+                    <button onClick={() => deleteTodo(todo.id)} style={{ background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1, flexShrink: 0, opacity: 0.6 }}>×</button>
                   </li>
                 ))}
               </ul>
@@ -300,17 +300,17 @@ export default function FocusDesktop() {
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void addTodo(inputText) } }}
               placeholder="add a goal…"
               disabled={isPolishing}
-              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#ededed', fontFamily: sans, fontSize: 13, padding: '9px 14px', borderRadius: 10, outline: 'none' }}
+              style={{ flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: sans, fontSize: 13, padding: '9px 14px', borderRadius: 10, outline: 'none' }}
             />
             <button
               onClick={() => addTodo(inputText)} disabled={!inputText.trim() || isPolishing}
-              style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#888', padding: '9px 18px', fontSize: 13, fontFamily: sans, borderRadius: 10, cursor: 'pointer', opacity: !inputText.trim() ? 0.4 : 1 }}
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-dim)', padding: '9px 18px', fontSize: 13, fontFamily: sans, borderRadius: 10, cursor: 'pointer', opacity: !inputText.trim() ? 0.4 : 1 }}
             >
               + Add
             </button>
             <button
               onClick={handlePolishAndAdd} disabled={!inputText.trim() || isPolishing}
-              style={{ background: '#00d26a', border: 'none', color: '#0e0e0e', padding: '9px 18px', fontSize: 13, fontFamily: sans, fontWeight: 700, borderRadius: 10, cursor: 'pointer', opacity: !inputText.trim() || isPolishing ? 0.4 : 1 }}
+              style={{ background: '#00d26a', border: 'none', color: 'var(--bg)', padding: '9px 18px', fontSize: 13, fontFamily: sans, fontWeight: 700, borderRadius: 10, cursor: 'pointer', opacity: !inputText.trim() || isPolishing ? 0.4 : 1 }}
             >
               {isPolishing ? 'polishing…' : '✦ Polish & Add'}
             </button>
@@ -319,7 +319,7 @@ export default function FocusDesktop() {
           {uncheckedCount > 0 && (
             <button
               onClick={handlePushRemaining}
-              style={{ flexShrink: 0, border: '1px dashed #3a3a3a', background: 'transparent', color: '#555', padding: '9px 0', fontSize: 11, fontFamily: mono, letterSpacing: '0.18em', textTransform: 'uppercase', borderRadius: 10, cursor: 'pointer' }}
+              style={{ flexShrink: 0, border: '1px dashed var(--border-hi)', background: 'transparent', color: 'var(--text-faint)', padding: '9px 0', fontSize: 11, fontFamily: mono, letterSpacing: '0.18em', textTransform: 'uppercase', borderRadius: 10, cursor: 'pointer' }}
             >
               push {uncheckedCount} remaining → tomorrow
             </button>
@@ -329,22 +329,22 @@ export default function FocusDesktop() {
         {/* RIGHT — Tomorrow */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
           {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, borderBottom: '1px solid #2a2a2a', paddingBottom: 6, flexShrink: 0 }}>
-            <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', color: '#888' }}>TOMORROW</span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, borderBottom: '1px solid var(--border)', paddingBottom: 6, flexShrink: 0 }}>
+            <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--text-dim)' }}>TOMORROW</span>
             <span style={{ flex: 1 }} />
-            <span style={{ fontFamily: mono, fontSize: 10, color: '#555' }}>{tomorrowTodos.length} planned</span>
-            <span style={{ fontFamily: mono, fontSize: 10, color: '#555' }}>· {tomorrowLabel}</span>
+            <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>{tomorrowTodos.length} planned</span>
+            <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>· {tomorrowLabel}</span>
           </div>
 
           {/* List */}
-          <div style={{ flex: 1, overflow: 'auto', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, minHeight: 0, opacity: 0.85 }}>
+          <div style={{ flex: 1, overflow: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, minHeight: 0, opacity: 0.85 }}>
             {tomorrowTodos.length === 0 ? (
-              <div style={{ padding: 24, color: '#555', fontSize: 13, textAlign: 'center' }}>Nothing planned yet.</div>
+              <div style={{ padding: 24, color: 'var(--text-faint)', fontSize: 13, textAlign: 'center' }}>Nothing planned yet.</div>
             ) : (
               <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {tomorrowTodos.map((todo, i) => (
-                  <li key={todo.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 14px', borderBottom: i < tomorrowTodos.length - 1 ? '1px solid #2a2a2a' : 'none', gap: 10 }}>
-                    <span style={{ width: 18, height: 18, borderRadius: 5, border: '1px dashed #3a3a3a', flexShrink: 0 }} />
+                  <li key={todo.id} style={{ display: 'flex', alignItems: 'center', padding: '11px 14px', borderBottom: i < tomorrowTodos.length - 1 ? '1px solid var(--border)' : 'none', gap: 10 }}>
+                    <span style={{ width: 18, height: 18, borderRadius: 5, border: '1px dashed var(--border-hi)', flexShrink: 0 }} />
                     <div style={{ flex: 1, cursor: 'text' }} onClick={() => { if (editingId !== todo.id) { setEditingId(todo.id); setEditText(todo.text) } }}>
                       {editingId === todo.id ? (
                         <input
@@ -352,13 +352,13 @@ export default function FocusDesktop() {
                           onChange={e => setEditText(e.target.value)}
                           onBlur={() => saveEdit(todo.id, editText, true)}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveEdit(todo.id, editText, true) } if (e.key === 'Escape') setEditingId(null) }}
-                          style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid #3a3a3a', color: '#ededed', fontSize: 13, outline: 'none', padding: '0 0 2px', fontFamily: sans }}
+                          style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border-hi)', color: 'var(--text)', fontSize: 13, outline: 'none', padding: '0 0 2px', fontFamily: sans }}
                         />
                       ) : (
-                        <span style={{ fontSize: 13, color: '#888' }}>{todo.text}</span>
+                        <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>{todo.text}</span>
                       )}
                     </div>
-                    <button onClick={() => deleteTomorrowTodo(todo.id)} style={{ background: 'none', border: 'none', color: '#555', fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1, flexShrink: 0, opacity: 0.6 }}>×</button>
+                    <button onClick={() => deleteTomorrowTodo(todo.id)} style={{ background: 'none', border: 'none', color: 'var(--text-faint)', fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1, flexShrink: 0, opacity: 0.6 }}>×</button>
                   </li>
                 ))}
               </ul>
@@ -371,17 +371,17 @@ export default function FocusDesktop() {
               value={tomorrowInput} onChange={e => setTomorrowInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void addTomorrowTodo(tomorrowInput) } }}
               placeholder="add to tomorrow…"
-              style={{ flex: 1, background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#ededed', fontFamily: sans, fontSize: 13, padding: '9px 14px', borderRadius: 10, outline: 'none' }}
+              style={{ flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: sans, fontSize: 13, padding: '9px 14px', borderRadius: 10, outline: 'none' }}
             />
             <button
               onClick={() => addTomorrowTodo(tomorrowInput)} disabled={!tomorrowInput.trim()}
-              style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#888', padding: '9px 18px', fontSize: 13, fontFamily: sans, borderRadius: 10, cursor: 'pointer', opacity: !tomorrowInput.trim() ? 0.4 : 1 }}
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-dim)', padding: '9px 18px', fontSize: 13, fontFamily: sans, borderRadius: 10, cursor: 'pointer', opacity: !tomorrowInput.trim() ? 0.4 : 1 }}
             >
               + Add
             </button>
           </div>
 
-          <div style={{ textAlign: 'center', fontFamily: mono, fontSize: 10, color: '#3a3a3a', padding: '2px 0', flexShrink: 0 }}>
+          <div style={{ textAlign: 'center', fontFamily: mono, fontSize: 10, color: 'var(--border-hi)', padding: '2px 0', flexShrink: 0 }}>
             resets daily at 6 AM · war room, not mood board
           </div>
         </div>

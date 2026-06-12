@@ -5,7 +5,7 @@ import type {
   NutritionEquivalenceGroup,
   NutritionFoodPortion,
   NutritionDayType,
-  NutritionGoal,
+  NutritionDayTypeRow,
 } from '@/lib/types'
 
 export interface MacroTotals {
@@ -63,27 +63,36 @@ export const MEAL_LABELS: Record<MealTemplateName, string> = {
   snack: 'Snack',
 }
 
-export function getDailyTargets(dayType: NutritionDayType, goal: NutritionGoal): MacroTotals {
-  if (goal === 'race_week') {
-    return { calories: 2600, protein_g: 165, carbs_g: 330, fat_g: 70 }
-  }
+export const EMPTY_MACRO_TOTALS: MacroTotals = {
+  calories: 0,
+  protein_g: 0,
+  carbs_g: 0,
+  fat_g: 0,
+}
 
-  const cutTargets: Record<NutritionDayType, MacroTotals> = {
-    hard: { calories: 2500, protein_g: 165, carbs_g: 300, fat_g: 70 },
-    moderate: { calories: 2250, protein_g: 165, carbs_g: 220, fat_g: 75 },
-    rest: { calories: 1950, protein_g: 165, carbs_g: 150, fat_g: 70 },
-  }
+export function normalizedNutritionKey(dayType: NutritionDayType): NutritionDayTypeRow['key'] {
+  if (dayType === 'hard') return 'hard_training'
+  if (dayType === 'moderate') return 'moderate_training'
+  return 'rest_easy'
+}
 
-  if (goal === 'maintenance') {
-    return {
-      calories: dayType === 'hard' ? 2700 : dayType === 'moderate' ? 2450 : 2200,
-      protein_g: 165,
-      carbs_g: dayType === 'hard' ? 330 : dayType === 'moderate' ? 270 : 205,
-      fat_g: dayType === 'rest' ? 70 : 75,
+export function targetMapFromRows(
+  rows: Array<Pick<NutritionDayTypeRow, 'key' | 'kcal_target' | 'protein_g' | 'carbs_g' | 'fat_g'>>,
+): Partial<Record<NutritionDayType, MacroTotals>> {
+  const result: Partial<Record<NutritionDayType, MacroTotals>> = {}
+  for (const row of rows) {
+    const dayType: NutritionDayType =
+      row.key === 'hard_training' ? 'hard' :
+      row.key === 'moderate_training' ? 'moderate' :
+      'rest'
+    result[dayType] = {
+      calories: Number(row.kcal_target),
+      protein_g: Number(row.protein_g),
+      carbs_g: Number(row.carbs_g),
+      fat_g: Number(row.fat_g),
     }
   }
-
-  return cutTargets[dayType]
+  return result
 }
 
 export function calculateMacroCalories(macros: Pick<MacroTotals, 'protein_g' | 'carbs_g' | 'fat_g'>): number {

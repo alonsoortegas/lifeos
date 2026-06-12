@@ -7,6 +7,7 @@ export default defineConfig({
     // In Vitest (Node.js) we alias it to a no-op so tests can import server-only
     // modules without the guard firing — the modules are still server-side anyway.
     alias: {
+      '@': path.resolve(__dirname),
       'server-only': path.resolve(__dirname, 'test-utils/server-only-stub.ts'),
     },
   },

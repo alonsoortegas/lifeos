@@ -1,30 +1,230 @@
 @import "tailwindcss";
 
+/* ─── AURORA design system (dual theme) ──────────────────────────────────────
+   Vibrant consumer UI. Dark: deep blue-black under a soft aurora wash.
+   Light: airy blue-white with the same aurora hues as pastel washes.
+   Voices: Geist (display + body, weight does the work) · Geist Mono (data).
+
+   Every var() that points at a next/font variable carries an explicit
+   fallback — an undefined custom property would otherwise invalidate the
+   whole font-family declaration and drop the page to browser serif.        */
+
 @theme {
-  --color-bg: #0e0e0e;
-  --color-card: #1a1a1a;
-  --color-border: #2a2a2a;
-  --color-border-hi: #3a3a3a;
-  --color-text: #ededed;
-  --color-dim: #888;
-  --color-faint: #555;
+  --color-bg: var(--bg);
+  --color-card: var(--surface);
+  --color-border: var(--border);
+  --color-border-hi: var(--border-hi);
+  --color-text: var(--text);
+  --color-dim: var(--text-dim);
+  --color-faint: var(--text-faint);
   --color-accent: #00d26a;
   --color-accent-dim: rgba(0, 210, 106, 0.35);
+  --color-cyan: #38bdf8;
+  --color-violet: #a78bfa;
+  --color-coral: #fb7185;
+  --color-amber: #fbbf24;
 
-  --font-sans: 'Inter Tight', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-sans: var(--font-geist-sans, system-ui), system-ui, sans-serif;
+  --font-display: var(--font-geist-sans, system-ui), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono, ui-monospace), ui-monospace, monospace;
+}
+
+/* ─── Theme tokens — dark is the default ──────────────────────────────────── */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0b0d12;
+  --surface: #14161d;
+  --surface-2: #181b23;
+  --border: #232733;
+  --border-hi: #343a4a;
+  --text: #f4f6f8;
+  --text-dim: #9aa3b2;
+  --text-faint: #5d6575;
+
+  /* "Ink" alphas: light-on-dark here, dark-on-light in light mode. */
+  --ink-01: rgba(255, 255, 255, 0.012);
+  --ink-02: rgba(255, 255, 255, 0.025);
+  --ink-04: rgba(255, 255, 255, 0.045);
+  --ink-06: rgba(255, 255, 255, 0.07);
+  --ink-08: rgba(255, 255, 255, 0.1);
+
+  --chrome: rgba(13, 16, 23, 0.84);
+  --scrim: rgba(5, 7, 10, 0.72);
+  --ring-track: rgba(255, 255, 255, 0.08);
+  --panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018) 38%), #14161d;
+  --panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --aurora-1: rgba(0, 210, 106, 0.13);
+  --aurora-2: rgba(56, 189, 248, 0.11);
+  --aurora-3: rgba(167, 139, 250, 0.10);
+  --grain-opacity: 0.4;
+
+  /* Back-compat: tab code references these inline. */
+  --font-inter-tight: var(--font-geist-sans, system-ui), system-ui, sans-serif;
+  --font-jetbrains-mono: var(--font-geist-mono, ui-monospace), ui-monospace, monospace;
+
+  --glow-accent: 0 0 14px rgba(0, 210, 106, 0.35);
+}
+
+html.light {
+  color-scheme: light;
+
+  --bg: #f3f5fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f7;
+  --border: #e1e6ef;
+  --border-hi: #c9d1de;
+  --text: #14161d;
+  --text-dim: #5b6473;
+  --text-faint: #97a0af;
+
+  --ink-01: rgba(15, 23, 32, 0.015);
+  --ink-02: rgba(15, 23, 32, 0.03);
+  --ink-04: rgba(15, 23, 32, 0.05);
+  --ink-06: rgba(15, 23, 32, 0.08);
+  --ink-08: rgba(15, 23, 32, 0.11);
+
+  --chrome: rgba(248, 250, 253, 0.85);
+  --scrim: rgba(20, 25, 35, 0.4);
+  --ring-track: rgba(15, 23, 32, 0.08);
+  --panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6) 38%), #ffffff;
+  --panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 10px 30px rgba(23, 30, 46, 0.08), 0 1px 2px rgba(23, 30, 46, 0.06);
+  --shadow-pop: 0 16px 40px rgba(23, 30, 46, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --aurora-1: rgba(0, 210, 106, 0.10);
+  --aurora-2: rgba(56, 189, 248, 0.12);
+  --aurora-3: rgba(167, 139, 250, 0.10);
+  --grain-opacity: 0.22;
 }
 
 html,
 body {
-  background: #0e0e0e;
-  color: #ededed;
-  font-family: 'Inter Tight', system-ui, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans, system-ui), system-ui, sans-serif;
+}
+
+/* Aurora wash — same hues both themes, tuned per theme via vars. */
+body {
+  background-image:
+    radial-gradient(90% 55% at 12% -8%, var(--aurora-1), transparent 58%),
+    radial-gradient(80% 50% at 92% -6%, var(--aurora-2), transparent 56%),
+    radial-gradient(100% 65% at 50% 112%, var(--aurora-3), transparent 58%);
+  background-attachment: fixed;
+}
+
+/* Fine grain keeps the wash from banding and adds tactility. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 70;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.04'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 * {
   box-sizing: border-box;
 }
+
+/* ─── Surfaces ────────────────────────────────────────────────────────────── */
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--panel-shadow);
+}
+
+/* Gradient halo border for hero surfaces. */
+.ticks {
+  position: relative;
+}
+.ticks::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(0, 210, 106, 0.55), rgba(56, 189, 248, 0.25) 45%, transparent 75%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.display {
+  font-family: var(--font-geist-sans, system-ui), system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* ─── Motion ──────────────────────────────────────────────────────────────── */
+
+@keyframes boot-rise {
+  0% { opacity: 0; transform: translateY(12px) scale(0.992); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.boot > * {
+  animation: boot-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.boot > *:nth-child(1) { animation-delay: 0.02s; }
+.boot > *:nth-child(2) { animation-delay: 0.07s; }
+.boot > *:nth-child(3) { animation-delay: 0.12s; }
+.boot > *:nth-child(4) { animation-delay: 0.17s; }
+.boot > *:nth-child(5) { animation-delay: 0.22s; }
+.boot > *:nth-child(6) { animation-delay: 0.27s; }
+.boot > *:nth-child(7) { animation-delay: 0.32s; }
+.boot > *:nth-child(8) { animation-delay: 0.37s; }
+.boot > *:nth-child(n+9) { animation-delay: 0.42s; }
+
+@keyframes fade-up {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.flicker {
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes glint {
+  0% { transform: translateX(-100%); }
+  55%, 100% { transform: translateX(420%); }
+}
+.glint-track {
+  position: relative;
+  overflow: hidden;
+}
+.glint-track::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(0, 210, 106, 0.5), rgba(56, 189, 248, 0.35), transparent);
+  animation: glint 8s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(0, 210, 106, 0.7); }
+  50% { opacity: 0.5; box-shadow: 0 0 2px rgba(0, 210, 106, 0.25); }
+}
+.pulse-dot {
+  animation: pulse-dot 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot > *,
+  .flicker,
+  .glint-track::after,
+  .pulse-dot {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─── Chrome details ──────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
   width: 6px;
@@ -34,21 +234,31 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
+  background: var(--border);
   border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hi);
+}
+
+::selection {
+  background: rgba(0, 210, 106, 0.3);
+  color: var(--text);
 }
 
 input[type='range'] {
   -webkit-appearance: none;
   height: 4px;
-  background: #2a2a2a;
+  background: var(--border);
   border-radius: 2px;
 }
 input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #00d26a;
+  border: 2px solid var(--bg);
+  box-shadow: var(--glow-accent);
   cursor: pointer;
 }
