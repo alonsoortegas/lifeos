@@ -24,6 +24,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const server = createMcpServer()
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // stateless — new instance per request
+    enableJsonResponse: true, // return plain JSON instead of SSE for simple tool calls
   })
 
   await server.connect(transport)

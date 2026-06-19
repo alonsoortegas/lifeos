@@ -7,10 +7,10 @@ import {
   fetchLatestBrief, fetchBodyTrend, fetchNutritionPlan,
 } from './db'
 
-function json(data: unknown) {
+function json(uri: string, data: unknown) {
   return {
     contents: [{
-      uri: '',
+      uri,
       mimeType: 'application/json',
       text: JSON.stringify(data, null, 2),
     }],
@@ -23,7 +23,7 @@ export function registerResources(server: McpServer) {
     'today',
     'lifeos://today',
     { description: 'Full snapshot of today: latest WHOOP recovery, todos, nutrition summary, and active workout session.' },
-    async () => {
+    async (uri) => {
       const db = await getDb()
       const today = getToday()
 
@@ -43,7 +43,7 @@ export function registerResources(server: McpServer) {
         nutritionSummary = { day: nutritionDay, meals, totals }
       }
 
-      return json({
+      return json(uri.href, {
         date: today,
         recovery,
         todos,
@@ -66,13 +66,13 @@ export function registerResources(server: McpServer) {
     'recovery-history',
     'lifeos://recovery/history',
     { description: 'Last 30 days of WHOOP recovery data: recovery score, HRV, RHR, strain, sleep quality.' },
-    async () => {
+    async (uri) => {
       const db = await getDb()
       const end = getToday()
       const start = new Date()
       start.setDate(start.getDate() - 30)
       const data = await fetchRecoveryRange(db, start.toISOString().slice(0, 10), end)
-      return json(data)
+      return json(uri.href, data)
     }
   )
 
@@ -85,7 +85,7 @@ export function registerResources(server: McpServer) {
       const db = await getDb()
       const resolvedDate = date === 'today' ? getToday() : String(date)
       const data = await fetchRecoveryRange(db, resolvedDate, resolvedDate)
-      return json({ date: resolvedDate, snapshot: data[0] ?? null })
+      return json(uri.href, { date: resolvedDate, snapshot: data[0] ?? null })
     }
   )
 
@@ -94,10 +94,10 @@ export function registerResources(server: McpServer) {
     'workout-today',
     'lifeos://workout/today',
     { description: "Today's training session: prescribed exercises, sets, reps, weight, RPE targets, and plan status." },
-    async () => {
+    async (uri) => {
       const db = await getDb()
       const data = await fetchTodayWorkoutSession(db)
-      return json(data)
+      return json(uri.href, data)
     }
   )
 
@@ -106,11 +106,11 @@ export function registerResources(server: McpServer) {
     'workout-logs',
     new ResourceTemplate('lifeos://workout/logs/{date}', { list: undefined }),
     { description: 'All logged sets for a given training date (YYYY-MM-DD or "today").' },
-    async (_uri, { date }) => {
+    async (uri, { date }) => {
       const db = await getDb()
       const resolvedDate = date === 'today' ? getToday() : String(date)
       const logs = await fetchWorkoutLogs(db, resolvedDate)
-      return json({ date: resolvedDate, logs })
+      return json(uri.href, { date: resolvedDate, logs })
     }
   )
 
@@ -119,15 +119,14 @@ export function registerResources(server: McpServer) {
     'nutrition-today',
     'lifeos://nutrition/today',
     { description: "Today's nutrition: macro targets, all logged meals and items, running totals vs goals." },
-    async () => {
+    async (uri) => {
       const db = await getDb()
       const today = getToday()
       const nutritionDay = await fetchNutritionDay(db, today)
-      if (!nutritionDay) return json({ date: today, message: 'No nutrition day found for today.' })
-
+      if (!nutritionDay) return json(uri.href, { date: today, message: 'No nutrition day found for today.' })
       const meals = await fetchMealsForNutritionDay(db, nutritionDay.id)
       const totals = computeMacroTotals(meals)
-      return json({ date: today, day: nutritionDay, meals, totals })
+      return json(uri.href, { date: today, day: nutritionDay, meals, totals })
     }
   )
 
@@ -136,9 +135,9 @@ export function registerResources(server: McpServer) {
     'nutrition-plan',
     'lifeos://nutrition/plan',
     { description: 'Nutrition reference data: day types with macro targets, meal templates, and core nutrition rules.' },
-    async () => {
+    async (uri) => {
       const db = await getDb()
-      return json(await fetchNutritionPlan(db))
+      return json(uri.href, await fetchNutritionPlan(db))
     }
   )
 
@@ -147,10 +146,10 @@ export function registerResources(server: McpServer) {
     'todos-today',
     'lifeos://todos/today',
     { description: "Today's todo list, sorted by priority order." },
-    async () => {
+    async (uri) => {
       const db = await getDb()
       const today = getToday()
-      return json({ date: today, todos: await fetchTodosForDate(db, today) })
+      return json(uri.href, { date: today, todos: await fetchTodosForDate(db, today) })
     }
   )
 
@@ -159,10 +158,10 @@ export function registerResources(server: McpServer) {
     'brief-today',
     'lifeos://brief/today',
     { description: "Today's AI-generated daily brief and any pending action proposals." },
-    async () => {
+    async (uri) => {
       const db = await getDb()
       const today = getToday()
-      return json({ date: today, ...(await fetchLatestBrief(db, today)) })
+      return json(uri.href, { date: today, ...(await fetchLatestBrief(db, today)) })
     }
   )
 
@@ -171,10 +170,10 @@ export function registerResources(server: McpServer) {
     'checkin-today',
     'lifeos://checkin/today',
     { description: "Today's subjective check-in: soreness, motivation, energy, mood, and notes." },
-    async () => {
+    async (uri) => {
       const db = await getDb()
       const today = getToday()
-      return json({ date: today, checkin: await fetchCheckin(db, today) })
+      return json(uri.href, { date: today, checkin: await fetchCheckin(db, today) })
     }
   )
 
@@ -183,9 +182,9 @@ export function registerResources(server: McpServer) {
     'body-trend',
     'lifeos://body/trend',
     { description: 'Last 90 days of WHOOP body measurements: weight, height, max heart rate.' },
-    async () => {
+    async (uri) => {
       const db = await getDb()
-      return json(await fetchBodyTrend(db))
+      return json(uri.href, await fetchBodyTrend(db))
     }
   )
 }

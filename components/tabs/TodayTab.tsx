@@ -435,6 +435,163 @@ function DayModeCard({
 }
 
 // ---------------------------------------------------------------------------
+// DayScheduleCard
+// ---------------------------------------------------------------------------
+
+interface ScheduleBlock {
+  start: string  // "HH:MM"
+  end: string
+  label: string
+  desc: string
+  color: string
+}
+
+const SCHEDULE: ScheduleBlock[] = [
+  { start: '06:30', end: '07:00', label: 'Wake up',           desc: 'No phone for 15 min. Outside immediately — morning light for circadian reset.',             color: '#fbbf24' },
+  { start: '07:00', end: '07:45', label: 'Walk #1',           desc: '20-30 min easy pace. Digestion anchor — same as you\'ve been doing.',                       color: '#00d26a' },
+  { start: '07:45', end: '08:30', label: 'Breakfast',         desc: 'Shower, scalp routine.',                                                                    color: '#f97316' },
+  { start: '08:30', end: '12:30', label: 'Deep work',         desc: 'embee-tech or Movu — harder deadline first. Phone away.',                                   color: '#38bdf8' },
+  { start: '12:30', end: '13:30', label: 'Lunch',             desc: 'Outside if possible. Not at the desk.',                                                     color: '#00d26a' },
+  { start: '13:30', end: '17:30', label: 'Work block 2',      desc: 'Second project or split. Walking meeting if you have calls.',                               color: '#38bdf8' },
+  { start: '17:30', end: '18:30', label: 'Movement',          desc: 'Light mobility + stretching. Gradual ramp — no heavy sweating yet unless cleared.',         color: '#a78bfa' },
+  { start: '18:30', end: '19:30', label: 'Dinner',            desc: 'Not in front of a screen.',                                                                 color: '#f97316' },
+  { start: '19:30', end: '21:30', label: 'Social / low-key',  desc: 'Call a friend, short walk, read. Cap screen time — don\'t let it slide to bed.',            color: '#a78bfa' },
+  { start: '21:30', end: '22:00', label: 'Wind-down',         desc: 'No screens. The actual lever for your HRV/RHR trend.',                                      color: '#fb7185' },
+  { start: '22:00', end: '22:30', label: 'Lights out',        desc: 'Sleep.',                                                                                    color: '#5b6473' },
+]
+
+function toMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number)
+  return h * 60 + m
+}
+
+function getBlockState(block: ScheduleBlock, nowMin: number): 'past' | 'active' | 'future' {
+  const start = toMinutes(block.start)
+  const end = toMinutes(block.end)
+  if (nowMin >= end) return 'past'
+  if (nowMin >= start) return 'active'
+  return 'future'
+}
+
+function getActiveProgress(block: ScheduleBlock, nowMin: number): number {
+  const start = toMinutes(block.start)
+  const end = toMinutes(block.end)
+  return Math.min(1, Math.max(0, (nowMin - start) / (end - start)))
+}
+
+function DayScheduleCard({ now }: { now: Date | null }) {
+  const nowMin = now ? now.getHours() * 60 + now.getMinutes() : -1
+  const activeIdx = SCHEDULE.findIndex((b) => getBlockState(b, nowMin) === 'active')
+
+  return (
+    <div className="panel rounded-2xl p-4">
+      <div
+        className="text-[9px] font-bold tracking-[0.2em] uppercase mb-3"
+        style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: 'var(--text-faint)' }}
+      >
+        DAY SCHEDULE
+      </div>
+
+      <div className="relative">
+        {/* Vertical spine */}
+        <div
+          className="absolute left-[39px] top-0 bottom-0 w-px"
+          style={{ background: 'var(--border)' }}
+        />
+
+        <div className="flex flex-col gap-0">
+          {SCHEDULE.map((block, i) => {
+            const state = getBlockState(block, nowMin)
+            const progress = state === 'active' ? getActiveProgress(block, nowMin) : 0
+            const isActive = state === 'active'
+            const isPast = state === 'past'
+
+            return (
+              <div key={block.start} className="relative flex items-start gap-3">
+                {/* Time */}
+                <div
+                  className="w-[39px] flex-shrink-0 pt-[10px] text-right text-[9px] leading-none tabular-nums"
+                  style={{
+                    fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                    color: isActive ? block.color : isPast ? 'var(--text-faint)' : 'var(--text-dim)',
+                    opacity: isPast ? 0.45 : 1,
+                  }}
+                >
+                  {block.start}
+                </div>
+
+                {/* Dot on spine */}
+                <div className="flex-shrink-0 relative z-10 mt-[8px]">
+                  <div
+                    className="w-[9px] h-[9px] rounded-full border-2 transition-all duration-500"
+                    style={{
+                      borderColor: isActive ? block.color : isPast ? 'var(--border-hi)' : 'var(--border)',
+                      background: isActive ? block.color : isPast ? 'var(--surface-2)' : 'var(--surface)',
+                      boxShadow: isActive ? `0 0 8px ${block.color}88` : 'none',
+                    }}
+                  />
+                </div>
+
+                {/* Content */}
+                <div
+                  className={`flex-1 rounded-xl px-3 py-[9px] mb-[5px] overflow-hidden transition-all duration-300 ${isActive ? 'border' : ''}`}
+                  style={{
+                    background: isActive ? `${block.color}0f` : 'transparent',
+                    borderColor: isActive ? `${block.color}40` : 'transparent',
+                    opacity: isPast ? 0.4 : 1,
+                  }}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span
+                      className="text-[13px] font-semibold leading-tight"
+                      style={{ color: isActive ? block.color : 'var(--text)' }}
+                    >
+                      {block.label}
+                    </span>
+                    <span
+                      className="text-[9px] tabular-nums flex-shrink-0"
+                      style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: 'var(--text-faint)' }}
+                    >
+                      {block.end}
+                    </span>
+                  </div>
+
+                  {block.desc && (
+                    <p
+                      className="text-[11px] leading-[1.4] mt-[3px]"
+                      style={{ color: isActive ? 'var(--text-dim)' : 'var(--text-faint)' }}
+                    >
+                      {block.desc}
+                    </p>
+                  )}
+
+                  {/* Progress bar for active block */}
+                  {isActive && (
+                    <div
+                      className="mt-[7px] h-[2px] rounded-full overflow-hidden"
+                      style={{ background: `${block.color}25` }}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-[60s]"
+                        style={{
+                          width: `${progress * 100}%`,
+                          background: block.color,
+                          boxShadow: `0 0 4px ${block.color}`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // TodayTab
 // ---------------------------------------------------------------------------
 export default function TodayTab() {
@@ -631,6 +788,8 @@ export default function TodayTab() {
           delta={readiness?.signals.sleepScore}
         />
       </div>
+
+      <DayScheduleCard now={now} />
 
       {readiness && <DayModeCard readiness={readiness} todayMeta={todayMeta} topTodo={topTodo} nutritionRemaining={nutritionRemaining} />}
 
