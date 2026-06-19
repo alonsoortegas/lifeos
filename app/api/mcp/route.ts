@@ -5,8 +5,12 @@ import { createMcpServer } from '@/lib/mcp/server'
 function verifyAuth(req: NextRequest): boolean {
   const key = process.env.MCP_API_KEY
   if (!key) return false
+  // Bearer token in Authorization header (MCP clients that support custom headers)
   const auth = req.headers.get('authorization') ?? ''
-  return auth === `Bearer ${key}`
+  if (auth === `Bearer ${key}`) return true
+  // Key in query string (?key=...) for clients like claude.ai that don't support custom headers
+  const queryKey = req.nextUrl.searchParams.get('key') ?? ''
+  return queryKey === key
 }
 
 async function handle(req: NextRequest): Promise<Response> {
