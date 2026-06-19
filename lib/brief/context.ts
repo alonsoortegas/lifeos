@@ -7,7 +7,7 @@ import {
   getZonedDayRange,
 } from '@/lib/goal-dates'
 import { computeReadiness } from '@/lib/readiness'
-import { DAY_META, DAY_ORDER, getPlanStatus } from '@/lib/workout'
+import { DAY_ORDER, getDayMeta, getPlanStatus } from '@/lib/workout'
 import type { WhoopSnapshot } from '@/lib/types'
 import { compactReadiness, type BriefContextPack, type NutritionDayTypeKey } from '@/lib/brief/types'
 
@@ -75,7 +75,7 @@ export async function assembleContext(
 
   const planStatus = getPlanStatus(localNoon(date))
   const weekday = dayKey(date)
-  const meta = DAY_META[weekday]
+  const meta = getDayMeta(weekday, planStatus.blockSlug)
   let todaysSession: BriefContextPack['todays_session']
 
   if (!planStatus.active || planStatus.week == null) {
@@ -96,6 +96,7 @@ export async function assembleContext(
     const { data: session } = await supabase
       .from('workout_sessions')
       .select('id, title, session_type, workout_exercises(exercise_name, prescribed_sets, prescribed_reps, target_rpe, order_index)')
+      .eq('block_slug', planStatus.blockSlug)
       .eq('week_number', planStatus.week)
       .eq('day_of_week', meta.dbKey)
       .maybeSingle()

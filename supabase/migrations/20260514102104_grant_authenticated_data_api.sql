@@ -21,7 +21,6 @@ grant select on table
   public.nutrition_rules,
   public.nutrition_equivalence_groups
 to authenticated;
-
 grant insert on table
   public.todos,
   public.workout_exercises,
@@ -30,17 +29,14 @@ grant insert on table
   public.meal_log,
   public.meal_log_item
 to authenticated;
-
 grant update on table
   public.todos,
   public.nutrition_day
 to authenticated;
-
 grant delete on table
   public.todos,
   public.meal_log_item
 to authenticated;
-
 grant usage, select on sequence
   public.todos_id_seq,
   public.workout_exercises_id_seq,

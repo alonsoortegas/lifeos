@@ -3,7 +3,6 @@ delete from nutrition_rules;
 delete from nutrition_food_portions;
 delete from nutrition_equivalence_groups;
 delete from nutrition_day_types;
-
 insert into nutrition_day_types (key, label, description, kcal_target, protein_g, carbs_g, fat_g, examples, notes) values
   (
     'hard_training',
@@ -38,7 +37,6 @@ insert into nutrition_day_types (key, label, description, kcal_target, protein_g
     array['rest day', 'walking only', 'easy run'],
     array['This is where most of the weekly deficit happens, but not zero-carb.']
   );
-
 insert into nutrition_equivalence_groups (key, label, compare_macro, examples, notes) values
   ('carbs_fast', 'Fast carbs', 'carbs', array['banana', 'rice cakes', 'amaranth cakes'], array['When swapping fast carbs, match primarily by carbs_g.']),
   ('carbs_starchy', 'Starchy carbs', 'carbs', array['rice', 'oats', 'bread', 'tortillas', 'potatoes'], array['When swapping starchy carbs, match primarily by carbs_g. Track rice dry, before cooking.']),
@@ -46,7 +44,6 @@ insert into nutrition_equivalence_groups (key, label, compare_macro, examples, n
   ('protein_dairy', 'Protein / dairy', 'protein', array['skyr', 'magerquark', 'protein shake'], array['Use to close protein gaps.']),
   ('fats', 'Fats', 'fat', array['olive oil', 'mixed nuts', 'avocado', 'whole eggs'], array['When swapping fats, match primarily by fat_g. Account for nuts and eggs also adding protein/carbs.']),
   ('fruit', 'Fruit', 'carbs', array['berries', 'banana'], array['Template fruit portions; compare mainly by carbs_g.']);
-
 insert into nutrition_food_portions (
   food_key, label, portion_label, raw_weight_g, cooked_weight_g, protein_g, carbs_g, fat_g, notes, equivalence_group
 ) values
@@ -74,7 +71,6 @@ insert into nutrition_food_portions (
   ('mixed_nuts_25g', 'Mixed nuts', '25g mixed nuts', 25, null, 5, 5, 15, null, 'fats'),
   ('olive_oil_15ml', 'Olive oil', '15ml olive oil', 14, null, 0, 0, 14, null, 'fats'),
   ('avocado_100g', 'Avocado', '100g avocado', 100, null, 2, 9, 15, null, 'fats');
-
 insert into nutrition_meal_templates (day_type_key, meal_key, meal_label, sort_order, default_items, notes) values
   (
     'rest_easy',
@@ -236,7 +232,6 @@ insert into nutrition_meal_templates (day_type_key, meal_key, meal_label, sort_o
     ]'::jsonb,
     array['Track rice dry and meat raw.']
   );
-
 insert into nutrition_rules (sort_order, rule_text) values
   (1, 'Track rice dry, before cooking.'),
   (2, 'Track meat raw, using package weight.'),

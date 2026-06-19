@@ -13,6 +13,8 @@ const LOCK_ID = 'whoop-sync'
 const BACKFILL_LOOKBACK_DAYS = 30
 const MAX_BACKFILL_RECORDS = 60
 const WHOOP_PAGE_SIZE = 25
+type SupabaseClient = ReturnType<typeof createClient>
+type SyncRunStatus = 'success' | 'error' | 'skipped'
 
 function isRefreshAuthFailure(status: number, body: string): boolean {
   const normalized = body.toLowerCase()
@@ -51,8 +53,11 @@ const SPORT_NAMES: Record<number, string> = {
 }
 
 serve(async (req) => {
-  let lockClient: ReturnType<typeof createClient> | null = null
+  let lockClient: SupabaseClient | null = null
   let lockToken: string | null = null
+  let syncRunClient: SupabaseClient | null = null
+  let syncRunId: string | null = null
+  const syncRunStartedMs = Date.now()
 
   try {
     const clientId = Deno.env.get('WHOOP_CLIENT_ID')
@@ -64,16 +69,20 @@ serve(async (req) => {
       return json({ error: 'Missing required environment variables' }, 500)
     }
 
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    syncRunClient = supabase
+
     // Optional: pass { days: 7 } to backfill N cycles, or { backfill: true } to
     // auto-detect gaps in the last 30 days and fetch exactly what's missing.
     let days = 1
+    let requestedBackfill = false
     try {
       const body = await req.json()
       if (body?.backfill === true) {
-        const supabaseTemp = createClient(supabaseUrl!, supabaseKey!)
+        requestedBackfill = true
         const sinceDate = new Date(Date.now() - BACKFILL_LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
         sinceDate.setUTCHours(0, 0, 0, 0)
-        const { data: existing } = await supabaseTemp
+        const { data: existing } = await supabase
           .from('whoop_snapshots')
           .select('recorded_at, sleep_score, sleep_duration_ms')
           .gte('recorded_at', sinceDate.toISOString())
@@ -90,12 +99,29 @@ serve(async (req) => {
       }
     } catch { /* no body or not JSON — default to 1 */ }
 
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    syncRunId = await startSyncRun(supabase, {
+      requested_days: days,
+      requested_backfill: requestedBackfill,
+    })
+
+    async function finish(data: Record<string, unknown>, httpStatus: number, runStatus: SyncRunStatus, patch: Record<string, unknown> = {}) {
+      await finishSyncRun(supabase, syncRunId, syncRunStartedMs, runStatus, {
+        ...patch,
+        error_code: runStatus === 'success' ? null : data.error ?? null,
+        error_message: runStatus === 'success' ? null : data.message ?? data.error ?? null,
+      })
+      return json(data, httpStatus)
+    }
+
     lockClient = supabase
 
     lockToken = await claimSyncLock(supabase)
     if (!lockToken) {
-      return json({ error: 'already_running', message: 'WHOOP sync is already running' }, 409)
+      return await finish(
+        { error: 'already_running', message: 'WHOOP sync is already running' },
+        409,
+        'skipped',
+      )
     }
 
     // 1. Load stored tokens
@@ -106,11 +132,19 @@ serve(async (req) => {
       .single()
 
     if (tokenErr || !tokenRow?.access_token) {
-      return json({ error: 'No tokens found — complete Whoop OAuth first via /whoop-auth' }, 400)
+      return await finish(
+        { error: 'missing_tokens', message: 'No tokens found — complete WHOOP OAuth first via /whoop-auth' },
+        400,
+        'error',
+      )
     }
 
     if (tokenRow.reauth_required) {
-      return json({ error: 'reauth_required', message: 'Please reconnect WHOOP in the dashboard' }, 401)
+      return await finish(
+        { error: 'reauth_required', message: 'Please reconnect WHOOP in the dashboard' },
+        401,
+        'error',
+      )
     }
 
     let accessToken = tokenRow.access_token as string
@@ -151,17 +185,29 @@ serve(async (req) => {
         const body = await tokenRes.text()
         if (isRefreshAuthFailure(tokenRes.status, body)) {
           await supabase.from('whoop_tokens').update({ reauth_required: true }).eq('id', 1)
-          return json({ error: 'reauth_required', message: 'WHOOP token expired — please reconnect WHOOP in the dashboard' }, 401)
+          return await finish(
+            { error: 'reauth_required', message: 'WHOOP token expired — please reconnect WHOOP in the dashboard' },
+            401,
+            'error',
+          )
         }
         console.warn('Token refresh failed, proceeding with stored access token:', body)
         if (Date.now() >= expiresAt) {
-          return json({ error: 'token_refresh_failed', message: 'WHOOP token refresh failed — retry later' }, 503)
+          return await finish(
+            { error: 'token_refresh_failed', message: 'WHOOP token refresh failed — retry later' },
+            503,
+            'error',
+          )
         }
       }
     } else if (needsRefresh && !tokenRow.refresh_token) {
       // No refresh token — mark as needing reauth and return error
       await supabase.from('whoop_tokens').update({ reauth_required: true }).eq('id', 1)
-      return json({ error: 'reauth_required', message: 'WHOOP token expired and no refresh token — please reconnect WHOOP in the dashboard' }, 401)
+      return await finish(
+        { error: 'reauth_required', message: 'WHOOP token expired and no refresh token — please reconnect WHOOP in the dashboard' },
+        401,
+        'error',
+      )
     }
 
     // 3. Fetch recovery, sleep, cycle, and workouts
@@ -214,7 +260,11 @@ serve(async (req) => {
       recoveryData = await whoopCollectionGuarded(accessToken, '/recovery', days)
     } catch (e: unknown) {
       if ((e as { reauth?: boolean }).reauth) {
-        return json({ error: 'reauth_required', message: 'WHOOP returned 401 — please reconnect WHOOP in the dashboard' }, 401)
+        return await finish(
+          { error: 'reauth_required', message: 'WHOOP returned 401 — please reconnect WHOOP in the dashboard' },
+          401,
+          'error',
+        )
       }
       throw e
     }
@@ -226,17 +276,39 @@ serve(async (req) => {
     ])
 
     if (!sleepData) {
-      return json({ error: 'sleep_fetch_failed', message: 'WHOOP sleep fetch failed — retry later' }, 503)
+      return await finish(
+        { error: 'sleep_fetch_failed', message: 'WHOOP sleep fetch failed — retry later' },
+        503,
+        'error',
+        {
+          recovery_records_fetched: recoveryData?.records?.length ?? 0,
+          cycle_records_fetched: cycleData?.records?.length ?? 0,
+          workout_records_fetched: workoutData?.records?.length ?? 0,
+        },
+      )
     }
 
     const recoveries: Record<string, unknown>[] = recoveryData?.records ?? []
-    if (!recoveries.length) return json({ error: 'No recovery records returned' }, 500)
+    if (!recoveries.length) {
+      return await finish(
+        { error: 'no_recovery_records', message: 'No recovery records returned' },
+        500,
+        'error',
+        {
+          sleep_records_fetched: sleepData?.records?.length ?? 0,
+          cycle_records_fetched: cycleData?.records?.length ?? 0,
+          workout_records_fetched: workoutData?.records?.length ?? 0,
+        },
+      )
+    }
 
     const sleepRecords: Record<string, unknown>[] = sleepData?.records ?? []
     const cycleRecords: Record<string, unknown>[] = cycleData?.records ?? []
 
     // 4. Upsert one snapshot row per recovery record
     let snapshotsUpserted = 0
+    let snapshotUpsertFailures = 0
+    let firstSnapshotUpsertError: string | null = null
 
     for (const recovery of recoveries) {
       const cycleId = recovery.cycle_id as number
@@ -274,6 +346,9 @@ serve(async (req) => {
       const row = {
         cycle_id: cycleId,
         recorded_at: recovery.created_at,
+        cycle_start: cycle?.start ?? null,
+        cycle_end: cycle?.end ?? null,
+        cycle_timezone_offset: cycle?.timezone_offset ?? null,
         recovery_score: recoveryScore?.recovery_score ?? null,
         rhr: recoveryScore?.resting_heart_rate ?? null,
         hrv_rmssd: recoveryScore?.hrv_rmssd_milli ?? null,
@@ -294,8 +369,33 @@ serve(async (req) => {
         .from('whoop_snapshots')
         .upsert(row, { onConflict: 'cycle_id' })
 
-      if (upsertErr) console.warn(`snapshot upsert error (cycle ${cycleId}):`, upsertErr.message)
-      else snapshotsUpserted++
+      if (upsertErr) {
+        snapshotUpsertFailures++
+        firstSnapshotUpsertError ??= upsertErr.message
+        console.warn(`snapshot upsert error (cycle ${cycleId}):`, upsertErr.message)
+      } else snapshotsUpserted++
+    }
+
+    if (snapshotsUpserted === 0) {
+      return await finish(
+        {
+          error: 'snapshot_upsert_failed',
+          message: 'WHOOP recovery records were fetched, but no snapshots were written',
+          failures: snapshotUpsertFailures,
+          first_error: firstSnapshotUpsertError,
+        },
+        500,
+        'error',
+        {
+          recovery_records_fetched: recoveries.length,
+          sleep_records_fetched: sleepRecords.length,
+          cycle_records_fetched: cycleRecords.length,
+          workout_records_fetched: workoutData?.records?.length ?? 0,
+          snapshot_failures: snapshotUpsertFailures,
+          first_error: firstSnapshotUpsertError,
+          latest_recovery_at: recoveries[0]?.created_at ?? null,
+        },
+      )
     }
 
     // 5. Body measurement (weight) — the API returns only the current value,
@@ -350,7 +450,7 @@ serve(async (req) => {
     const latest = recoveries[0]
     const latestScore = (latest.score as Record<string, unknown> | null)
 
-    return json({
+    return await finish({
       ok: true,
       days_requested: days,
       snapshots_synced: snapshotsUpserted,
@@ -358,9 +458,27 @@ serve(async (req) => {
       body_measurement_synced: bodyMeasurementSynced,
       recovery_score: latestScore?.recovery_score,
       synced_at: new Date().toISOString(),
+    }, 200, 'success', {
+      recovery_records_fetched: recoveries.length,
+      sleep_records_fetched: sleepRecords.length,
+      cycle_records_fetched: cycleRecords.length,
+      workout_records_fetched: workoutData?.records?.length ?? 0,
+      snapshots_written: snapshotsUpserted,
+      snapshot_failures: snapshotUpsertFailures,
+      workouts_written: workoutCount,
+      body_measurement_synced: bodyMeasurementSynced,
+      latest_recovery_at: latest.created_at ?? null,
+      latest_snapshot_recorded_at: latest.created_at ?? null,
+      recovery_score: latestScore?.recovery_score ?? null,
     })
   } catch (err) {
     console.error('whoop-sync error:', err)
+    if (syncRunClient && syncRunId) {
+      await finishSyncRun(syncRunClient, syncRunId, syncRunStartedMs, 'error', {
+        error_code: 'unhandled_error',
+        error_message: String(err),
+      })
+    }
     return json({ error: String(err) }, 500)
   } finally {
     if (lockClient && lockToken) await releaseSyncLock(lockClient, lockToken)
@@ -378,7 +496,7 @@ async function whoopGet(token: string, path: string) {
   return res.json()
 }
 
-async function claimSyncLock(supabase: ReturnType<typeof createClient>) {
+async function claimSyncLock(supabase: SupabaseClient) {
   const token = crypto.randomUUID()
   const now = new Date().toISOString()
   const lockedUntil = new Date(Date.now() + LOCK_TTL_MS).toISOString()
@@ -395,7 +513,7 @@ async function claimSyncLock(supabase: ReturnType<typeof createClient>) {
   return data ? token : null
 }
 
-async function releaseSyncLock(supabase: ReturnType<typeof createClient>, token: string) {
+async function releaseSyncLock(supabase: SupabaseClient, token: string) {
   const now = new Date().toISOString()
   const { error } = await supabase
     .from('whoop_sync_locks')
@@ -404,6 +522,43 @@ async function releaseSyncLock(supabase: ReturnType<typeof createClient>, token:
     .eq('lock_token', token)
 
   if (error) console.warn('whoop-sync lock release failed:', error.message)
+}
+
+async function startSyncRun(supabase: SupabaseClient, row: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('whoop_sync_runs')
+    .insert({ source: 'whoop', status: 'running', ...row })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.warn('whoop-sync run insert failed:', error.message)
+    return null
+  }
+
+  return data?.id as string | null
+}
+
+async function finishSyncRun(
+  supabase: SupabaseClient,
+  id: string | null,
+  startedMs: number,
+  status: SyncRunStatus,
+  patch: Record<string, unknown>,
+) {
+  if (!id) return
+
+  const { error } = await supabase
+    .from('whoop_sync_runs')
+    .update({
+      ...patch,
+      status,
+      finished_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedMs,
+    })
+    .eq('id', id)
+
+  if (error) console.warn('whoop-sync run update failed:', error.message)
 }
 
 function json(data: unknown, status = 200) {

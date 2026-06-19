@@ -6,7 +6,7 @@ import {
   getZonedDayRange,
 } from '@/lib/goal-dates'
 import { calculateConsumed, type MacroTotals } from '@/lib/nutrition'
-import { DAY_META, DAY_ORDER, getPlanStatus } from '@/lib/workout'
+import { DAY_ORDER, getDayMeta, getPlanStatus } from '@/lib/workout'
 import {
   buildMonthSummary,
   scoreFuel,
@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
       const nutrition = nutritionByDate.get(date) ?? null
       const weekday = weekdayOf(date)
       const planStatus = getPlanStatus(new Date(`${date}T12:00:00`))
-      const expectedSession = planStatus.active && DAY_META[weekday]?.dbKey != null
+      const expectedSession = planStatus.active && getDayMeta(weekday, planStatus.blockSlug).dbKey != null
       const validRpes = rpes.filter(r => !Number.isNaN(r))
 
       return {

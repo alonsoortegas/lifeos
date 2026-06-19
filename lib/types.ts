@@ -2,6 +2,9 @@ export interface WhoopSnapshot {
   id: number
   cycle_id: number
   recorded_at: string
+  cycle_start?: string | null
+  cycle_end?: string | null
+  cycle_timezone_offset?: string | null
   recovery_score: number | null
   rhr: number | null
   hrv_rmssd: number | null
@@ -63,6 +66,7 @@ export interface WorkoutLog {
 
 export interface WorkoutSession {
   id: number
+  block_slug: string
   week_number: number
   day_of_week: string
   title: string
@@ -99,7 +103,7 @@ export interface NutritionLog {
 
 export type NutritionDayType = 'hard' | 'moderate' | 'rest'
 export type NormalizedNutritionDayType = 'hard_training' | 'moderate_training' | 'rest_easy'
-export type NutritionGoal = 'cut' | 'maintenance' | 'race_week'
+export type NutritionGoal = 'cut' | 'maintenance' | 'bulk' | 'race_week'
 export type MealTemplateName = 'breakfast' | 'midday' | 'pre_workout' | 'post_workout' | 'dinner' | 'snack'
 export type FoodCategory = 'protein' | 'carb' | 'fat' | 'mixed' | 'veg'
 export type FoodTrackingUnit = 'piece' | 'cup' | 'grams' | 'scoop' | 'slice'
@@ -113,6 +117,11 @@ export interface NutritionDay {
   protein_target: number
   carbs_target: number
   fat_target: number
+  base_calories_target?: number | null
+  whoop_calories_baseline?: number | null
+  whoop_calories_recent?: number | null
+  whoop_calorie_adjustment?: number
+  calorie_target_method?: 'static' | 'whoop_rolling_v1'
   created_at: string
   updated_at: string
 }

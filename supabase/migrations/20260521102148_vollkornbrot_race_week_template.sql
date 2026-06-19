@@ -17,4 +17,4 @@ from food_substitution_group g
 join food_item f on f.name = 'Vollkornbrot'
 where g.name = 'carb_45_50g'
 on conflict (substitution_group_id, food_item_id, label) do update set
-  quantity = excluded.quantity;
+  quantity = excluded.quantity;;

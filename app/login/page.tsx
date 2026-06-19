@@ -2,6 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Button from '@/components/ui/Button'
+import Card from '@/components/ui/Card'
+import { Field, Input } from '@/components/ui/Field'
 
 export default function LoginPage() {
   const [password, setPassword] = useState('')
@@ -46,31 +49,31 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <form onSubmit={submit} className="ticks glass-thick space-y-3 rounded-3xl border border-[var(--border)] p-5">
-          <input
-            id="lifeos-password"
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            placeholder="Password"
-            autoFocus
-            className="w-full rounded-xl border border-[var(--border-hi)] bg-[var(--bg)] px-4 py-3 text-sm text-[var(--text)] outline-none transition-all placeholder:text-[var(--text-faint)] focus:border-[#00d26a]"
-            onFocus={e => { e.currentTarget.style.boxShadow = '0 0 0 4px rgba(0,210,106,0.12), 0 0 20px rgba(0,210,106,0.1)' }}
-            onBlur={e => { e.currentTarget.style.boxShadow = 'none' }}
-          />
-          {error && (
-            <div className="text-center text-xs text-[#fb7185]">
-              That&apos;s not it — try again
-            </div>
-          )}
-          <button
-            type="submit"
-            disabled={loading || !password}
-            className="btn-accent display min-h-[46px] w-full rounded-xl py-3 text-[14px] font-bold"
-          >
-            {loading ? 'Unlocking…' : 'Unlock'}
-          </button>
-        </form>
+        <Card surface="glass-thick" radius="3xl" className="ticks p-5">
+          <form onSubmit={submit} className="space-y-3">
+            <Field error={error ? 'That’s not it - try again' : undefined}>
+              <Input
+                id="lifeos-password"
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Password"
+                autoFocus
+                aria-invalid={error}
+                className="h-12 border-[var(--border-hi)] bg-[var(--bg)] px-4"
+              />
+            </Field>
+            <Button
+              type="submit"
+              size="lg"
+              block
+              loading={loading}
+              disabled={!password}
+            >
+              {loading ? 'Unlocking…' : 'Unlock'}
+            </Button>
+          </form>
+        </Card>
       </div>
     </div>
   )

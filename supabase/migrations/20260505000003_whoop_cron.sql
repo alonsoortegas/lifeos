@@ -1,7 +1,6 @@
 -- Enable required extensions
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
-
 -- Schedule whoop-sync every 30 minutes
 select cron.schedule(
   'whoop-sync-every-30min',

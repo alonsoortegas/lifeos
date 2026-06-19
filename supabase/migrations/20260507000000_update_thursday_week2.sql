@@ -4,12 +4,10 @@ update workout_sessions
 set title = 'Activation + Pyramid Intervals',
     notes = 'Block 1: ~25 min activation at 50–60% load — priming, not training. Block 2: hydrate + HR recovery. Block 3: ~25 min treadmill pyramid intervals, RPE 7–8 on fast efforts.'
 where week_number = 2 and day_of_week = 'thursday_am';
-
 delete from workout_exercises
 where session_id = (
   select id from workout_sessions where week_number = 2 and day_of_week = 'thursday_am'
 );
-
 insert into workout_exercises (session_id, order_index, exercise_name, prescribed_sets, prescribed_reps, prescribed_weight, weight_unit, target_rpe, notes)
 -- Block 1: Activation
 select s.id, 0, 'SkiErg Technique', 5, '10–15 strokes', null::numeric, 'kg', null,

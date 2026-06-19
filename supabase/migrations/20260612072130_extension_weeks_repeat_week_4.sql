@@ -30,4 +30,4 @@ begin
    and target.day_of_week = source.day_of_week
   where source.week_number = 4;
 end
-$$;
+$$;;

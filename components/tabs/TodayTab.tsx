@@ -7,7 +7,7 @@ import Ring from '@/components/ui/Ring'
 import StatCard from '@/components/ui/StatCard'
 import type { WhoopSnapshot, Todo } from '@/lib/types'
 import { getCurrentGoalDate, getMillisecondsUntilNextGoalReset } from '@/lib/goal-dates'
-import { getCurrentWeek, getTodayKey, DAY_META } from '@/lib/workout'
+import { getDayMeta, getPlanStatus, getTodayKey, type DayMeta } from '@/lib/workout'
 import { sleepHM } from '@/lib/whoop-utils'
 import { computeReadiness, stateColor, stateLabel, stateTone, type Readiness } from '@/lib/readiness'
 import { formatDayText, shareText } from '@/lib/share'
@@ -295,7 +295,7 @@ function DayRing() {
 
 interface NutritionRemaining { calories: number; protein_g: number }
 
-function getTrainingAdvice(readiness: Readiness, todayMeta: (typeof DAY_META)[string]): string {
+function getTrainingAdvice(readiness: Readiness, todayMeta: DayMeta): string {
   if (!todayMeta.dbKey) {
     if (readiness.state === 'hardNo') return 'Keep it restorative. Skip intensity.'
     if (readiness.state === 'recover') return 'Easy movement only. Treat this as recovery.'
@@ -337,7 +337,7 @@ function DayModeCard({
   nutritionRemaining,
 }: {
   readiness: Readiness
-  todayMeta: (typeof DAY_META)[string]
+  todayMeta: DayMeta
   topTodo: string | null
   nutritionRemaining: NutritionRemaining | null
 }) {
@@ -525,8 +525,9 @@ export default function TodayTab() {
 
   const dayName = now ? now.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() : 'TODAY'
   const dateStr = now ? now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase() : '—'
-  const trainingWeek = getCurrentWeek()
-  const todayMeta = DAY_META[getTodayKey()]
+  const currentPlan = getPlanStatus()
+  const trainingWeek = currentPlan.week
+  const todayMeta = getDayMeta(getTodayKey(), currentPlan.blockSlug)
   const blockLabel = todayMeta.dbKey ? 'WEIGHTS' : todayMeta.restLabel
   const greeting = now ? getGreeting() : 'Welcome back'
 

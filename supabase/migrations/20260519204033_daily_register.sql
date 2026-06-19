@@ -14,14 +14,10 @@ create table public.daily_register (
   constraint daily_register_previous_day_calories_nonnegative
     check (previous_day_calories >= 0)
 );
-
 create index daily_register_log_date_idx on public.daily_register (log_date desc);
-
 alter table public.daily_register enable row level security;
-
 grant select, insert, update on public.daily_register to authenticated;
 grant usage, select on sequence public.daily_register_id_seq to authenticated;
-
 create policy "owner_select_daily_register" on public.daily_register
   for select to authenticated using (is_owner());
 create policy "owner_insert_daily_register" on public.daily_register

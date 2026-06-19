@@ -14,4 +14,4 @@ from (values
 join food_substitution_group g on g.name = 'carb_70g_starchy'
 join food_item f on f.name = v.food_name
 on conflict (substitution_group_id, food_item_id, label) do update set
-  quantity = excluded.quantity;
+  quantity = excluded.quantity;;

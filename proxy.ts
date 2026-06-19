@@ -5,7 +5,7 @@ import { verifySessionToken } from './lib/session'
 const COOKIE = 'lifeos_auth'
 const LOGIN = '/login'
 
-const PUBLIC_PREFIXES = [LOGIN, '/api/auth', '/api/whoop-auth', '/api/whoop-callback', '/callback']
+const PUBLIC_PREFIXES = [LOGIN, '/api/auth', '/api/whoop-auth', '/api/whoop-callback', '/callback', '/api/mcp']
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl

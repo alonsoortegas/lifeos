@@ -5,13 +5,11 @@ update workout_sessions
 set title = 'Upper Body + Zone 2',
     notes = '35 min Zone 2 run first. Pull + push block. Sauna after — 2-3 rounds of 10-12 min. Nothing here should leave you sore by Saturday simulation.'
 where week_number = 2 and day_of_week = 'wednesday';
-
 -- Remove old exercises for week 2 wednesday
 delete from workout_exercises
 where session_id = (
   select id from workout_sessions where week_number = 2 and day_of_week = 'wednesday'
 );
-
 -- Insert new exercises
 insert into workout_exercises (session_id, order_index, exercise_name, prescribed_sets, prescribed_reps, prescribed_weight, weight_unit, target_rpe, notes)
 select s.id, 0, 'Zone 2 Run', 1, '35 min', null::numeric, 'kg', null, 'Treadmill, conversational pace, HR under ~145 bpm. Add ~100m extra at the end.'

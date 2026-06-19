@@ -1,6 +1,5 @@
 -- Switch whoop-sync from every 30 minutes to every hour
 select cron.unschedule('whoop-sync-every-30min');
-
 select cron.schedule(
   'whoop-sync-every-hour',
   '0 * * * *',

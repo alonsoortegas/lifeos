@@ -16,7 +16,6 @@ create table whoop_snapshots (
   raw_json          jsonb,
   created_at        timestamptz default now()
 );
-
 -- workout_logs: individual set logs
 create table workout_logs (
   id            bigint primary key generated always as identity,
@@ -28,7 +27,6 @@ create table workout_logs (
   rpe           numeric(3,1),
   notes         text
 );
-
 -- nutrition_logs: quick-log food entries
 create table nutrition_logs (
   id            bigint primary key generated always as identity,
@@ -40,7 +38,6 @@ create table nutrition_logs (
   calories      int,
   day_type      text check (day_type in ('Hard', 'Moderate', 'Rest'))
 );
-
 -- todos: daily goals, reset at 6 AM
 create table todos (
   id            bigint primary key generated always as identity,
@@ -49,19 +46,15 @@ create table todos (
   created_at    timestamptz default now(),
   day_date      date not null default current_date
 );
-
 -- Index for fetching today's todos efficiently
 create index todos_day_date_idx on todos (day_date);
-
 -- Index for whoop lookups by date
 create index whoop_snapshots_recorded_at_idx on whoop_snapshots (recorded_at desc);
-
 -- Enable Row Level Security (open for now — lock down with auth later)
 alter table whoop_snapshots enable row level security;
 alter table workout_logs enable row level security;
 alter table nutrition_logs enable row level security;
 alter table todos enable row level security;
-
 -- Permissive policies for anon key during development
 create policy "anon_all_whoop" on whoop_snapshots for all using (true) with check (true);
 create policy "anon_all_workout" on workout_logs for all using (true) with check (true);

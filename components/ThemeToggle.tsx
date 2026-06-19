@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import IconButton from '@/components/ui/IconButton'
 
 /** Reads the effective theme straight off the html element — single source
  *  of truth, set by the pre-paint script in layout.tsx before hydration. */
@@ -46,12 +47,9 @@ export default function ThemeToggle() {
   }
 
   return (
-    <button
-      type="button"
+    <IconButton
       onClick={toggle}
-      aria-label={light ? 'Switch to dark mode' : 'Switch to light mode'}
-      title={light ? 'Switch to dark mode' : 'Switch to light mode'}
-      className="glass flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-dim)] transition-all duration-150 hover:text-[var(--text)] active:scale-[0.92]"
+      label={light ? 'Switch to dark mode' : 'Switch to light mode'}
     >
       <span
         key={light ? 'sun' : 'moon'}
@@ -59,6 +57,6 @@ export default function ThemeToggle() {
       >
         {light ? <SunIcon /> : <MoonIcon />}
       </span>
-    </button>
+    </IconButton>
   )
 }

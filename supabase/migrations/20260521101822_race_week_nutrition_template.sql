@@ -10,4 +10,4 @@ on conflict (name) do update set
   carbs_g = excluded.carbs_g,
   fat_g = excluded.fat_g,
   tracking_unit = excluded.tracking_unit,
-  notes = excluded.notes;
+  notes = excluded.notes;;

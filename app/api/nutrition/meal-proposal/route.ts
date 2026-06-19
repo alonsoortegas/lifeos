@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentGoalDateInTimeZone } from '@/lib/goal-dates'
 import { extractMeal, ExtractedMealSchema } from '@/lib/meal-extraction'
 import { createBriefServerClient } from '@/lib/supabase-server'
+import {
+  getDefaultNutritionDayType,
+  loadNutritionTargetPlan,
+  nutritionDayPayload,
+} from '@/lib/nutrition'
 
 const LIFEOS_TIME_ZONE = process.env.LIFEOS_TIME_ZONE ?? 'Europe/Berlin'
 const currentDate = () => getCurrentGoalDateInTimeZone(new Date(), LIFEOS_TIME_ZONE)
@@ -57,22 +62,15 @@ export async function PUT(request: NextRequest) {
     .maybeSingle()
 
   if (!day) {
-    const { data: targets, error: targetsError } = await supabase
-      .from('nutrition_day_types')
-      .select('kcal_target, protein_g, carbs_g, fat_g')
-      .eq('key', 'moderate_training')
-      .single()
-    if (targetsError || !targets) {
+    const defaultDayType = getDefaultNutritionDayType(new Date(`${currentDate()}T12:00:00`))
+    const targetPlan = await loadNutritionTargetPlan(supabase)
+    const targets = targetPlan.targets[defaultDayType]
+    if (!targets) {
       return NextResponse.json({ error: 'Nutrition targets are unavailable' }, { status: 500 })
     }
     const created = await supabase.from('nutrition_day').insert({
       date: currentDate(),
-      day_type: 'moderate',
-      goal: 'cut',
-      calories_target: targets.kcal_target,
-      protein_target: targets.protein_g,
-      carbs_target: targets.carbs_g,
-      fat_target: targets.fat_g,
+      ...nutritionDayPayload(defaultDayType, targets, targetPlan.calibration),
     }).select('*').single()
     if (created.error || !created.data) {
       return NextResponse.json({ error: created.error?.message ?? 'Could not create nutrition day' }, { status: 500 })

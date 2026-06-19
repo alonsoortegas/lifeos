@@ -10,7 +10,6 @@ create table if not exists nutrition_day_types (
   examples      text[] not null default '{}',
   notes         text[] not null default '{}'
 );
-
 create table if not exists nutrition_food_portions (
   id                  bigint primary key generated always as identity,
   food_key            text not null unique,
@@ -24,7 +23,6 @@ create table if not exists nutrition_food_portions (
   notes               text,
   equivalence_group   text not null
 );
-
 create table if not exists nutrition_meal_templates (
   id             bigint primary key generated always as identity,
   day_type_key   text not null references nutrition_day_types(key) on delete cascade,
@@ -35,13 +33,11 @@ create table if not exists nutrition_meal_templates (
   notes          text[] not null default '{}',
   unique (day_type_key, meal_key)
 );
-
 create table if not exists nutrition_rules (
   id          bigint primary key generated always as identity,
   sort_order  int not null unique,
   rule_text   text not null
 );
-
 create table if not exists nutrition_equivalence_groups (
   id             bigint primary key generated always as identity,
   key            text not null unique,
@@ -50,25 +46,21 @@ create table if not exists nutrition_equivalence_groups (
   examples       text[] not null default '{}',
   notes          text[] not null default '{}'
 );
-
 alter table nutrition_day_types enable row level security;
 alter table nutrition_food_portions enable row level security;
 alter table nutrition_meal_templates enable row level security;
 alter table nutrition_rules enable row level security;
 alter table nutrition_equivalence_groups enable row level security;
-
 drop policy if exists "anon_all_nutrition_day_types" on nutrition_day_types;
 drop policy if exists "anon_all_nutrition_food_portions" on nutrition_food_portions;
 drop policy if exists "anon_all_nutrition_meal_templates" on nutrition_meal_templates;
 drop policy if exists "anon_all_nutrition_rules" on nutrition_rules;
 drop policy if exists "anon_all_nutrition_equivalence_groups" on nutrition_equivalence_groups;
-
 create policy "anon_all_nutrition_day_types" on nutrition_day_types for all using (true) with check (true);
 create policy "anon_all_nutrition_food_portions" on nutrition_food_portions for all using (true) with check (true);
 create policy "anon_all_nutrition_meal_templates" on nutrition_meal_templates for all using (true) with check (true);
 create policy "anon_all_nutrition_rules" on nutrition_rules for all using (true) with check (true);
 create policy "anon_all_nutrition_equivalence_groups" on nutrition_equivalence_groups for all using (true) with check (true);
-
 insert into nutrition_day_types (key, label, description, kcal_target, protein_g, carbs_g, fat_g, examples, notes) values
   (
     'hard_training',
@@ -125,7 +117,6 @@ on conflict (key) do update set
   fat_g = excluded.fat_g,
   examples = excluded.examples,
   notes = excluded.notes;
-
 insert into nutrition_food_portions (
   food_key, label, portion_label, raw_weight_g, cooked_weight_g, protein_g, carbs_g, fat_g, notes, equivalence_group
 ) values
@@ -154,7 +145,6 @@ on conflict (food_key) do update set
   fat_g = excluded.fat_g,
   notes = excluded.notes,
   equivalence_group = excluded.equivalence_group;
-
 insert into nutrition_equivalence_groups (key, label, compare_macro, examples, notes) values
   ('carbs_fast', 'Fast carbs', 'carbs', array['banana', 'rice cakes'], array['Compare mainly by carbs.']),
   ('carbs_starchy', 'Starchy carbs', 'carbs', array['rice', 'oats', 'bread', 'tortilla', 'potatoes'], array['If replacing rice with tortilla or bread, match mainly by carbs.']),
@@ -168,7 +158,6 @@ on conflict (key) do update set
   compare_macro = excluded.compare_macro,
   examples = excluded.examples,
   notes = excluded.notes;
-
 insert into nutrition_meal_templates (day_type_key, meal_key, meal_label, sort_order, default_items, notes) values
   (
     'hard_training',
@@ -335,7 +324,6 @@ on conflict (day_type_key, meal_key) do update set
   sort_order = excluded.sort_order,
   default_items = excluded.default_items,
   notes = excluded.notes;
-
 insert into nutrition_rules (sort_order, rule_text) values
   (1, 'Protein target is fixed every day: 160-170g minimum.'),
   (2, 'Carbs scale with training load.'),

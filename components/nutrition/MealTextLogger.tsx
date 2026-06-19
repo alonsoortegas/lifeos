@@ -2,6 +2,11 @@
 
 import { useState } from 'react'
 import type { ExtractedMeal } from '@/lib/meal-extraction'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import Card from '@/components/ui/Card'
+import { Input } from '@/components/ui/Field'
+import SectionLabel from '@/components/ui/SectionLabel'
 
 export default function MealTextLogger({ onApplied }: { onApplied: () => void | Promise<void> }) {
   const [text, setText] = useState('')
@@ -53,56 +58,59 @@ export default function MealTextLogger({ onApplied }: { onApplied: () => void | 
   }
 
   return (
-    <div className="panel rounded-2xl p-3">
-      <div className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-[var(--text-faint)]">
-        Quick meal text
-      </div>
+    <Card className="p-3">
+      <SectionLabel>Quick meal text</SectionLabel>
       <div className="mt-2 flex gap-2">
-        <input
+        <Input
           value={text}
           onChange={(event) => {
             setText(event.target.value)
             setProposal(null)
           }}
           placeholder="e.g. dinner: 2 eggs, banana, protein powder"
-          className="h-10 min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-faint)] focus:border-[#00d26a]"
+          aria-label="Meal description"
+          className="min-w-0 flex-1 text-xs"
         />
-        <button
-          type="button"
+        <Button
           onClick={() => void parseMeal()}
           disabled={!text.trim() || busy}
-          className="btn-accent rounded-xl px-3 text-[11px] font-bold"
+          loading={busy && !proposal}
+          size="sm"
         >
           Review
-        </button>
+        </Button>
       </div>
 
       {proposal && (
         <div className="mt-3 space-y-2 border-t border-[var(--ink-06)] pt-3">
           <div className="flex items-center justify-between">
-            <span className="font-mono text-[9px] uppercase text-[var(--text-dim)]">{proposal.meal_name.replace('_', ' ')}</span>
+            <Badge>{proposal.meal_name.replace('_', ' ')}</Badge>
             <span className="font-mono text-[8px] text-[var(--text-faint)]">{model}</span>
           </div>
           {proposal.items.map((item) => (
             <div key={`${item.food_item_id}-${item.label}`} className="flex items-center justify-between text-[11px]">
               <span className="text-[var(--text)]">{item.label}</span>
-              <span className="font-mono text-[9px] text-[var(--text-faint)]">{item.confidence}</span>
+              <Badge tone={item.confidence === 'high' ? 'success' : item.confidence === 'medium' ? 'warning' : 'neutral'}>
+                {item.confidence}
+              </Badge>
             </div>
           ))}
           {proposal.unmatched.map((item) => (
             <div key={item} className="text-[10px] text-[#f59e0b]">Unmatched: {item}</div>
           ))}
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
+            block
             onClick={() => void applyMeal()}
             disabled={proposal.items.length === 0 || busy}
-            className="glass h-9 w-full rounded-xl border border-[#00d26a] text-[11px] font-bold text-[#00d26a] transition-transform active:scale-[0.97] disabled:opacity-40"
+            loading={busy}
           >
             Confirm and log
-          </button>
+          </Button>
         </div>
       )}
       {error && <div className="mt-2 text-[10px] text-[#ef4444]">{error}</div>}
-    </div>
+    </Card>
   )
 }

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import Card from '@/components/ui/Card'
 import type { WorkoutSession, WorkoutExercise, WorkoutLog } from '@/lib/types'
-import { getCurrentWeek, getTodayKey, DAY_ORDER, DAY_META } from '@/lib/workout'
+import { getDayMeta, getPlanStatus, getTodayKey, DAY_ORDER } from '@/lib/workout'
 import { formatWorkoutText, shareText, type ShareExercise } from '@/lib/share'
 
 const supabase = createBrowserClient(
@@ -83,7 +83,8 @@ function todayRange() {
 
 export default function WorkoutTab({ canAddExercises = false }: { canAddExercises?: boolean }) {
   const today = getTodayKey()
-  const currentWeek = getCurrentWeek()
+  const currentPlan = getPlanStatus()
+  const currentWeek = currentPlan.week
 
   const [selectedDay, setSelectedDay] = useState(today)
   const [session, setSession] = useState<WorkoutSession | null>(null)
@@ -139,11 +140,12 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
       return
     }
 
-    const dbKey = DAY_META[day]?.dbKey ?? day
+    const dbKey = getDayMeta(day, currentPlan.blockSlug).dbKey ?? day
 
     const { data: sessionData } = await supabase
       .from('workout_sessions')
       .select('*')
+      .eq('block_slug', currentPlan.blockSlug)
       .eq('week_number', currentWeek)
       .eq('day_of_week', dbKey)
       .single()
@@ -220,7 +222,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
     }
 
     setLoading(false)
-  }, [currentWeek])
+  }, [currentPlan.blockSlug, currentWeek])
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -260,13 +262,15 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
     let currentSession = session
     if (!currentSession) {
-      const dayKey = DAY_META[selectedDay]?.dbKey ?? selectedDay
+      const selectedMeta = getDayMeta(selectedDay, currentPlan.blockSlug)
+      const dayKey = selectedMeta.dbKey ?? selectedDay
       const { data: newSession, error: sessionError } = await supabase
         .from('workout_sessions')
         .insert({
           week_number: currentWeek,
           day_of_week: dayKey,
-          title: DAY_META[selectedDay]?.restLabel ?? 'Extra Work',
+          block_slug: currentPlan.blockSlug,
+          title: selectedMeta.restLabel ?? 'Extra Work',
           session_type: 'extra',
           notes: null,
         })
@@ -381,7 +385,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
   }
 
   const totalSets = exerciseStates.reduce((acc, s) => acc + s.loggedSets.length, 0)
-  const meta = DAY_META[selectedDay]
+  const meta = getDayMeta(selectedDay, currentPlan.blockSlug)
   const isGymDay = !!meta?.dbKey
 
   return (
@@ -392,7 +396,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
           {DAY_ORDER.map(day => {
             const isToday = day === today
             const isSelected = day === selectedDay
-            const isGym = !!DAY_META[day]?.dbKey
+            const isGym = !!getDayMeta(day, currentPlan.blockSlug).dbKey
             return (
               <button
                 key={day}
@@ -415,7 +419,7 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                   } : {}),
                 }}
               >
-                {DAY_META[day]?.label}
+                {getDayMeta(day, currentPlan.blockSlug).label}
               </button>
             )
           })}

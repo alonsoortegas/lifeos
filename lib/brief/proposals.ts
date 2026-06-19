@@ -3,6 +3,10 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getCurrentGoalDateInTimeZone } from '@/lib/goal-dates'
 import type { ProposalKind } from '@/lib/brief/schema'
+import {
+  loadNutritionTargetPlan,
+  nutritionDayPayload,
+} from '@/lib/nutrition'
 
 type DbClient = SupabaseClient
 const LIFEOS_TIME_ZONE = process.env.LIFEOS_TIME_ZONE ?? 'Europe/Berlin'
@@ -64,21 +68,13 @@ async function applyProposal(
     const dayType = DAY_TYPE_MAP[normalized]
     if (!dayType) throw new Error('Invalid nutrition day type')
 
-    const { data: targets, error: targetError } = await supabase
-      .from('nutrition_day_types')
-      .select('kcal_target, protein_g, carbs_g, fat_g')
-      .eq('key', normalized)
-      .single()
-    if (targetError || !targets) throw new Error('Nutrition targets are unavailable')
+    const targetPlan = await loadNutritionTargetPlan(supabase)
+    const targets = targetPlan.targets[dayType]
+    if (!targets) throw new Error('Nutrition targets are unavailable')
 
     const { error } = await supabase.from('nutrition_day').upsert({
       date: briefDate,
-      day_type: dayType,
-      goal: 'cut',
-      calories_target: targets.kcal_target,
-      protein_target: targets.protein_g,
-      carbs_target: targets.carbs_g,
-      fat_target: targets.fat_g,
+      ...nutritionDayPayload(dayType, targets, targetPlan.calibration),
     }, { onConflict: 'date' })
     if (error) throw new Error(error.message)
     return

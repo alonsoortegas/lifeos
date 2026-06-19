@@ -10,7 +10,6 @@ create table nutrition_day (
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
-
 create table meal_template (
   id            bigint primary key generated always as identity,
   name          text not null check (name in ('breakfast', 'midday', 'pre_workout', 'post_workout', 'dinner', 'snack')),
@@ -18,7 +17,6 @@ create table meal_template (
   default_time  time,
   notes         text
 );
-
 create table food_item (
   id              bigint primary key generated always as identity,
   name            text not null unique,
@@ -32,7 +30,6 @@ create table food_item (
   tracking_unit   text not null check (tracking_unit in ('piece', 'cup', 'grams', 'scoop', 'slice')),
   notes           text
 );
-
 create table food_substitution_group (
   id                 bigint primary key generated always as identity,
   name               text not null unique,
@@ -40,7 +37,6 @@ create table food_substitution_group (
   target_macro_g     numeric(6,1) not null,
   notes              text
 );
-
 create table food_substitution_group_item (
   id                    bigint primary key generated always as identity,
   substitution_group_id bigint not null references food_substitution_group(id) on delete cascade,
@@ -49,7 +45,6 @@ create table food_substitution_group_item (
   label                 text not null,
   unique (substitution_group_id, food_item_id, label)
 );
-
 create table meal_log (
   id                bigint primary key generated always as identity,
   nutrition_day_id  bigint not null references nutrition_day(id) on delete cascade,
@@ -57,7 +52,6 @@ create table meal_log (
   logged_at         timestamptz not null default now(),
   notes             text
 );
-
 create table meal_log_item (
   id                  bigint primary key generated always as identity,
   meal_log_id          bigint not null references meal_log(id) on delete cascade,
@@ -69,12 +63,10 @@ create table meal_log_item (
   fat_g                numeric(6,1) not null default 0,
   substitution_group   text
 );
-
 create index nutrition_day_date_idx on nutrition_day (date desc);
 create index meal_log_day_idx on meal_log (nutrition_day_id, meal_name);
 create index meal_log_item_log_idx on meal_log_item (meal_log_id);
 create index food_substitution_group_item_food_idx on food_substitution_group_item (food_item_id);
-
 create or replace function set_updated_at()
 returns trigger as $$
 begin
@@ -82,11 +74,9 @@ begin
   return new;
 end;
 $$ language plpgsql;
-
 create trigger nutrition_day_updated_at
 before update on nutrition_day
 for each row execute function set_updated_at();
-
 alter table nutrition_day enable row level security;
 alter table meal_template enable row level security;
 alter table food_item enable row level security;
@@ -94,7 +84,6 @@ alter table food_substitution_group enable row level security;
 alter table food_substitution_group_item enable row level security;
 alter table meal_log enable row level security;
 alter table meal_log_item enable row level security;
-
 create policy "anon_all_nutrition_day" on nutrition_day for all using (true) with check (true);
 create policy "anon_all_meal_template" on meal_template for all using (true) with check (true);
 create policy "anon_all_food_item" on food_item for all using (true) with check (true);
@@ -102,7 +91,6 @@ create policy "anon_all_food_substitution_group" on food_substitution_group for 
 create policy "anon_all_food_substitution_group_item" on food_substitution_group_item for all using (true) with check (true);
 create policy "anon_all_meal_log" on meal_log for all using (true) with check (true);
 create policy "anon_all_meal_log_item" on meal_log_item for all using (true) with check (true);
-
 insert into food_item (name, category, portion_label, grams, calories, protein_g, carbs_g, fat_g, tracking_unit, notes) values
   ('Egg', 'protein', '1 egg', 50, 72, 6, 0.4, 5, 'piece', 'Whole egg'),
   ('Protein powder', 'protein', '1 scoop', 32, 120, 25, 2, 1.5, 'scoop', 'Whey or similar'),
@@ -122,7 +110,6 @@ insert into food_item (name, category, portion_label, grams, calories, protein_g
   ('Berries', 'carb', '1 cup', 140, 70, 1, 17, 0.5, 'cup', 'Low-friction fruit'),
   ('Salad / raw veggies', 'veg', '1 serving', 150, 35, 2, 7, 0, 'cup', 'Loose tracking only'),
   ('Vegetables', 'veg', '1 serving', 180, 60, 3, 12, 0.5, 'cup', 'Loose tracking only');
-
 insert into food_substitution_group (name, macro_type, target_macro_g, notes) values
   ('carb_15g', 'carb', 15, 'Small carb block for bread, tortilla, oats, rice cakes'),
   ('carb_27g', 'carb', 27, 'Medium banana-sized carb block'),
@@ -130,7 +117,6 @@ insert into food_substitution_group (name, macro_type, target_macro_g, notes) va
   ('carb_70g', 'carb', 72, 'Large rice block'),
   ('protein_25g', 'protein', 25, 'Protein shake or dairy block'),
   ('protein_45_50g', 'protein', 50, 'Dinner protein block');
-
 insert into food_substitution_group_item (substitution_group_id, food_item_id, quantity, label)
 select g.id, f.id, v.quantity, v.label
 from (values
@@ -153,7 +139,6 @@ from (values
 ) as v(group_name, food_name, quantity, label)
 join food_substitution_group g on g.name = v.group_name
 join food_item f on f.name = v.food_name;
-
 insert into meal_template (name, day_type, default_time, notes) values
   ('breakfast', 'hard', '07:30', '5 eggs, 1 scoop protein, 3/4 cup oats, berries'),
   ('midday', 'hard', '12:30', 'Skyr/magerquark, 1/2 cup dry rice or banana plus granola, salad/raw veggies'),

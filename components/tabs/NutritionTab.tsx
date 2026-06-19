@@ -10,13 +10,18 @@ import {
   calculateRemaining,
   EMPTY_MACRO_TOTALS,
   generateDefaultMeals,
+  getDefaultNutritionDayType,
   getSubstitutions,
+  loadNutritionTargetPlan,
   MEAL_LABELS,
   normalizedNutritionKey,
+  nutritionDayPayload,
   scaleFood,
+  STATIC_WHOOP_ENERGY_CALIBRATION,
   targetMapFromRows,
   type DefaultMealItem,
   type MacroTotals,
+  type WhoopEnergyCalibration,
 } from '@/lib/nutrition'
 import type {
   FoodItem,
@@ -32,8 +37,8 @@ import type {
 const supabase = createClient()
 
 const DAY_TYPES: { value: NutritionDayType; label: string }[] = [
-  { value: 'hard', label: 'Hard' },
-  { value: 'moderate', label: 'Moderate' },
+  { value: 'hard', label: 'Lift' },
+  { value: 'moderate', label: 'Cardio' },
   { value: 'rest', label: 'Rest' },
 ]
 
@@ -80,7 +85,7 @@ function findLoggedItem(logs: MealLog[], mealName: MealTemplateName, foodItemId:
 }
 
 export default function NutritionTab() {
-  const [dayType, setDayType] = useState<NutritionDayType>('moderate')
+  const [dayType, setDayType] = useState<NutritionDayType>(() => getDefaultNutritionDayType())
   const [nutritionDay, setNutritionDay] = useState<NutritionDay | null>(null)
   const [foods, setFoods] = useState<FoodItem[]>([])
   const [substitutionRows, setSubstitutionRows] = useState<SubstitutionRow[]>([])
@@ -91,6 +96,9 @@ export default function NutritionTab() {
   const [loading, setLoading] = useState(true)
   const [mutError, setMutError] = useState<string | null>(null)
   const [targetMap, setTargetMap] = useState<Partial<Record<NutritionDayType, MacroTotals>>>({})
+  const [whoopCalibration, setWhoopCalibration] = useState<WhoopEnergyCalibration>(
+    STATIC_WHOOP_ENERGY_CALIBRATION,
+  )
 
   const showMutError = (msg: string) => {
     setMutError(msg)
@@ -147,6 +155,7 @@ export default function NutritionTab() {
   const ensureDay = useCallback(async (
     nextDayType: NutritionDayType,
     targetsOverride?: Partial<Record<NutritionDayType, MacroTotals>>,
+    calibrationOverride?: WhoopEnergyCalibration,
   ) => {
     let nextTargets = targetsOverride?.[nextDayType]
     if (!nextTargets) {
@@ -163,12 +172,11 @@ export default function NutritionTab() {
     }
     const payload = {
       date: todayISO(),
-      day_type: nextDayType,
-      goal: 'cut',
-      calories_target: nextTargets.calories,
-      protein_target: nextTargets.protein_g,
-      carbs_target: nextTargets.carbs_g,
-      fat_target: nextTargets.fat_g,
+      ...nutritionDayPayload(
+        nextDayType,
+        nextTargets,
+        calibrationOverride ?? STATIC_WHOOP_ENERGY_CALIBRATION,
+      ),
     }
 
     const { data, error } = await supabase
@@ -196,11 +204,11 @@ export default function NutritionTab() {
     async function init() {
       setLoading(true)
 
-      const [foodResult, substitutionResult, existingDayResult, targetResult] = await Promise.all([
+      const [foodResult, substitutionResult, existingDayResult, targetPlan] = await Promise.all([
         supabase.from('food_item').select('*').order('category').order('name'),
         supabase.from('food_substitution_group_item').select('*, food_substitution_group(*)').order('label'),
         supabase.from('nutrition_day').select('*').eq('date', todayISO()).maybeSingle(),
-        supabase.from('nutrition_day_types').select('key, kcal_target, protein_g, carbs_g, fat_g'),
+        loadNutritionTargetPlan(supabase),
       ])
 
       if (cancelled) return
@@ -210,8 +218,9 @@ export default function NutritionTab() {
 
       setFoods((foodResult.data ?? []) as FoodItem[])
       setSubstitutionRows((substitutionResult.data ?? []) as SubstitutionRow[])
-      const loadedTargets = targetMapFromRows(targetResult.data ?? [])
+      const loadedTargets = targetPlan.targets
       setTargetMap(loadedTargets)
+      setWhoopCalibration(targetPlan.calibration)
 
       let day: NutritionDay | null = (existingDayResult.data as NutritionDay) ?? null
 
@@ -230,7 +239,11 @@ export default function NutritionTab() {
         setNutritionDay(day)
       } else {
         // First open of the day — create the row with the current default.
-        day = await ensureDay('moderate', loadedTargets)
+        day = await ensureDay(
+          getDefaultNutritionDayType(),
+          loadedTargets,
+          targetPlan.calibration,
+        )
       }
 
       if (day && !cancelled) await loadMealLogs(day.id)
@@ -244,7 +257,7 @@ export default function NutritionTab() {
   const changeDayType = async (nextDayType: NutritionDayType) => {
     setDayType(nextDayType)
     setExpandedMeal(generateDefaultMeals(nextDayType)[0]?.name ?? 'breakfast')
-    const day = await ensureDay(nextDayType)
+    const day = await ensureDay(nextDayType, targetMap, whoopCalibration)
     if (day) await loadMealLogs(day.id)
   }
 
@@ -265,7 +278,7 @@ export default function NutritionTab() {
   })
 
   const logFoodPortion = async (mealName: MealTemplateName) => {
-    const day = nutritionDay ?? (await ensureDay(dayType))
+    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, whoopCalibration))
     if (!day) return
 
     const draft = getPortionDraft(mealName)
@@ -329,7 +342,7 @@ export default function NutritionTab() {
       groupName?: string
     }
   ) => {
-    const day = nutritionDay ?? (await ensureDay(dayType))
+    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, whoopCalibration))
     if (!day) return
 
     const food = override?.food ?? foodsByName.get(item.foodName)
@@ -424,6 +437,13 @@ export default function NutritionTab() {
           </button>
         ))}
       </div>
+
+      {whoopCalibration.method === 'whoop_rolling_v1' && (
+        <div className="text-[11px] text-[var(--text-faint)]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+          WHOOP rolling adjustment {whoopCalibration.adjustment >= 0 ? '+' : ''}{whoopCalibration.adjustment} kcal
+          {' · '}recent {whoopCalibration.recentCalories} vs baseline {whoopCalibration.baselineCalories}
+        </div>
+      )}
 
       <MealTextLogger onApplied={async () => {
         if (nutritionDay) await loadMealLogs(nutritionDay.id)

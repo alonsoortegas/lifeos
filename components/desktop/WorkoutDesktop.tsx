@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import type { WorkoutSession, WorkoutExercise, WorkoutLog, WhoopSnapshot } from '@/lib/types'
-import { getCurrentWeek, getTodayKey, DAY_ORDER, DAY_META } from '@/lib/workout'
+import { getDayMeta, getPlanStatus, getTodayKey, DAY_ORDER } from '@/lib/workout'
 import { computeReadiness, stateColor, stateLabel } from '@/lib/readiness'
 import { formatWorkoutText, shareText, type ShareExercise } from '@/lib/share'
 
@@ -66,7 +66,8 @@ export default function WorkoutDesktop({
   onInitialActionConsumed?: () => void
 }) {
   const today = getTodayKey()
-  const currentWeek = getCurrentWeek()
+  const currentPlan = getPlanStatus()
+  const currentWeek = currentPlan.week
 
   const [selectedDay, setSelectedDay] = useState(today)
   const [session, setSession] = useState<WorkoutSession | null>(null)
@@ -111,9 +112,9 @@ export default function WorkoutDesktop({
 
   const loadSession = useCallback(async (day: string) => {
     setLoading(true); setSession(null); setExercises([]); setExerciseStates([]); setActiveExIdx(0)
-    const dbKey = DAY_META[day]?.dbKey
+    const dbKey = getDayMeta(day, currentPlan.blockSlug).dbKey
     if (!dbKey || currentWeek == null) { setLoading(false); return }
-    const { data: sessionData } = await supabase.from('workout_sessions').select('*').eq('week_number', currentWeek).eq('day_of_week', dbKey).single()
+    const { data: sessionData } = await supabase.from('workout_sessions').select('*').eq('block_slug', currentPlan.blockSlug).eq('week_number', currentWeek).eq('day_of_week', dbKey).single()
     if (!sessionData) { setLoading(false); return }
     setSession(sessionData as WorkoutSession)
     const { data: exData } = await supabase.from('workout_exercises').select('*').eq('session_id', sessionData.id).order('order_index')
@@ -142,7 +143,7 @@ export default function WorkoutDesktop({
       })))
     }
     setLoading(false)
-  }, [currentWeek])
+  }, [currentPlan.blockSlug, currentWeek])
 
   useEffect(() => {
     const id = window.setTimeout(() => { void loadSession(selectedDay) }, 0)
@@ -188,7 +189,7 @@ export default function WorkoutDesktop({
     })
   }
 
-  const isGymDay = !!DAY_META[selectedDay]?.dbKey
+  const isGymDay = !!getDayMeta(selectedDay, currentPlan.blockSlug).dbKey
   const totalSets = exerciseStates.reduce((acc, s) => acc + s.loggedSets.length, 0)
   const totalTarget = exercises.reduce((acc, ex) => acc + (ex.prescribed_sets ?? 0), 0)
   const activeEx = exercises[activeExIdx] ?? null
@@ -202,7 +203,7 @@ export default function WorkoutDesktop({
         {DAY_ORDER.map(day => {
           const isToday = day === today
           const isSelected = day === selectedDay
-          const meta = DAY_META[day]
+          const meta = getDayMeta(day, currentPlan.blockSlug)
           const isGym = !!meta?.dbKey
           return (
             <button
@@ -232,8 +233,8 @@ export default function WorkoutDesktop({
       {!isGymDay && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: '0.2em', color: 'var(--text-faint)', textTransform: 'uppercase' }}>· {DAY_META[selectedDay]?.restLabel} ·</div>
-            <div style={{ fontFamily: mono, fontSize: 12, color: 'var(--border-hi)', marginTop: 6 }}>{DAY_META[selectedDay]?.restSub}</div>
+            <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: '0.2em', color: 'var(--text-faint)', textTransform: 'uppercase' }}>· {getDayMeta(selectedDay, currentPlan.blockSlug).restLabel} ·</div>
+            <div style={{ fontFamily: mono, fontSize: 12, color: 'var(--border-hi)', marginTop: 6 }}>{getDayMeta(selectedDay, currentPlan.blockSlug).restSub}</div>
           </div>
         </div>
       )}

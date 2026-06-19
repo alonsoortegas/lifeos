@@ -190,7 +190,7 @@ describe('Daily Brief deterministic fallback and safety guards', () => {
     const context = pack({
       nutrition: {
         ...pack().nutrition,
-        day_type_options: pack().nutrition.day_type_options.filter((option) => option.key !== 'moderate_training'),
+        day_type_options: pack().nutrition.day_type_options.filter((option) => option.key !== 'hard_training'),
       },
     })
     expectGuardFailure(context, () => {})

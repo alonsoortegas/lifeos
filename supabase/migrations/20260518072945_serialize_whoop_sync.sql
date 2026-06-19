@@ -4,18 +4,13 @@ create table if not exists public.whoop_sync_locks (
   lock_token   text,
   updated_at   timestamptz not null default now()
 );
-
 alter table public.whoop_sync_locks enable row level security;
-
 revoke all on table public.whoop_sync_locks from anon, authenticated;
 grant select, insert, update on table public.whoop_sync_locks to service_role;
-
 insert into public.whoop_sync_locks (id, locked_until)
 values ('whoop-sync', 'epoch'::timestamptz)
 on conflict (id) do nothing;
-
 select cron.unschedule('whoop-sync-daily-backfill');
-
 select cron.schedule(
   'whoop-sync-daily-backfill',
   '15 9 * * *',

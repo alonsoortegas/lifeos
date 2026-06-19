@@ -8,13 +8,18 @@ import {
   calculateRemaining,
   EMPTY_MACRO_TOTALS,
   generateDefaultMeals,
+  getDefaultNutritionDayType,
   getSubstitutions,
+  loadNutritionTargetPlan,
   MEAL_LABELS,
   normalizedNutritionKey,
+  nutritionDayPayload,
   scaleFood,
+  STATIC_WHOOP_ENERGY_CALIBRATION,
   targetMapFromRows,
   type DefaultMealItem,
   type MacroTotals,
+  type WhoopEnergyCalibration,
 } from '@/lib/nutrition'
 import type {
   FoodItem,
@@ -30,8 +35,8 @@ import type {
 const supabase = createClient()
 
 const DAY_TYPE_OPTIONS: { value: NutritionDayType; label: string }[] = [
-  { value: 'hard',     label: 'HARD' },
-  { value: 'moderate', label: 'MODERATE' },
+  { value: 'hard',     label: 'LIFT' },
+  { value: 'moderate', label: 'CARDIO' },
   { value: 'rest',     label: 'REST' },
 ]
 
@@ -77,7 +82,7 @@ export default function NutritionDesktop({
   initialAction?: string
   onInitialActionConsumed?: () => void
 }) {
-  const [dayType, setDayType] = useState<NutritionDayType>('hard')
+  const [dayType, setDayType] = useState<NutritionDayType>(() => getDefaultNutritionDayType())
   const [nutritionDay, setNutritionDay] = useState<NutritionDay | null>(null)
   const [foods, setFoods] = useState<FoodItem[]>([])
   const [substitutionRows, setSubstitutionRows] = useState<SubstitutionRow[]>([])
@@ -87,6 +92,9 @@ export default function NutritionDesktop({
   const [portionDrafts, setPortionDrafts] = useState<Partial<Record<MealTemplateName, PortionDraft>>>({})
   const [loading, setLoading] = useState(true)
   const [targetMap, setTargetMap] = useState<Partial<Record<NutritionDayType, MacroTotals>>>({})
+  const [whoopCalibration, setWhoopCalibration] = useState<WhoopEnergyCalibration>(
+    STATIC_WHOOP_ENERGY_CALIBRATION,
+  )
 
   const targets = useMemo(
     () => targetMap[dayType] ?? (nutritionDay ? {
@@ -120,6 +128,7 @@ export default function NutritionDesktop({
   const ensureDay = useCallback(async (
     nextDayType: NutritionDayType,
     targetsOverride?: Partial<Record<NutritionDayType, MacroTotals>>,
+    calibrationOverride?: WhoopEnergyCalibration,
   ) => {
     let nextTargets = targetsOverride?.[nextDayType]
     if (!nextTargets) {
@@ -131,7 +140,14 @@ export default function NutritionDesktop({
       nextTargets = data ? targetMapFromRows([data])[nextDayType] : undefined
     }
     if (!nextTargets) return null
-    const payload = { date: todayISO(), day_type: nextDayType, goal: 'cut', calories_target: nextTargets.calories, protein_target: nextTargets.protein_g, carbs_target: nextTargets.carbs_g, fat_target: nextTargets.fat_g }
+    const payload = {
+      date: todayISO(),
+      ...nutritionDayPayload(
+        nextDayType,
+        nextTargets,
+        calibrationOverride ?? STATIC_WHOOP_ENERGY_CALIBRATION,
+      ),
+    }
     const { data, error } = await supabase.from('nutrition_day').upsert(payload, { onConflict: 'date' }).select('*').single()
     if (error) { console.error('nutrition day upsert failed:', error.message); return null }
     const day = data as NutritionDay; setNutritionDay(day); return day
@@ -141,15 +157,16 @@ export default function NutritionDesktop({
     let cancelled = false
     async function load() {
       setLoading(true)
-      const [foodResult, subResult, targetResult] = await Promise.all([
+      const [foodResult, subResult, targetPlan] = await Promise.all([
         supabase.from('food_item').select('*').order('category').order('name'),
         supabase.from('food_substitution_group_item').select('*, food_substitution_group(*)').order('label'),
-        supabase.from('nutrition_day_types').select('key, kcal_target, protein_g, carbs_g, fat_g'),
+        loadNutritionTargetPlan(supabase),
       ])
       if (cancelled) return
-      const loadedTargets = targetMapFromRows(targetResult.data ?? [])
+      const loadedTargets = targetPlan.targets
       setTargetMap(loadedTargets)
-      const day = await ensureDay(dayType, loadedTargets)
+      setWhoopCalibration(targetPlan.calibration)
+      const day = await ensureDay(dayType, loadedTargets, targetPlan.calibration)
       setFoods((foodResult.data ?? []) as FoodItem[])
       setSubstitutionRows((subResult.data ?? []) as SubstitutionRow[])
       if (day) await loadMealLogs(day.id)
@@ -172,7 +189,7 @@ export default function NutritionDesktop({
   }, [initialAction, loading, defaultMeals, onInitialActionConsumed])
 
   const logTemplateItem = async (mealName: MealTemplateName, item: DefaultMealItem, override?: { food: FoodItem; quantity: number; label: string; groupName?: string }) => {
-    const day = nutritionDay ?? (await ensureDay(dayType)); if (!day) return
+    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, whoopCalibration)); if (!day) return
     const food = override?.food ?? foodsByName.get(item.foodName); if (!food) return
     const label = override?.label ?? item.label
     const key = foodKey(mealName, food.id, label)
@@ -205,7 +222,7 @@ export default function NutritionDesktop({
   })
 
   const logFoodPortion = async (mealName: MealTemplateName) => {
-    const day = nutritionDay ?? (await ensureDay(dayType)); if (!day) return
+    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, whoopCalibration)); if (!day) return
     const draft = getPortionDraft(mealName)
     const food = foods.find(candidate => candidate.id === Number(draft.foodItemId))
     const quantity = Number(draft.quantity)
@@ -249,6 +266,12 @@ export default function NutritionDesktop({
         <div>
           <div style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>DAILY FUEL · TEMPLATES · SWAPS</div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', margin: '3px 0 0', letterSpacing: '-0.01em' }}>Nutrition</h1>
+          {whoopCalibration.method === 'whoop_rolling_v1' && (
+            <div style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-faint)', marginTop: 3 }}>
+              WHOOP {whoopCalibration.adjustment >= 0 ? '+' : ''}{whoopCalibration.adjustment} kcal
+              {' · '}{whoopCalibration.recentCalories} recent / {whoopCalibration.baselineCalories} baseline
+            </div>
+          )}
         </div>
         {/* Day type toggle */}
         <div style={{ display: 'flex', gap: 3, padding: 3, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>

@@ -6,7 +6,6 @@ create table whoop_tokens (
   expires_at      timestamptz,
   updated_at      timestamptz default now()
 );
-
 -- Only one row ever exists (id = 1), enforced by primary key
 -- Service role only — no anon access
 alter table whoop_tokens enable row level security;

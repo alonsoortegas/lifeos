@@ -49,7 +49,8 @@ function trainingDecision(pack: BriefContextPack): Brief['training_decision'] {
 function nutritionDayType(pack: BriefContextPack): Brief['nutrition']['day_type'] {
   const state = pack.readiness?.state
   if (!pack.readiness || state === 'hardNo' || state === 'recover') return 'rest_easy'
-  if (pack.todays_session.status === 'scheduled') return 'moderate_training'
+  if (pack.todays_session.status === 'scheduled') return 'hard_training'
+  if (pack.weekday === 'tuesday' || pack.weekday === 'sunday') return 'moderate_training'
   return 'rest_easy'
 }
 

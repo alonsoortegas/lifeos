@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getCurrentGoalDate } from '@/lib/goal-dates'
 import type { ChannelState, DayScore, MonthSummary } from '@/lib/review/month'
+import IconButton from '@/components/ui/IconButton'
 
 const CHANNELS: Array<{ key: 'goals' | 'training' | 'fuel'; label: string; color: string }> = [
   { key: 'goals', label: 'Goals', color: '#00d26a' },
@@ -233,37 +234,37 @@ export default function MonthReview({ onClose }: { onClose: () => void }) {
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="display text-[22px] font-bold tracking-tight text-[var(--text)]">Monthly review</div>
-            <button
-              type="button"
+            <IconButton
               onClick={onClose}
-              aria-label="Close monthly review"
-              className="glass flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] text-[13px] leading-none text-[var(--text-dim)] transition-transform active:scale-[0.92]"
+              label="Close monthly review"
             >
               ✕
-            </button>
+            </IconButton>
           </div>
 
           {/* Month nav — single segmented pill */}
           <div className="glass mx-auto flex w-fit items-center rounded-full border border-[var(--border)]">
-            <button
-              type="button"
+            <IconButton
               onClick={() => setMonth(m => shiftMonth(m, -1))}
-              aria-label="Previous month"
-              className="flex h-10 w-11 items-center justify-center rounded-full font-mono text-[15px] text-[var(--text-dim)] transition-transform active:scale-[0.92]"
+              label="Previous month"
+              size="md"
+              variant="ghost"
+              className="w-11 font-mono"
             >
               ‹
-            </button>
+            </IconButton>
             <div className="display min-w-[148px] text-center text-[14px] font-semibold text-[var(--text)]">
               {monthLabel(month)}
             </div>
-            <button
-              type="button"
+            <IconButton
               onClick={() => setMonth(m => shiftMonth(m, 1))}
-              aria-label="Next month"
-              className="flex h-10 w-11 items-center justify-center rounded-full font-mono text-[15px] text-[var(--text-dim)] transition-transform active:scale-[0.92]"
+              label="Next month"
+              size="md"
+              variant="ghost"
+              className="w-11 font-mono"
             >
               ›
-            </button>
+            </IconButton>
           </div>
 
           {/* Summary strip */}
