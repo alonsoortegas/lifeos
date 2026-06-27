@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildPositions,
+  portfolioHistory,
   summarizePortfolio,
   valuePosition,
   formatMoney,
@@ -81,6 +82,29 @@ describe('buildPositions', () => {
   it('drops holdings whose instrument is unknown', () => {
     const positions = buildPositions([holding({ instrument_id: 99 })], [instrument({ id: 1 })], [])
     expect(positions).toHaveLength(0)
+  })
+})
+
+describe('portfolioHistory', () => {
+  it('values current holdings at each day\'s most-recent close', () => {
+    const series = portfolioHistory(
+      [holding({ instrument_id: 1, quantity: 10 })],
+      [instrument({ id: 1 })],
+      [
+        { instrument_id: 1, price: 100, as_of: '2026-06-24T08:00:00Z' },
+        { instrument_id: 1, price: 110, as_of: '2026-06-25T08:00:00Z' },
+        { instrument_id: 1, price: 105, as_of: '2026-06-26T08:00:00Z' },
+      ],
+    )
+    expect(series).toEqual([
+      { date: '2026-06-24', value: 1000 },
+      { date: '2026-06-25', value: 1100 },
+      { date: '2026-06-26', value: 1050 },
+    ])
+  })
+
+  it('returns an empty series when there are no prices', () => {
+    expect(portfolioHistory([holding({})], [instrument({})], [])).toEqual([])
   })
 })
 

@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import Card from '@/components/ui/Card'
 import StatCard from '@/components/ui/StatCard'
+import Sparkline from '@/components/ui/Sparkline'
 import { useFinance, type AddHoldingInput } from '@/lib/finance/useFinance'
 import {
   ASSET_CLASS_META,
@@ -11,7 +12,7 @@ import {
   plTone,
 } from '@/lib/finance'
 import { parseImport } from '@/lib/finance/import'
-import type { AssetClass, FinImportSource } from '@/lib/types'
+import type { AssetClass, FinImportSource, FinTransaction } from '@/lib/types'
 
 const MONO = { fontFamily: 'var(--font-jetbrains-mono, monospace)' }
 
@@ -78,6 +79,24 @@ export default function FinanceTab() {
           sub={`${summary.positions.length} positions`}
         />
       </div>
+
+      {/* Net-worth trend */}
+      {fin.history.length >= 2 && (
+        <Card className="flex items-center justify-between gap-3 p-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-dim)]">Trend</div>
+            <div className="mt-1 text-[11px] text-[var(--text-faint)]" style={MONO}>
+              {fin.history.length} days
+            </div>
+          </div>
+          <Sparkline
+            data={fin.history.map((h) => h.value)}
+            width={180}
+            height={44}
+            color={summary.dayChange >= 0 ? '#00d26a' : '#fb7185'}
+          />
+        </Card>
+      )}
 
       {/* Allocation */}
       {summary.byClass.length > 0 && (
@@ -148,23 +167,73 @@ export default function FinanceTab() {
                     {p.position.holding.quantity} @ {p.position.price != null ? formatMoney(p.position.price, p.position.instrument.currency) : '—'}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-[var(--text)]" style={MONO}>{formatMoney(p.marketValue)}</div>
-                  <div
-                    className="mt-0.5 text-[11px]"
-                    style={{ ...MONO, color: p.unrealizedPL >= 0 ? '#00d26a' : '#fb7185' }}
-                  >
-                    {p.unrealizedPL >= 0 ? '+' : ''}{formatMoney(p.unrealizedPL)} · {formatSignedPct(p.unrealizedPLPct)}
+                <div className="flex items-center gap-2">
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-[var(--text)]" style={MONO}>{formatMoney(p.marketValue)}</div>
+                    <div
+                      className="mt-0.5 text-[11px]"
+                      style={{ ...MONO, color: p.unrealizedPL >= 0 ? '#00d26a' : '#fb7185' }}
+                    >
+                      {p.unrealizedPL >= 0 ? '+' : ''}{formatMoney(p.unrealizedPL)} · {formatSignedPct(p.unrealizedPLPct)}
+                    </div>
                   </div>
+                  <button
+                    onClick={() => fin.deleteHolding(p.position.holding.id)}
+                    aria-label={`Remove ${p.position.instrument.symbol}`}
+                    className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-faint)] transition-transform active:scale-90"
+                    style={MONO}
+                  >
+                    ×
+                  </button>
                 </div>
               </Card>
             )
           })}
         </div>
       )}
+
+      {/* Transactions */}
+      {fin.transactions.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[11px] uppercase tracking-widest text-[var(--text-faint)]" style={MONO}>· transactions ·</div>
+          {fin.transactions.slice(0, 30).map((t) => {
+            const instrument = fin.instruments.find((i) => i.id === t.instrument_id)
+            return (
+              <div key={t.id} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3.5 py-2.5">
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] text-[var(--text)]">
+                    <span className="uppercase" style={{ color: TXN_TONE[t.type] ?? 'var(--text-dim)' }}>{t.type}</span>
+                    {' '}{instrument?.symbol ?? '—'}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-[var(--text-faint)]" style={MONO}>
+                    {t.traded_at.slice(0, 10)}
+                    {t.quantity != null && ` · ${t.quantity}`}
+                    {t.price != null && ` @ ${formatMoney(t.price, t.currency)}`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => fin.deleteTransaction(t)}
+                  aria-label="Delete transaction"
+                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-faint)] transition-transform active:scale-90"
+                  style={MONO}
+                >
+                  ×
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <div className="h-4" />
     </div>
   )
+}
+
+const TXN_TONE: Partial<Record<FinTransaction['type'], string>> = {
+  buy: '#00d26a',
+  sell: '#fb7185',
+  dividend: '#38bdf8',
 }
 
 // ── Add holding ───────────────────────────────────────────────────────────────

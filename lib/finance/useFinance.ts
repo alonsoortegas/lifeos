@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import {
   buildPositions,
+  portfolioHistory,
   rollupHoldings,
   summarizePortfolio,
   type PortfolioSummary,
@@ -14,6 +15,7 @@ import type {
   FinHolding,
   FinInstrument,
   FinPrice,
+  FinTransaction,
 } from '@/lib/types'
 import type { ParsedTxn, ParseResult } from '@/lib/finance/import'
 
@@ -43,10 +45,14 @@ export interface UseFinance {
   error: string | null
   accounts: FinAccount[]
   instruments: FinInstrument[]
+  transactions: FinTransaction[]
   summary: PortfolioSummary
+  history: { date: string; value: number }[]
   refreshPrices: () => Promise<void>
   addHolding: (input: AddHoldingInput) => Promise<boolean>
   importTransactions: (source: string, parsed: ParseResult) => Promise<{ inserted: number; skipped: number } | null>
+  deleteHolding: (id: number) => Promise<void>
+  deleteTransaction: (txn: FinTransaction) => Promise<void>
 }
 
 export function useFinance(): UseFinance {
@@ -54,6 +60,7 @@ export function useFinance(): UseFinance {
   const [instruments, setInstruments] = useState<FinInstrument[]>([])
   const [holdings, setHoldings] = useState<FinHolding[]>([])
   const [prices, setPrices] = useState<FinPrice[]>([])
+  const [transactions, setTransactions] = useState<FinTransaction[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -64,20 +71,22 @@ export function useFinance(): UseFinance {
   }
 
   const load = useCallback(async () => {
-    const [acc, inst, hold, price] = await Promise.all([
+    const [acc, inst, hold, price, txn] = await Promise.all([
       supabase.from('fin_accounts').select('*').order('name'),
       supabase.from('fin_instruments').select('*').order('symbol'),
       supabase.from('fin_holdings').select('*'),
-      // Two most recent prices per instrument are enough for value + day-change.
-      supabase.from('fin_prices').select('*').order('as_of', { ascending: false }).limit(500),
+      // Enough history for value, day-change, and the net-worth trend.
+      supabase.from('fin_prices').select('*').order('as_of', { ascending: false }).limit(1000),
+      supabase.from('fin_transactions').select('*').order('traded_at', { ascending: false }).limit(200),
     ])
-    if (acc.error || inst.error || hold.error || price.error) {
+    if (acc.error || inst.error || hold.error || price.error || txn.error) {
       flashError('couldn\'t load finances')
     }
     setAccounts((acc.data ?? []) as FinAccount[])
     setInstruments((inst.data ?? []) as FinInstrument[])
     setHoldings((hold.data ?? []) as FinHolding[])
     setPrices((price.data ?? []) as FinPrice[])
+    setTransactions((txn.data ?? []) as FinTransaction[])
     setLoading(false)
   }, [])
 
@@ -88,8 +97,24 @@ export function useFinance(): UseFinance {
     return () => clearTimeout(id)
   }, [load])
 
+  // Realtime: reload when the cron writes prices or anything mutates elsewhere.
+  useEffect(() => {
+    const channel = supabase
+      .channel('finance_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fin_prices' }, () => void load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fin_holdings' }, () => void load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fin_transactions' }, () => void load())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [load])
+
   const summary = useMemo(
     () => summarizePortfolio(buildPositions(holdings, instruments, prices)),
+    [holdings, instruments, prices],
+  )
+
+  const history = useMemo(
+    () => portfolioHistory(holdings, instruments, prices),
     [holdings, instruments, prices],
   )
 
@@ -225,5 +250,50 @@ export function useFinance(): UseFinance {
     return { inserted: toInsert.length, skipped: parsed.rows.length - toInsert.length }
   }, [ensureAccount, ensureInstrument, load])
 
-  return { loading, refreshing, error, accounts, instruments, summary, refreshPrices, addHolding, importTransactions }
+  const deleteHolding = useCallback(async (id: number) => {
+    const { error: e } = await supabase.from('fin_holdings').delete().eq('id', id)
+    if (e) { flashError('couldn\'t remove holding'); return }
+    await load()
+  }, [load])
+
+  /** Recompute a holding's quantity + avg_cost from the transactions that
+   *  remain for its account/instrument (used after a transaction is deleted). */
+  const recomputeHolding = useCallback(async (accountId: number, instrumentId: number) => {
+    const { data } = await supabase
+      .from('fin_transactions')
+      .select('type,quantity,price')
+      .eq('account_id', accountId)
+      .eq('instrument_id', instrumentId)
+    const rows = (data ?? []) as { type: string; quantity: number | null; price: number | null }[]
+    let qtyBuy = 0, costBuy = 0, qtySell = 0
+    for (const r of rows) {
+      const q = r.quantity ?? 0
+      if (q <= 0) continue
+      if (r.type === 'buy') { qtyBuy += q; costBuy += q * (r.price ?? 0) }
+      else if (r.type === 'sell') { qtySell += q }
+    }
+    const quantity = qtyBuy - qtySell
+    if (quantity <= 0) {
+      await supabase.from('fin_holdings').delete().eq('account_id', accountId).eq('instrument_id', instrumentId)
+    } else {
+      await supabase.from('fin_holdings').upsert(
+        { account_id: accountId, instrument_id: instrumentId, quantity, avg_cost: qtyBuy > 0 ? costBuy / qtyBuy : null, updated_at: new Date().toISOString() },
+        { onConflict: 'account_id,instrument_id' },
+      )
+    }
+  }, [])
+
+  const deleteTransaction = useCallback(async (txn: FinTransaction) => {
+    const { error: e } = await supabase.from('fin_transactions').delete().eq('id', txn.id)
+    if (e) { flashError('couldn\'t remove transaction'); return }
+    if (txn.account_id != null && txn.instrument_id != null) {
+      await recomputeHolding(txn.account_id, txn.instrument_id)
+    }
+    await load()
+  }, [load, recomputeHolding])
+
+  return {
+    loading, refreshing, error, accounts, instruments, transactions, summary, history,
+    refreshPrices, addHolding, importTransactions, deleteHolding, deleteTransaction,
+  }
 }

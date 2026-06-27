@@ -89,6 +89,30 @@ async function fetchEquities(
   return []
 }
 
+/** Convert quotes into the base currency using keyless ECB rates (frankfurter.app),
+ *  so portfolio totals aren't a naive sum of mixed currencies. */
+async function toBaseCurrency(quotes: Quote[], base: string): Promise<Quote[]> {
+  const needed = [...new Set(quotes.filter((q) => q.currency !== base).map((q) => q.currency))]
+  if (needed.length === 0) return quotes
+  const rates = new Map<string, number>()
+  await Promise.all(
+    needed.map(async (from) => {
+      try {
+        const res = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${base}`)
+        if (!res.ok) return
+        const j = (await res.json()) as { rates?: Record<string, number> }
+        const r = j.rates?.[base]
+        if (typeof r === 'number') rates.set(from, r)
+      } catch { /* leave unconverted */ }
+    }),
+  )
+  return quotes.map((q) => {
+    if (q.currency === base) return q
+    const r = rates.get(q.currency)
+    return r ? { ...q, price: q.price * r, currency: base } : q
+  })
+}
+
 export async function POST(req: NextRequest) {
   let body: QuoteRequest
   try {
@@ -108,7 +132,8 @@ export async function POST(req: NextRequest) {
     fetchEquities(equities),
   ])
 
-  const quotes = [...crypto, ...equityQuotes]
+  // Crypto is already in `vs`; equities come back in USD — normalize to base.
+  const quotes = [...crypto, ...(await toBaseCurrency(equityQuotes, vs))]
 
   // Persist to fin_prices via service role (bypasses RLS) when ids are known.
   let persisted = 0

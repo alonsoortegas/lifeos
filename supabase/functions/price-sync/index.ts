@@ -61,6 +61,28 @@ async function fetchEquities(instruments: Instrument[], provider: string, key: s
     .filter((r): r is PriceRow => r != null)
 }
 
+async function toBaseCurrency(rows: PriceRow[], base: string): Promise<PriceRow[]> {
+  const needed = [...new Set(rows.filter((r) => r.currency !== base).map((r) => r.currency))]
+  if (needed.length === 0) return rows
+  const rates = new Map<string, number>()
+  await Promise.all(
+    needed.map(async (from) => {
+      try {
+        const res = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${base}`)
+        if (!res.ok) return
+        const j = (await res.json()) as { rates?: Record<string, number> }
+        const r = j.rates?.[base]
+        if (typeof r === 'number') rates.set(from, r)
+      } catch { /* leave unconverted */ }
+    }),
+  )
+  return rows.map((row) => {
+    if (row.currency === base) return row
+    const r = rates.get(row.currency)
+    return r ? { ...row, price: row.price * r, currency: base } : row
+  })
+}
+
 serve(async () => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -92,7 +114,8 @@ serve(async () => {
       fetchCrypto(crypto, vs, asOf),
       fetchEquities(equities, provider, apiKey, asOf),
     ])
-    const rows = [...cryptoRows, ...equityRows]
+    // Crypto is already in `vs`; equities come back in USD — normalize to base.
+    const rows = [...cryptoRows, ...(await toBaseCurrency(equityRows, vs))]
 
     if (rows.length > 0) {
       const { error } = await supabase.from('fin_prices').upsert(rows, { onConflict: 'instrument_id,as_of' })

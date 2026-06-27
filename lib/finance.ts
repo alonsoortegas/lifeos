@@ -133,6 +133,41 @@ export function buildPositions(
   return positions
 }
 
+/** Net-worth time series: value current holdings at each day's closing price.
+ *  Assumes constant holdings (a trend of today's portfolio, not a back-test). */
+export function portfolioHistory(
+  holdings: FinHolding[],
+  instruments: FinInstrument[],
+  prices: { instrument_id: number; price: number; as_of: string }[],
+): { date: string; value: number }[] {
+  void instruments // signature kept symmetric with buildPositions
+  if (prices.length === 0) return []
+
+  const byInstrument = new Map<number, { price: number; day: string }[]>()
+  for (const p of prices) {
+    const list = byInstrument.get(p.instrument_id) ?? []
+    list.push({ price: p.price, day: p.as_of.slice(0, 10) })
+    byInstrument.set(p.instrument_id, list)
+  }
+  for (const list of byInstrument.values()) list.sort((a, b) => a.day.localeCompare(b.day))
+
+  const days = [...new Set(prices.map((p) => p.as_of.slice(0, 10)))].sort()
+  return days.map((day) => {
+    let value = 0
+    for (const h of holdings) {
+      const list = byInstrument.get(h.instrument_id)
+      if (!list) continue
+      let price: number | null = null
+      for (const row of list) {
+        if (row.day <= day) price = row.price
+        else break
+      }
+      if (price != null) value += price * h.quantity
+    }
+    return { date: day, value }
+  })
+}
+
 // ── Formatting ───────────────────────────────────────────────────────────────
 
 export function formatMoney(value: number, currency = 'EUR'): string {
