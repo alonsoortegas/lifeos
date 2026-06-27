@@ -3,11 +3,13 @@
 import { useRef, useState } from 'react'
 import Card from '@/components/ui/Card'
 import StatCard from '@/components/ui/StatCard'
-import Sparkline from '@/components/ui/Sparkline'
+import PortfolioDonut from '@/components/finance/PortfolioDonut'
+import PortfolioHistory from '@/components/finance/PortfolioHistory'
 import { useFinance, type AddHoldingInput } from '@/lib/finance/useFinance'
 import {
   ASSET_CLASS_META,
   formatMoney,
+  formatMoneyCompact,
   formatSignedPct,
   plTone,
 } from '@/lib/finance'
@@ -27,6 +29,21 @@ export default function FinanceTab() {
   const { summary } = fin
   const [showAdd, setShowAdd] = useState(false)
   const [showImport, setShowImport] = useState(false)
+
+  // Composition segments: one slice per holding, grouped by asset class so
+  // same-coloured slices sit together; opacity steps keep them distinguishable.
+  const CLASS_ORDER: AssetClass[] = ['etf', 'stock', 'crypto']
+  const donutSegments = CLASS_ORDER.flatMap((cls) =>
+    summary.positions
+      .filter((p) => p.position.instrument.asset_class === cls && p.marketValue > 0)
+      .map((p, i) => ({
+        label: p.position.instrument.symbol,
+        value: p.marketValue,
+        pct: summary.totalValue > 0 ? (p.marketValue / summary.totalValue) * 100 : 0,
+        color: ASSET_CLASS_META[cls].color,
+        opacity: Math.max(0.45, 1 - i * 0.18),
+      })),
+  )
 
   return (
     <div className="px-4 space-y-5">
@@ -80,38 +97,27 @@ export default function FinanceTab() {
         />
       </div>
 
-      {/* Net-worth trend */}
-      {fin.history.length >= 2 && (
-        <Card className="flex items-center justify-between gap-3 p-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-dim)]">Trend</div>
-            <div className="mt-1 text-[11px] text-[var(--text-faint)]" style={MONO}>
-              {fin.history.length} days
+      {/* Composition — how net worth comes together */}
+      {donutSegments.length > 0 && (
+        <Card className="p-4">
+          <div className="mb-3 text-[11px] uppercase tracking-[0.14em] text-[var(--text-dim)]">Composition</div>
+          <div className="flex items-center gap-4">
+            <div className="flex-shrink-0">
+              <PortfolioDonut segments={donutSegments} centerValue={formatMoneyCompact(summary.totalValue)} />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              {donutSegments.slice(0, 7).map((s) => (
+                <div key={s.label} className="flex items-center gap-2 text-[11px]" style={MONO}>
+                  <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: s.color, opacity: s.opacity }} />
+                  <span className="truncate text-[var(--text-dim)]">{s.label}</span>
+                  <span className="ml-auto flex-shrink-0 text-[var(--text-faint)]">{s.pct.toFixed(0)}%</span>
+                  <span className="flex-shrink-0 text-[var(--text)]">{formatMoney(s.value)}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <Sparkline
-            data={fin.history.map((h) => h.value)}
-            width={180}
-            height={44}
-            color={summary.dayChange >= 0 ? '#00d26a' : '#fb7185'}
-          />
-        </Card>
-      )}
-
-      {/* Allocation */}
-      {summary.byClass.length > 0 && (
-        <Card className="p-4 space-y-3">
-          <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-dim)]">Allocation</div>
-          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-[var(--ink-06)]">
-            {summary.byClass.map((c) => (
-              <div
-                key={c.assetClass}
-                style={{ width: `${c.pct}%`, background: ASSET_CLASS_META[c.assetClass].color }}
-                title={`${ASSET_CLASS_META[c.assetClass].label} ${c.pct.toFixed(0)}%`}
-              />
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          {/* by asset class */}
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-[var(--ink-06)] pt-3">
             {summary.byClass.map((c) => (
               <div key={c.assetClass} className="flex items-center gap-1.5 text-[11px]" style={MONO}>
                 <span className="h-2 w-2 rounded-full" style={{ background: ASSET_CLASS_META[c.assetClass].color }} />
@@ -120,6 +126,17 @@ export default function FinanceTab() {
               </div>
             ))}
           </div>
+        </Card>
+      )}
+
+      {/* Net-worth history */}
+      {fin.history.length >= 2 && (
+        <Card className="p-4">
+          <div className="mb-2 text-[11px] uppercase tracking-[0.14em] text-[var(--text-dim)]">History</div>
+          <PortfolioHistory
+            data={fin.history}
+            color={fin.history[fin.history.length - 1].value >= fin.history[0].value ? '#00d26a' : '#fb7185'}
+          />
         </Card>
       )}
 

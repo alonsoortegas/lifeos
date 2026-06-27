@@ -180,6 +180,16 @@ export function formatMoney(value: number, currency = 'EUR'): string {
   return `${value < 0 ? '-' : ''}${symbol}${formatted}`
 }
 
+/** Compact money for chart axes — €1.2k, €3.4M. */
+export function formatMoneyCompact(value: number, currency = 'EUR'): string {
+  const symbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : ''
+  const abs = Math.abs(value)
+  const sign = value < 0 ? '-' : ''
+  if (abs >= 1_000_000) return `${sign}${symbol}${(abs / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000) return `${sign}${symbol}${(abs / 1_000).toFixed(1)}k`
+  return `${sign}${symbol}${Math.round(abs)}`
+}
+
 export function formatSignedPct(pct: number | null): string {
   if (pct == null) return '—'
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
