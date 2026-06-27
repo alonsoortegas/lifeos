@@ -40,6 +40,9 @@ WHOOP_CLIENT_SECRET=
 SUPABASE_OWNER_EMAIL=      # Supabase Auth owner account — used to issue authenticated sessions
 SUPABASE_OWNER_PASSWORD=   # server-only, never reaches the browser
 SUPABASE_SERVICE_ROLE_KEY= # server-only, used by cron/protected APIs
+MARKETDATA_PROVIDER=       # finances: "twelvedata" (default) or "finnhub" — ETF/stock quotes
+MARKETDATA_API_KEY=        # finances: provider key; crypto uses CoinGecko (keyless). Empty = crypto-only quotes
+MARKETDATA_BASE_CURRENCY=  # finances: crypto valuation currency for price-sync cron (default EUR)
 ```
 
 The app runs without Anthropic access: Daily Brief and meal extraction use deterministic fallbacks, while Polish & Add echoes input. Missing `SUPABASE_OWNER_*` means browser RLS blocks queries.
@@ -98,10 +101,11 @@ app/
     polish/route.ts       # POST { text } → { polished } via Claude Haiku
     whoop-status/route.ts # GET → last sync time + token validity
     whoop-sync/route.ts   # POST → triggers whoop-sync Edge Function
+    finance/prices/route.ts # POST { instruments } → live ETF/stock/crypto quotes; persists fin_prices via service role
 
 components/
   Shell.tsx               # Tab state (default = 0 / Today), keyboard shortcuts (1–5), swipe navigation
-  TabBar.tsx              # Fixed bottom nav — ◐ TODAY · ◆ FOCUS · ▲ WORKOUT · ○ NUTRITION · ~ WHOOP
+  TabBar.tsx              # Fixed bottom nav — ◐ TODAY · ◆ FOCUS · ▲ WORKOUT · ○ NUTRITION · ~ WHOOP · € MONEY
   ui/
     Card.tsx              # #1a1a1a bg, #2a2a2a border, rounded-xl wrapper
     Ring.tsx              # SVG recovery ring (0–100%, configurable size/thickness)
@@ -114,9 +118,13 @@ components/
     WorkoutTab.tsx        # Interactive — plan from DB, set logging, progressive overload suggestions
     NutritionTab.tsx      # Interactive — normalized nutrition plan from DB, meal logging
     WhoopTab.tsx          # Live — reads whoop_snapshots + whoop_workouts, connect/sync controls
+    FinanceTab.tsx        # Interactive — investments (ETF/stocks/crypto): net worth, allocation, holdings, P/L; add holding + CSV import; sync prices
 
 lib/
   supabase.ts             # Browser client (createBrowserClient)
+  finance.ts              # Pure portfolio math — buildPositions, summarizePortfolio, valuation, allocation, rollupHoldings, formatting
+  finance/import.ts       # Tolerant CSV parsers (Trade Republic / Revolut / crypto) → normalized ParsedTxn[]
+  finance/useFinance.ts   # Client hook — loads fin_* tables, computes summary; addHolding / importTransactions / refreshPrices
   supabase-server.ts      # Server client for API routes
   goal-dates.ts           # Local 6 AM goal-day helpers
   types.ts                # TypeScript interfaces for all DB tables
@@ -131,6 +139,7 @@ supabase/
   functions/
     whoop-auth/index.ts   # Deno Edge Function — OAuth token exchange helper
     whoop-sync/index.ts   # Deno Edge Function — Whoop API poll + upsert
+    price-sync/index.ts   # Deno Edge Function — market-data poll → fin_prices (daily pg_cron)
 
 public/
   manifest.json           # PWA manifest
@@ -160,6 +169,11 @@ All tables have RLS enabled. Policies require `auth.role() = 'authenticated'` �
 | `ai_briefs` | Replayable context and validated output for each Daily Brief generation |
 | `ai_proposals` | User-confirmed mutations proposed by a brief |
 | `ai_brief_outcomes` | Usefulness rating, adherence, nutrition actuals, and next-day recovery delta |
+| `fin_accounts` | Investment accounts — broker / bank / wallet / manual |
+| `fin_instruments` | Securities & coins — symbol, ISIN, asset_class (etf/stock/crypto) |
+| `fin_holdings` | Current positions — quantity + avg_cost per account/instrument |
+| `fin_transactions` | Buys/sells/dividends/transfers; `external_id` makes CSV re-imports idempotent |
+| `fin_prices` | Latest + historical close per instrument (price-sync Edge Function writes via service role) |
 
 Todos reset by querying the local goal day from `lib/goal-dates.ts`. The goal day flips at 6 AM client-side — new day = new `day_date`, old rows stay in DB.
 
@@ -217,11 +231,12 @@ https://lifeos-zeta-three.vercel.app/api/whoop-callback
 | 2 | Workout | No | Interactive — plan from DB, set logging, progressive overload suggestions |
 | 3 | Nutrition | No | Interactive — day type from `nutrition_day_types`, meals from `nutrition_meal_templates` |
 | 4 | Whoop | No | Live — `whoop_snapshots` + `whoop_workouts`, realtime, connect/sync controls |
+| 5 | Money | No | Interactive — investments from `fin_*` tables: net worth, allocation, holdings, P/L; add holding + CSV import; `/api/finance/prices` sync |
 
 ## Navigation
 
 - **Mobile:** swipe left/right to change tabs (threshold 50px, only fires if horizontal > vertical delta)
-- **Desktop:** keys `1–5` switch tabs (suppressed when focus is inside an input)
+- **Desktop:** keys `1–6` switch tabs (suppressed when focus is inside an input)
 
 ---
 

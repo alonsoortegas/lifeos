@@ -8,6 +8,7 @@ const TABS = [
   { icon: '▲', label: 'Workout' },
   { icon: '○', label: 'Fuel' },
   { icon: '~', label: 'Whoop' },
+  { icon: '€', label: 'Money' },
 ]
 
 interface TabBarProps {

@@ -167,6 +167,44 @@ export async function fetchBodyTrend(db: Db, days = 90) {
   return data ?? []
 }
 
+export async function fetchFinanceData(db: Db) {
+  const [accounts, instruments, holdings, prices] = await Promise.all([
+    db.from('fin_accounts').select('*').order('name'),
+    db.from('fin_instruments').select('*').order('symbol'),
+    db.from('fin_holdings').select('*'),
+    db.from('fin_prices').select('instrument_id,price,as_of').order('as_of', { ascending: false }).limit(500),
+  ])
+  return {
+    accounts: accounts.data ?? [],
+    instruments: instruments.data ?? [],
+    holdings: holdings.data ?? [],
+    prices: prices.data ?? [],
+  }
+}
+
+export async function ensureFinAccount(db: Db, name: string, kind: string) {
+  const { data: existing } = await db.from('fin_accounts').select('*').eq('name', name).maybeSingle()
+  if (existing) return existing
+  const { data } = await db.from('fin_accounts').insert({ name, kind }).select('*').single()
+  return data
+}
+
+export async function ensureFinInstrument(db: Db, symbol: string, assetClass: string, isin?: string | null, name?: string | null) {
+  const { data: existing } = await db
+    .from('fin_instruments')
+    .select('*')
+    .eq('symbol', symbol)
+    .eq('asset_class', assetClass)
+    .maybeSingle()
+  if (existing) return existing
+  const { data } = await db
+    .from('fin_instruments')
+    .upsert({ symbol, asset_class: assetClass, isin: isin ?? null, name: name ?? null }, { onConflict: 'symbol,asset_class' })
+    .select('*')
+    .single()
+  return data
+}
+
 export async function fetchNutritionPlan(db: Db) {
   const [{ data: dayTypes }, { data: templates }, { data: rules }] = await Promise.all([
     db.from('nutrition_day_types').select('*').order('id'),

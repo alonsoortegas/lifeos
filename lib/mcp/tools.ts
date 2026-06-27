@@ -7,7 +7,10 @@ import {
   fetchTodayWorkoutSession, fetchWorkoutLogs, fetchCheckin,
   fetchLatestBrief, fetchBodyTrend, fetchNutritionPlan,
   ensureNutritionDay,
+  fetchFinanceData, ensureFinAccount, ensureFinInstrument,
 } from './db'
+import { buildPositions, summarizePortfolio } from '@/lib/finance'
+import type { FinHolding, FinInstrument } from '@/lib/types'
 
 function ok(data: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] }
@@ -174,7 +177,113 @@ export function registerTools(server: McpServer) {
     })
   })
 
+  server.registerTool('get_portfolio', {
+    description: 'Get the investment portfolio summary: total value, invested cost, unrealized P/L, day change, allocation by asset class, and per-holding values.',
+    inputSchema: {},
+  }, async () => {
+    const db = await getDb()
+    const { instruments, holdings, prices } = await fetchFinanceData(db)
+    const summary = summarizePortfolio(
+      buildPositions(holdings as FinHolding[], instruments as FinInstrument[], prices as { instrument_id: number; price: number; as_of: string }[]),
+    )
+    return ok({
+      totalValue: summary.totalValue,
+      totalCost: summary.totalCost,
+      totalPL: summary.totalPL,
+      totalPLPct: summary.totalPLPct,
+      dayChange: summary.dayChange,
+      dayChangePct: summary.dayChangePct,
+      byClass: summary.byClass,
+      positions: summary.positions.map((p) => ({
+        symbol: p.position.instrument.symbol,
+        asset_class: p.position.instrument.asset_class,
+        quantity: p.position.holding.quantity,
+        price: p.position.price,
+        marketValue: p.marketValue,
+        unrealizedPL: p.unrealizedPL,
+        unrealizedPLPct: p.unrealizedPLPct,
+      })),
+    })
+  })
+
+  server.registerTool('get_holdings', {
+    description: 'Get raw investment holdings with their accounts and instruments (no valuation).',
+    inputSchema: {},
+  }, async () => {
+    const db = await getDb()
+    const { accounts, instruments, holdings } = await fetchFinanceData(db)
+    return ok({ accounts, instruments, holdings })
+  })
+
   // ── Write tools ─────────────────────────────────────────────────────────────
+
+  server.registerTool('add_holding', {
+    description: 'Add or update an investment holding. Creates the account and instrument if they do not exist.',
+    inputSchema: {
+      symbol: z.string().describe('Ticker/symbol, e.g. "VWCE" or "BTC"'),
+      asset_class: z.enum(['etf', 'stock', 'crypto']).describe('Asset class'),
+      quantity: z.number().describe('Units held'),
+      avg_cost: z.number().optional().describe('Average cost per unit'),
+      account_name: z.string().optional().describe('Account/broker name. Defaults to "Manual".'),
+      isin: z.string().optional().describe('ISIN, if known'),
+    },
+  }, async ({ symbol, asset_class, quantity, avg_cost, account_name, isin }) => {
+    const db = await getDb()
+    const account = await ensureFinAccount(db, account_name ?? 'Manual', 'broker')
+    if (!account) return err('could not create account')
+    const instrument = await ensureFinInstrument(db, symbol.toUpperCase(), asset_class, isin ?? null)
+    if (!instrument) return err('could not create instrument')
+    const { data, error } = await db
+      .from('fin_holdings')
+      .upsert(
+        { account_id: account.id, instrument_id: instrument.id, quantity, avg_cost: avg_cost ?? null, updated_at: new Date().toISOString() },
+        { onConflict: 'account_id,instrument_id' },
+      )
+      .select()
+      .single()
+    if (error) return err(error.message)
+    return ok(data)
+  })
+
+  server.registerTool('log_finance_transaction', {
+    description: 'Record an investment transaction (buy/sell/dividend/etc.). Creates the account and instrument if needed.',
+    inputSchema: {
+      symbol: z.string().describe('Ticker/symbol'),
+      asset_class: z.enum(['etf', 'stock', 'crypto']).describe('Asset class'),
+      type: z.enum(['buy', 'sell', 'dividend', 'deposit', 'withdrawal', 'fee', 'transfer']).describe('Transaction type'),
+      quantity: z.number().optional().describe('Units'),
+      price: z.number().optional().describe('Price per unit'),
+      fee: z.number().optional().describe('Fee'),
+      amount: z.number().optional().describe('Total cash amount'),
+      currency: z.string().optional().describe('Currency code, default EUR'),
+      traded_at: z.string().optional().describe('Date YYYY-MM-DD. Defaults to today.'),
+      account_name: z.string().optional().describe('Account/broker name. Defaults to "Manual".'),
+    },
+  }, async ({ symbol, asset_class, type, quantity, price, fee, amount, currency, traded_at, account_name }) => {
+    const db = await getDb()
+    const account = await ensureFinAccount(db, account_name ?? 'Manual', 'broker')
+    if (!account) return err('could not create account')
+    const instrument = await ensureFinInstrument(db, symbol.toUpperCase(), asset_class, null)
+    if (!instrument) return err('could not create instrument')
+    const { data, error } = await db
+      .from('fin_transactions')
+      .insert({
+        account_id: account.id,
+        instrument_id: instrument.id,
+        type,
+        quantity: quantity ?? null,
+        price: price ?? null,
+        fee: fee ?? 0,
+        amount: amount ?? null,
+        currency: currency ?? 'EUR',
+        traded_at: traded_at ?? getToday(),
+        source: 'manual',
+      })
+      .select()
+      .single()
+    if (error) return err(error.message)
+    return ok(data)
+  })
 
   server.registerTool('log_workout_set', {
     description: 'Log a completed set for an exercise. Auto-attaches to today\'s session if available.',

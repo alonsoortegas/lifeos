@@ -255,3 +255,65 @@ export interface Todo {
   day_date: string
   sort_order: number
 }
+
+// ── Finances ─────────────────────────────────────────────────────────────────
+
+export type AssetClass = 'etf' | 'stock' | 'crypto'
+export type FinAccountKind = 'broker' | 'bank' | 'wallet' | 'manual'
+export type FinTransactionType =
+  | 'buy' | 'sell' | 'dividend' | 'deposit' | 'withdrawal' | 'fee' | 'transfer'
+export type FinImportSource = 'manual' | 'csv_tr' | 'csv_revolut' | 'csv_crypto'
+
+export interface FinAccount {
+  id: number
+  name: string
+  kind: FinAccountKind
+  currency: string
+  created_at: string
+}
+
+export interface FinInstrument {
+  id: number
+  symbol: string
+  isin: string | null
+  name: string | null
+  asset_class: AssetClass
+  currency: string
+  created_at: string
+}
+
+export interface FinHolding {
+  id: number
+  account_id: number
+  instrument_id: number
+  quantity: number
+  avg_cost: number | null
+  updated_at: string
+}
+
+export interface FinTransaction {
+  id: number
+  account_id: number | null
+  instrument_id: number | null
+  type: FinTransactionType
+  quantity: number | null
+  price: number | null
+  fee: number
+  amount: number | null
+  currency: string
+  traded_at: string
+  source: string
+  import_batch_id: string | null
+  external_id: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface FinPrice {
+  id: number
+  instrument_id: number
+  price: number
+  currency: string
+  as_of: string
+  source: string | null
+}

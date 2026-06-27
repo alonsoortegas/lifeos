@@ -8,9 +8,11 @@ import FocusTab from '@/components/tabs/FocusTab'
 import WorkoutTab from '@/components/tabs/WorkoutTab'
 import NutritionTab from '@/components/tabs/NutritionTab'
 import WhoopTab from '@/components/tabs/WhoopTab'
+import FinanceTab from '@/components/tabs/FinanceTab'
 import DesktopShell from '@/components/DesktopShell'
 
-const TAB_LABELS = ['Today', 'Focus', 'Workout', 'Fuel', 'Whoop']
+const TAB_LABELS = ['Today', 'Focus', 'Workout', 'Fuel', 'Whoop', 'Money']
+const LAST_TAB = TAB_LABELS.length - 1
 const DESKTOP_QUERY = '(min-width: 1024px)'
 const TAB_QUERY_INDEX: Record<string, number> = {
   today: 0,
@@ -18,6 +20,7 @@ const TAB_QUERY_INDEX: Record<string, number> = {
   workout: 2,
   nutrition: 3,
   whoop: 4,
+  finance: 5,
 }
 
 function initialMobileTab() {
@@ -48,7 +51,7 @@ function MobileShell() {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       const n = parseInt(e.key)
-      if (n >= 1 && n <= 5) setActiveTab(n - 1)
+      if (n >= 1 && n <= TAB_LABELS.length) setActiveTab(n - 1)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -61,6 +64,7 @@ function MobileShell() {
       case 2: return <WorkoutTab canAddExercises />
       case 3: return <NutritionTab />
       case 4: return <WhoopTab />
+      case 5: return <FinanceTab />
       default: return <TodayTab />
     }
   }
@@ -106,7 +110,7 @@ function MobileShell() {
           const dx = e.changedTouches[0].clientX - touchStartX.current
           const dy = e.changedTouches[0].clientY - touchStartY.current
           if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-            setActiveTab(t => dx < 0 ? Math.min(4, t + 1) : Math.max(0, t - 1))
+            setActiveTab(t => dx < 0 ? Math.min(LAST_TAB, t + 1) : Math.max(0, t - 1))
           }
         }}
       >
