@@ -1,4 +1,7 @@
 import type { AssetClass, FinImportSource, FinTransactionType } from '@/lib/types'
+import { parseNumber } from '@/lib/finance'
+
+export { parseNumber }
 
 /** A normalized transaction parsed from a broker/wallet CSV, before it is
  *  resolved against the account/instrument tables and inserted. */
@@ -85,24 +88,6 @@ function pick(row: Record<string, string>, aliases: string[]): string | undefine
     if (score > 0 && (!best || score > best.score)) best = { value: v, score }
   }
   return best?.value
-}
-
-/** Parse a number that may use either `1,234.56` or European `1.234,56` formatting. */
-export function parseNumber(raw: string | undefined): number | null {
-  if (raw == null) return null
-  let s = raw.replace(/[^\d.,-]/g, '').trim()
-  if (!s) return null
-  const lastComma = s.lastIndexOf(',')
-  const lastDot = s.lastIndexOf('.')
-  if (lastComma > lastDot) {
-    // European: comma is the decimal separator.
-    s = s.replace(/\./g, '').replace(',', '.')
-  } else {
-    // Anglo: comma is the thousands separator.
-    s = s.replace(/,/g, '')
-  }
-  const n = Number(s)
-  return Number.isFinite(n) ? n : null
 }
 
 function parseDate(raw: string | undefined): string | null {

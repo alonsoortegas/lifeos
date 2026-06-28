@@ -317,3 +317,19 @@ export interface FinPrice {
   as_of: string
   source: string | null
 }
+
+export type FinCashKind = 'cash' | 'fixed'
+
+export interface FinCash {
+  id: number
+  account_id: number
+  kind: FinCashKind
+  label: string | null
+  amount: number
+  currency: string
+  /** Annual rate as a fraction — 0.02 = 2% p.a. Zero for plain cash. */
+  apy: number
+  /** Accrual anchor (YYYY-MM-DD) — interest grows from this date. */
+  started_at: string
+  updated_at: string
+}

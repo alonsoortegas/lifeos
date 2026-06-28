@@ -98,7 +98,7 @@ async function toBaseCurrency(quotes: Quote[], base: string): Promise<Quote[]> {
   await Promise.all(
     needed.map(async (from) => {
       try {
-        const res = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${base}`)
+        const res = await fetch(`https://api.frankfurter.dev/v1/latest?from=${from}&to=${base}`)
         if (!res.ok) return
         const j = (await res.json()) as { rates?: Record<string, number> }
         const r = j.rates?.[base]

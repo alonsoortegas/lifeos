@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import {
+  BASE_CURRENCY,
   buildPositions,
+  fetchFxRate,
   portfolioHistory,
   rollupHoldings,
   summarizePortfolio,
@@ -12,6 +14,8 @@ import {
 import type {
   AssetClass,
   FinAccount,
+  FinCash,
+  FinCashKind,
   FinHolding,
   FinInstrument,
   FinPrice,
@@ -37,6 +41,21 @@ export interface AddHoldingInput {
   name?: string | null
   quantity: number
   avgCost: number | null
+  /** Currency the avgCost was entered in; converted to BASE_CURRENCY on save. */
+  costCurrency?: string
+}
+
+export interface AddCashInput {
+  accountName: string
+  kind: FinCashKind
+  label?: string | null
+  amount: number
+  /** Currency the amount was entered in; converted to BASE_CURRENCY on save. */
+  currency?: string
+  /** Annual rate as a percent (2 = 2% p.a.); only used for `fixed`. */
+  apyPct?: number
+  /** Accrual start (YYYY-MM-DD); defaults to today. */
+  startedAt?: string
 }
 
 export interface UseFinance {
@@ -50,8 +69,10 @@ export interface UseFinance {
   history: { date: string; value: number }[]
   refreshPrices: () => Promise<void>
   addHolding: (input: AddHoldingInput) => Promise<boolean>
+  addCash: (input: AddCashInput) => Promise<boolean>
   importTransactions: (source: string, parsed: ParseResult) => Promise<{ inserted: number; skipped: number } | null>
   deleteHolding: (id: number) => Promise<void>
+  deleteCash: (id: number) => Promise<void>
   deleteTransaction: (txn: FinTransaction) => Promise<void>
 }
 
@@ -61,6 +82,7 @@ export function useFinance(): UseFinance {
   const [holdings, setHoldings] = useState<FinHolding[]>([])
   const [prices, setPrices] = useState<FinPrice[]>([])
   const [transactions, setTransactions] = useState<FinTransaction[]>([])
+  const [cash, setCash] = useState<FinCash[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -71,15 +93,16 @@ export function useFinance(): UseFinance {
   }
 
   const load = useCallback(async () => {
-    const [acc, inst, hold, price, txn] = await Promise.all([
+    const [acc, inst, hold, price, txn, csh] = await Promise.all([
       supabase.from('fin_accounts').select('*').order('name'),
       supabase.from('fin_instruments').select('*').order('symbol'),
       supabase.from('fin_holdings').select('*'),
       // Enough history for value, day-change, and the net-worth trend.
       supabase.from('fin_prices').select('*').order('as_of', { ascending: false }).limit(1000),
       supabase.from('fin_transactions').select('*').order('traded_at', { ascending: false }).limit(200),
+      supabase.from('fin_cash').select('*').order('updated_at', { ascending: false }),
     ])
-    if (acc.error || inst.error || hold.error || price.error || txn.error) {
+    if (acc.error || inst.error || hold.error || price.error || txn.error || csh.error) {
       flashError('couldn\'t load finances')
     }
     setAccounts((acc.data ?? []) as FinAccount[])
@@ -87,6 +110,7 @@ export function useFinance(): UseFinance {
     setHoldings((hold.data ?? []) as FinHolding[])
     setPrices((price.data ?? []) as FinPrice[])
     setTransactions((txn.data ?? []) as FinTransaction[])
+    setCash((csh.data ?? []) as FinCash[])
     setLoading(false)
   }, [])
 
@@ -104,13 +128,14 @@ export function useFinance(): UseFinance {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fin_prices' }, () => void load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fin_holdings' }, () => void load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fin_transactions' }, () => void load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fin_cash' }, () => void load())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [load])
 
   const summary = useMemo(
-    () => summarizePortfolio(buildPositions(holdings, instruments, prices)),
-    [holdings, instruments, prices],
+    () => summarizePortfolio(buildPositions(holdings, instruments, prices, accounts), cash),
+    [holdings, instruments, prices, accounts, cash],
   )
 
   const history = useMemo(
@@ -168,16 +193,53 @@ export function useFinance(): UseFinance {
     if (!account) return false
     const instrument = await ensureInstrument(input.symbol.toUpperCase(), input.assetClass, input.isin, input.name)
     if (!instrument) return false
+
+    // avg_cost is stored in the portfolio base currency; convert if entered in another.
+    let avgCost = input.avgCost
+    if (avgCost != null && input.costCurrency && input.costCurrency !== BASE_CURRENCY) {
+      const rate = await fetchFxRate(input.costCurrency, BASE_CURRENCY)
+      if (rate == null) { flashError(`couldn't convert ${input.costCurrency}→${BASE_CURRENCY}`); return false }
+      avgCost = avgCost * rate
+    }
+
     const { error: e } = await supabase
       .from('fin_holdings')
       .upsert(
-        { account_id: account.id, instrument_id: instrument.id, quantity: input.quantity, avg_cost: input.avgCost, updated_at: new Date().toISOString() },
+        { account_id: account.id, instrument_id: instrument.id, quantity: input.quantity, avg_cost: avgCost, updated_at: new Date().toISOString() },
         { onConflict: 'account_id,instrument_id' },
       )
     if (e) { flashError('couldn\'t save holding'); return false }
     await load()
     return true
   }, [ensureAccount, ensureInstrument, load])
+
+  const addCash = useCallback(async (input: AddCashInput): Promise<boolean> => {
+    const account = await ensureAccount(input.accountName, 'bank')
+    if (!account) return false
+
+    // Stored in base currency; convert the entered amount if it isn't already.
+    let amount = input.amount
+    if (input.currency && input.currency !== BASE_CURRENCY) {
+      const rate = await fetchFxRate(input.currency, BASE_CURRENCY)
+      if (rate == null) { flashError(`couldn't convert ${input.currency}→${BASE_CURRENCY}`); return false }
+      amount = amount * rate
+    }
+
+    const apy = input.kind === 'fixed' ? (input.apyPct ?? 0) / 100 : 0
+    const { error: e } = await supabase.from('fin_cash').insert({
+      account_id: account.id,
+      kind: input.kind,
+      label: input.label ?? null,
+      amount,
+      currency: BASE_CURRENCY,
+      apy,
+      started_at: input.startedAt ?? new Date().toISOString().slice(0, 10),
+      updated_at: new Date().toISOString(),
+    })
+    if (e) { flashError('couldn\'t save cash'); return false }
+    await load()
+    return true
+  }, [ensureAccount, load])
 
   const importTransactions = useCallback(async (
     source: string, parsed: ParseResult,
@@ -256,6 +318,12 @@ export function useFinance(): UseFinance {
     await load()
   }, [load])
 
+  const deleteCash = useCallback(async (id: number) => {
+    const { error: e } = await supabase.from('fin_cash').delete().eq('id', id)
+    if (e) { flashError('couldn\'t remove'); return }
+    await load()
+  }, [load])
+
   /** Recompute a holding's quantity + avg_cost from the transactions that
    *  remain for its account/instrument (used after a transaction is deleted). */
   const recomputeHolding = useCallback(async (accountId: number, instrumentId: number) => {
@@ -294,6 +362,6 @@ export function useFinance(): UseFinance {
 
   return {
     loading, refreshing, error, accounts, instruments, transactions, summary, history,
-    refreshPrices, addHolding, importTransactions, deleteHolding, deleteTransaction,
+    refreshPrices, addHolding, addCash, importTransactions, deleteHolding, deleteCash, deleteTransaction,
   }
 }
