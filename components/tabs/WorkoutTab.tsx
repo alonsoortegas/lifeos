@@ -12,6 +12,13 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 )
 
+// Normalise a weight string typed by the user — accept both "," and "." as decimal separator
+function parseWeightInput(raw: string): number | null {
+  const normalized = raw.replace(',', '.')
+  const val = parseFloat(normalized)
+  return Number.isFinite(val) && val >= 0 ? val : null
+}
+
 // Returns the upper bound of a prescribed_reps string ("4-5" → 5, "8/leg" → 8, "5" → 5)
 function parseTopReps(r: string | null): number | null {
   if (!r) return null
@@ -48,6 +55,7 @@ const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10]
 interface ExerciseState {
   expanded: boolean
   weight: number
+  weightText: string
   selectedReps: number
   selectedRpe: number
   selectedDistance: number
@@ -199,9 +207,12 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
         scopedLogs = (fallbackLogData ?? []) as WorkoutLog[]
       }
 
-      setExerciseStates(exList.map(ex => ({
+      setExerciseStates(exList.map(ex => {
+        const initWeight = ex.prescribed_weight ?? last[ex.exercise_name]?.weight_lbs ?? 0
+        return {
         expanded: false,
-        weight: ex.prescribed_weight ?? last[ex.exercise_name]?.weight_lbs ?? 0,
+        weight: initWeight,
+        weightText: String(initWeight),
         selectedReps: parseReps(ex.prescribed_reps),
         selectedRpe: parseRpe(ex.target_rpe),
         selectedDistance: last[ex.exercise_name]?.distance_m ?? 500,
@@ -218,7 +229,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
             duration_s: log.duration_s ?? undefined,
             loggedAt: log.logged_at,
           })),
-      })))
+      }
+      }))
     }
 
     setLoading(false)
@@ -312,18 +324,21 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
     const exercise = data as WorkoutExercise
     setExercises(prev => [...prev, exercise])
-    setExerciseStates(prev => [
+    setExerciseStates(prev => {
+      const initWeight = exercise.prescribed_weight ?? 0
+      return [
       ...prev,
       {
         expanded: true,
-        weight: exercise.prescribed_weight ?? 0,
+        weight: initWeight,
+        weightText: String(initWeight),
         selectedReps: parseReps(exercise.prescribed_reps),
         selectedRpe: parseRpe(exercise.target_rpe),
         selectedDistance: 500,
         selectedDuration: 120,
         loggedSets: [],
       },
-    ])
+    ]})
     setExerciseForm(EMPTY_EXERCISE_FORM)
     setAddOpen(false)
   }
@@ -702,11 +717,38 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       <div className="flex items-center justify-between">
                         <span className="text-[var(--text-dim)] text-xs uppercase tracking-wider">Weight</span>
                         <div className="flex items-center gap-3">
-                          <button onClick={() => updateState(i, { weight: Math.max(0, s.weight - 2.5) })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">−</button>
-                          <span className="text-[var(--text)] text-2xl font-bold min-w-[64px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                            {s.weight}<span className="text-[var(--text-faint)] text-sm ml-0.5">kg</span>
-                          </span>
-                          <button onClick={() => updateState(i, { weight: s.weight + 2.5 })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">+</button>
+                          <button
+                            onClick={() => {
+                              const next = Math.max(0, s.weight - 2.5)
+                              updateState(i, { weight: next, weightText: String(next) })
+                            }}
+                            className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]"
+                          >−</button>
+                          <div className="flex items-baseline min-w-[64px] justify-center">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={s.weightText}
+                              onChange={e => {
+                                const raw = e.target.value
+                                const parsed = parseWeightInput(raw)
+                                updateState(i, { weightText: raw, ...(parsed !== null ? { weight: parsed } : {}) })
+                              }}
+                              onFocus={e => e.target.select()}
+                              onBlur={() => updateState(i, { weightText: String(s.weight) })}
+                              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                              className="text-[var(--text)] text-2xl font-bold w-[56px] text-center bg-transparent outline-none border-b border-[var(--border)] focus:border-[#00d26a] transition-colors"
+                              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+                            />
+                            <span className="text-[var(--text-faint)] text-sm ml-0.5">kg</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const next = s.weight + 2.5
+                              updateState(i, { weight: next, weightText: String(next) })
+                            }}
+                            className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]"
+                          >+</button>
                         </div>
                       </div>
                     )}
