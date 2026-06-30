@@ -34,12 +34,6 @@ import type {
 
 const supabase = createClient()
 
-const DAY_TYPE_OPTIONS: { value: NutritionDayType; label: string }[] = [
-  { value: 'hard',     label: 'LIFT' },
-  { value: 'moderate', label: 'CARDIO' },
-  { value: 'rest',     label: 'REST' },
-]
-
 const MACRO_META: { key: keyof MacroTotals; label: string; unit: string; color: string }[] = [
   { key: 'calories',  label: 'Calories', unit: 'kcal', color: '#00d26a'  },
   { key: 'protein_g', label: 'Protein',  unit: 'g',    color: '#2dd4bf'  },
@@ -82,7 +76,7 @@ export default function NutritionDesktop({
   initialAction?: string
   onInitialActionConsumed?: () => void
 }) {
-  const [dayType, setDayType] = useState<NutritionDayType>(() => getDefaultNutritionDayType())
+  const dayType = getDefaultNutritionDayType()
   const [nutritionDay, setNutritionDay] = useState<NutritionDay | null>(null)
   const [foods, setFoods] = useState<FoodItem[]>([])
   const [substitutionRows, setSubstitutionRows] = useState<SubstitutionRow[]>([])
@@ -92,9 +86,6 @@ export default function NutritionDesktop({
   const [portionDrafts, setPortionDrafts] = useState<Partial<Record<MealTemplateName, PortionDraft>>>({})
   const [loading, setLoading] = useState(true)
   const [targetMap, setTargetMap] = useState<Partial<Record<NutritionDayType, MacroTotals>>>({})
-  const [whoopCalibration, setWhoopCalibration] = useState<WhoopEnergyCalibration>(
-    STATIC_WHOOP_ENERGY_CALIBRATION,
-  )
 
   const targets = useMemo(
     () => targetMap[dayType] ?? (nutritionDay ? {
@@ -165,7 +156,6 @@ export default function NutritionDesktop({
       if (cancelled) return
       const loadedTargets = targetPlan.targets
       setTargetMap(loadedTargets)
-      setWhoopCalibration(targetPlan.calibration)
       const day = await ensureDay(dayType, loadedTargets, targetPlan.calibration)
       setFoods((foodResult.data ?? []) as FoodItem[])
       setSubstitutionRows((subResult.data ?? []) as SubstitutionRow[])
@@ -189,7 +179,7 @@ export default function NutritionDesktop({
   }, [initialAction, loading, defaultMeals, onInitialActionConsumed])
 
   const logTemplateItem = async (mealName: MealTemplateName, item: DefaultMealItem, override?: { food: FoodItem; quantity: number; label: string; groupName?: string }) => {
-    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, whoopCalibration)); if (!day) return
+    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, STATIC_WHOOP_ENERGY_CALIBRATION)); if (!day) return
     const food = override?.food ?? foodsByName.get(item.foodName); if (!food) return
     const label = override?.label ?? item.label
     const key = foodKey(mealName, food.id, label)
@@ -222,7 +212,7 @@ export default function NutritionDesktop({
   })
 
   const logFoodPortion = async (mealName: MealTemplateName) => {
-    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, whoopCalibration)); if (!day) return
+    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, STATIC_WHOOP_ENERGY_CALIBRATION)); if (!day) return
     const draft = getPortionDraft(mealName)
     const food = foods.find(candidate => candidate.id === Number(draft.foodItemId))
     const quantity = Number(draft.quantity)
@@ -266,37 +256,16 @@ export default function NutritionDesktop({
         <div>
           <div style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>DAILY FUEL · TEMPLATES · SWAPS</div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', margin: '3px 0 0', letterSpacing: '-0.01em' }}>Nutrition</h1>
-          {whoopCalibration.method === 'whoop_rolling_v1' && (
-            <div style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-faint)', marginTop: 3 }}>
-              WHOOP {whoopCalibration.adjustment >= 0 ? '+' : ''}{whoopCalibration.adjustment} kcal
-              {' · '}{whoopCalibration.recentCalories} recent / {whoopCalibration.baselineCalories} baseline
-            </div>
-          )}
         </div>
-        {/* Day type toggle */}
-        <div style={{ display: 'flex', gap: 3, padding: 3, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
-          {DAY_TYPE_OPTIONS.map(opt => {
-            const optionTargets = targetMap[opt.value] ?? EMPTY_MACRO_TOTALS
-            return (
-              <button
-                key={opt.value}
-                onClick={() => setDayType(opt.value)}
-                style={{
-                  padding: '6px 14px', borderRadius: 10, cursor: 'pointer', border: 'none',
-                  background: dayType === opt.value ? 'linear-gradient(180deg, #2ee6a8, #00d26a)' : 'transparent',
-                  boxShadow: dayType === opt.value ? 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 14px rgba(0,210,106,0.3)' : 'none',
-                  color: dayType === opt.value ? '#062514' : 'var(--text-dim)',
-                  display: 'flex', flexDirection: 'column', lineHeight: 1.2, alignItems: 'flex-start', minWidth: 100,
-                }}
-              >
-                <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em' }}>{opt.label}</span>
-                <span style={{ fontFamily: mono, fontSize: 9, color: dayType === opt.value ? 'rgba(6,37,20,0.65)' : 'var(--text-faint)', marginTop: 2 }}>
-                  {optionTargets.calories} kcal · {optionTargets.protein_g}p
-                </span>
-              </button>
-            )
-          })}
+        {/*
+        Bulk target summary hidden for now. Restore this block if the header target badge is useful again.
+        <div style={{ padding: '9px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, minWidth: 190 }}>
+          <div style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-faint)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>Bulk target</div>
+          <div style={{ marginTop: 3, fontFamily: mono, fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
+            2700 kcal · 160p · 335c · 80f
+          </div>
         </div>
+        */}
       </div>
 
       {/* Two columns */}

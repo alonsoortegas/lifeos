@@ -8,7 +8,6 @@ import type {
   NutritionDayTypeRow,
 } from '@/lib/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { DAY_ORDER, getDayMeta, getPlanStatus } from '@/lib/workout'
 
 export interface MacroTotals {
   calories: number
@@ -42,6 +41,8 @@ export interface NutritionTargetPlan {
   targets: Partial<Record<NutritionDayType, MacroTotals>>
   calibration: WhoopEnergyCalibration
 }
+
+export const FLAT_BULK_DAY_TYPE: NutritionDayType = 'hard'
 
 export const STATIC_WHOOP_ENERGY_CALIBRATION: WhoopEnergyCalibration = {
   method: 'static',
@@ -210,23 +211,14 @@ export function applyWhoopAdjustment(
 export async function loadNutritionTargetPlan(
   supabase: SupabaseClient,
 ): Promise<NutritionTargetPlan> {
-  const [targetResult, whoopResult] = await Promise.all([
-    supabase.from('nutrition_day_types').select('key, kcal_target, protein_g, carbs_g, fat_g'),
-    supabase
-      .from('whoop_snapshots')
-      .select('kilojoule, recorded_at, cycle_start, cycle_end, raw_json')
-      .not('kilojoule', 'is', null)
-      .order('recorded_at', { ascending: false })
-      .limit(35),
-  ])
+  const targetResult = await supabase
+    .from('nutrition_day_types')
+    .select('key, kcal_target, protein_g, carbs_g, fat_g')
 
   const targets = targetMapFromRows(targetResult.data ?? [])
-  const calibration = computeWhoopEnergyCalibration(
-    (whoopResult.data ?? []) as WhoopEnergySnapshot[],
-  )
   return {
     targets,
-    calibration,
+    calibration: STATIC_WHOOP_ENERGY_CALIBRATION,
   }
 }
 
@@ -251,12 +243,8 @@ export function nutritionDayPayload(
 }
 
 export function getDefaultNutritionDayType(reference = new Date()): NutritionDayType {
-  const plan = getPlanStatus(reference)
-  if (plan.blockSlug !== 'bulk-summer-2026') return 'moderate'
-
-  const day = DAY_ORDER[reference.getDay() === 0 ? 6 : reference.getDay() - 1] ?? 'monday'
-  if (getDayMeta(day, plan.blockSlug).dbKey) return 'hard'
-  return day === 'tuesday' || day === 'sunday' ? 'moderate' : 'rest'
+  void reference
+  return FLAT_BULK_DAY_TYPE
 }
 
 export function calculateMacroCalories(macros: Pick<MacroTotals, 'protein_g' | 'carbs_g' | 'fat_g'>): number {
@@ -288,6 +276,8 @@ export function calculateRemaining(targets: MacroTotals, consumed: MacroTotals):
 }
 
 export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
+  void dayType
+
   const commonDinnerProtein: DefaultMealItem = {
     foodName: 'Raw chicken breast',
     quantity: 1,
@@ -295,145 +285,14 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
     substitutionGroup: 'protein_45_50g',
   }
 
-  if (dayType === 'hard') {
-    return [
-      {
-        name: 'breakfast',
-        label: MEAL_LABELS.breakfast,
-        defaultTime: '07:30',
-        items: [
-          { foodName: 'Egg', quantity: 4, label: '4 eggs' },
-          { foodName: 'Vollkornbrot', quantity: 3, label: '3 slices Vollkornbrot', substitutionGroup: 'carb_45_50g' },
-        ],
-      },
-      {
-        name: 'midday',
-        label: MEAL_LABELS.midday,
-        defaultTime: '12:30',
-        items: [
-          { foodName: 'Skyr / magerquark', quantity: 1, label: '1 cup skyr/magerquark', substitutionGroup: 'protein_25g' },
-          { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-          { foodName: 'Dry oats 3/4 cup', quantity: 1, label: '3/4 cup dry oats', substitutionGroup: 'carb_45_50g' },
-          { foodName: 'Berries', quantity: 1, label: 'berries' },
-        ],
-      },
-      {
-        name: 'pre_workout',
-        label: MEAL_LABELS.pre_workout,
-        defaultTime: '16:00',
-        items: [
-          { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-          { foodName: 'Rice cakes', quantity: 1, label: '2 rice cakes', substitutionGroup: 'carb_15g' },
-        ],
-      },
-      {
-        name: 'post_workout',
-        label: MEAL_LABELS.post_workout,
-        defaultTime: '18:00',
-        items: [
-          { foodName: 'Protein powder', quantity: 1, label: '1 scoop protein', substitutionGroup: 'protein_25g' },
-          { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-        ],
-      },
-      {
-        name: 'dinner',
-        label: MEAL_LABELS.dinner,
-        defaultTime: '20:00',
-        items: [
-          commonDinnerProtein,
-          { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice', substitutionGroup: 'carb_70g_starchy' },
-          { foodName: 'Vegetables', quantity: 1, label: 'vegetables' },
-          { foodName: 'Olive oil', quantity: 1, label: '15ml olive oil' },
-        ],
-      },
-      {
-        name: 'snack',
-        label: MEAL_LABELS.snack,
-        defaultTime: '21:30',
-        items: [
-          { foodName: 'Mixed nuts', quantity: 1, label: '25g mixed nuts' },
-          { foodName: 'Granola', quantity: 1, label: '1/4 cup granola', substitutionGroup: 'carb_27g' },
-          { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-          { foodName: 'Bread', quantity: 2, label: '2 slices bread', substitutionGroup: 'carb_27g' },
-        ],
-      },
-    ]
-  }
-
-  if (dayType === 'moderate') {
-    return [
-      {
-        name: 'breakfast',
-        label: MEAL_LABELS.breakfast,
-        defaultTime: '07:30',
-        items: [
-          { foodName: 'Egg', quantity: 4, label: '4 eggs' },
-          { foodName: 'Protein powder', quantity: 1, label: '1 scoop protein', substitutionGroup: 'protein_25g' },
-          { foodName: 'Dry oats 3/4 cup', quantity: 1, label: '3/4 cup oats', substitutionGroup: 'carb_45_50g' },
-          { foodName: 'Berries', quantity: 1, label: 'berries' },
-        ],
-      },
-      {
-        name: 'midday',
-        label: MEAL_LABELS.midday,
-        defaultTime: '12:30',
-        items: [
-          { foodName: 'Skyr / magerquark', quantity: 1, label: '1 cup skyr/magerquark', substitutionGroup: 'protein_25g' },
-          { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-          { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice', substitutionGroup: 'carb_70g' },
-          { foodName: 'Salad / raw veggies', quantity: 1, label: 'salad/raw veggies' },
-        ],
-      },
-      {
-        name: 'pre_workout',
-        label: MEAL_LABELS.pre_workout,
-        defaultTime: '16:00',
-        items: [
-          { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-          { foodName: 'Rice cakes', quantity: 1, label: '2 rice cakes', substitutionGroup: 'carb_15g' },
-        ],
-      },
-      {
-        name: 'post_workout',
-        label: MEAL_LABELS.post_workout,
-        defaultTime: '18:00',
-        items: [
-          { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-        ],
-      },
-      {
-        name: 'dinner',
-        label: MEAL_LABELS.dinner,
-        defaultTime: '19:30',
-        items: [
-          commonDinnerProtein,
-          { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice', substitutionGroup: 'carb_70g' },
-          { foodName: 'Vegetables', quantity: 1, label: 'vegetables' },
-          { foodName: 'Olive oil', quantity: 1, label: '15ml olive oil' },
-        ],
-      },
-      {
-        name: 'snack',
-        label: MEAL_LABELS.snack,
-        defaultTime: '21:30',
-        items: [
-          { foodName: 'Mixed nuts', quantity: 1, label: '25g mixed nuts' },
-          { foodName: 'Bread', quantity: 1, label: '1 slice bread', substitutionGroup: 'carb_15g' },
-        ],
-      },
-    ]
-  }
-
   return [
     {
       name: 'breakfast',
       label: MEAL_LABELS.breakfast,
-      defaultTime: '08:00',
+      defaultTime: '07:30',
       items: [
         { foodName: 'Egg', quantity: 4, label: '4 eggs' },
-        { foodName: 'Protein powder', quantity: 1, label: '1 scoop protein', substitutionGroup: 'protein_25g' },
-        { foodName: 'Dry oats 1/2 cup', quantity: 1, label: '1/2 cup oats', substitutionGroup: 'carb_27g' },
-        { foodName: 'Berries', quantity: 1, label: 'berries' },
+        { foodName: 'Vollkornbrot', quantity: 3, label: '3 slices Vollkornbrot', substitutionGroup: 'carb_45_50g' },
       ],
     },
     {
@@ -443,7 +302,7 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
       items: [
         { foodName: 'Skyr / magerquark', quantity: 1, label: '1 cup skyr/magerquark', substitutionGroup: 'protein_25g' },
         { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-        { foodName: 'Dry oats 1/2 cup', quantity: 1, label: '1/2 cup oats', substitutionGroup: 'carb_27g' },
+        { foodName: 'Dry oats 3/4 cup', quantity: 1, label: '3/4 cup dry oats', substitutionGroup: 'carb_45_50g' },
         { foodName: 'Berries', quantity: 1, label: 'berries' },
       ],
     },
@@ -451,21 +310,27 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
       name: 'pre_workout',
       label: MEAL_LABELS.pre_workout,
       defaultTime: '16:00',
-      items: [],
+      items: [
+        { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
+        { foodName: 'Rice cakes', quantity: 1, label: '2 rice cakes', substitutionGroup: 'carb_15g' },
+      ],
     },
     {
       name: 'post_workout',
       label: MEAL_LABELS.post_workout,
       defaultTime: '18:00',
-      items: [],
+      items: [
+        { foodName: 'Protein powder', quantity: 1, label: '1 scoop protein', substitutionGroup: 'protein_25g' },
+        { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
+      ],
     },
     {
       name: 'dinner',
       label: MEAL_LABELS.dinner,
-      defaultTime: '19:30',
+      defaultTime: '20:00',
       items: [
         commonDinnerProtein,
-        { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice', substitutionGroup: 'carb_70g' },
+        { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice', substitutionGroup: 'carb_70g_starchy' },
         { foodName: 'Vegetables', quantity: 1, label: 'vegetables' },
         { foodName: 'Olive oil', quantity: 1, label: '15ml olive oil' },
       ],
@@ -475,10 +340,9 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
       label: MEAL_LABELS.snack,
       defaultTime: '21:30',
       items: [
-        { foodName: 'Mixed nuts', quantity: 1, label: '25g mixed nuts' },
-        { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-        { foodName: 'Bread', quantity: 2, label: '2 slices bread', substitutionGroup: 'carb_27g' },
-        { foodName: 'Dry oats 1/4 cup', quantity: 1, label: '1/4 cup oats', substitutionGroup: 'carb_15g' },
+        { foodName: 'Mixed nuts', quantity: 1.3, label: '30g mixed nuts' },
+        { foodName: 'Granola', quantity: 1, label: '1/4 cup granola', substitutionGroup: 'carb_27g' },
+        { foodName: 'Bread', quantity: 1, label: '1 slice bread', substitutionGroup: 'carb_15g' },
       ],
     },
   ]

@@ -66,14 +66,14 @@ describe('server goal-date boundary', () => {
 })
 
 describe('bulk nutrition day defaults', () => {
-  it('uses lift targets on scheduled lifting days', () => {
+  it('uses the flat bulk target on scheduled lifting days', () => {
     expect(getDefaultNutritionDayType(new Date('2026-06-29T12:00:00'))).toBe('hard')
     expect(getDefaultNutritionDayType(new Date('2026-07-04T12:00:00'))).toBe('hard')
   })
 
-  it('uses cardio and rest targets on non-lifting days', () => {
-    expect(getDefaultNutritionDayType(new Date('2026-06-30T12:00:00'))).toBe('moderate')
-    expect(getDefaultNutritionDayType(new Date('2026-07-02T12:00:00'))).toBe('rest')
-    expect(getDefaultNutritionDayType(new Date('2026-07-05T12:00:00'))).toBe('moderate')
+  it('uses the same flat bulk target on cardio and rest days', () => {
+    expect(getDefaultNutritionDayType(new Date('2026-06-30T12:00:00'))).toBe('hard')
+    expect(getDefaultNutritionDayType(new Date('2026-07-02T12:00:00'))).toBe('hard')
+    expect(getDefaultNutritionDayType(new Date('2026-07-05T12:00:00'))).toBe('hard')
   })
 })
