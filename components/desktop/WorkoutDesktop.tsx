@@ -39,11 +39,18 @@ function parseRpe(r: string | null): number {
   return match ? parseFloat(match[0]) : 8
 }
 
+function parseWeightInput(raw: string): number | null {
+  const normalized = raw.replace(',', '.')
+  const val = parseFloat(normalized)
+  return Number.isFinite(val) && val >= 0 ? val : null
+}
+
 const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10]
 
 interface ExerciseState {
   expanded: boolean
   weight: number
+  weightText: string
   selectedReps: number
   selectedRpe: number
   loggedSets: { id?: number; setNum: number; weight: number; reps: number; rpe: number }[]
@@ -133,14 +140,18 @@ export default function WorkoutDesktop({
         const { data: fallback } = await supabase.from('workout_logs').select('*').in('exercise_name', names).gte('logged_at', start).lt('logged_at', end).order('logged_at', { ascending: true })
         scopedLogs = (fallback ?? []) as WorkoutLog[]
       }
-      setExerciseStates(exList.map(ex => ({
-        expanded: false,
-        weight: ex.prescribed_weight ?? last[ex.exercise_name]?.weight_lbs ?? 0,
-        selectedReps: parseReps(ex.prescribed_reps),
-        selectedRpe: parseRpe(ex.target_rpe),
-        loggedSets: scopedLogs.filter(log => log.workout_exercise_id === ex.id || (!log.workout_exercise_id && log.exercise_name === ex.exercise_name))
-          .map((log, idx) => ({ id: log.id, setNum: log.set_number ?? idx + 1, weight: log.weight_lbs ?? 0, reps: log.reps ?? 0, rpe: log.rpe ?? 0 })),
-      })))
+      setExerciseStates(exList.map(ex => {
+        const initWeight = ex.prescribed_weight ?? last[ex.exercise_name]?.weight_lbs ?? 0
+        return {
+          expanded: false,
+          weight: initWeight,
+          weightText: String(initWeight),
+          selectedReps: parseReps(ex.prescribed_reps),
+          selectedRpe: parseRpe(ex.target_rpe),
+          loggedSets: scopedLogs.filter(log => log.workout_exercise_id === ex.id || (!log.workout_exercise_id && log.exercise_name === ex.exercise_name))
+            .map((log, idx) => ({ id: log.id, setNum: log.set_number ?? idx + 1, weight: log.weight_lbs ?? 0, reps: log.reps ?? 0, rpe: log.rpe ?? 0 })),
+        }
+      }))
     }
     setLoading(false)
   }, [currentPlan.blockSlug, currentWeek])
@@ -380,12 +391,25 @@ export default function WorkoutDesktop({
                   <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>Weight</span>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <button onClick={() => updateState(activeExIdx, { weight: Math.max(0, activeState.weight - 2.5) })} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-dim)', fontSize: 18, cursor: 'pointer' }}>−</button>
+                      <button onClick={() => { const next = Math.max(0, activeState.weight - 2.5); updateState(activeExIdx, { weight: next, weightText: String(next) }) }} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-dim)', fontSize: 18, cursor: 'pointer' }}>−</button>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-                        <span style={{ fontFamily: mono, fontSize: 38, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', lineHeight: 1 }}>{activeState.weight}</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={activeState.weightText}
+                          onChange={e => {
+                            const raw = e.target.value
+                            const parsed = parseWeightInput(raw)
+                            updateState(activeExIdx, { weightText: raw, ...(parsed !== null ? { weight: parsed } : {}) })
+                          }}
+                          onFocus={e => e.target.select()}
+                          onBlur={() => updateState(activeExIdx, { weightText: String(activeState.weight) })}
+                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                          style={{ fontFamily: mono, fontSize: 38, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)', lineHeight: 1, width: 90, textAlign: 'center', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', outline: 'none' }}
+                        />
                         <span style={{ fontFamily: mono, fontSize: 12, color: 'var(--text-faint)' }}>kg</span>
                       </div>
-                      <button onClick={() => updateState(activeExIdx, { weight: activeState.weight + 2.5 })} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-dim)', fontSize: 18, cursor: 'pointer' }}>+</button>
+                      <button onClick={() => { const next = activeState.weight + 2.5; updateState(activeExIdx, { weight: next, weightText: String(next) }) }} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-dim)', fontSize: 18, cursor: 'pointer' }}>+</button>
                     </div>
                   </div>
                   {/* Reps grid */}
