@@ -55,27 +55,32 @@ async function fetchEquities(
   const now = new Date().toISOString()
   try {
     if (PROVIDER === 'twelvedata') {
-      const url = `https://api.twelvedata.com/price?symbol=${symbols.join(',')}&apikey=${API_KEY}`
+      // /quote (not /price) — it reports the listing currency, so EUR-quoted
+      // ETFs (e.g. VWCE on Xetra) aren't mistaken for USD and FX'd twice.
+      const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbols.join(','))}&apikey=${API_KEY}`
       const res = await fetch(url)
       if (!res.ok) return []
-      const json = (await res.json()) as Record<string, { price?: string }> | { price?: string }
-      // Single symbol → { price }; multiple → { SYM: { price } }.
+      type TdQuote = { close?: string; currency?: string }
+      const json = (await res.json()) as Record<string, TdQuote> | TdQuote
+      // Single symbol → flat object; multiple → { SYM: {...} }.
       const out: Quote[] = []
       for (const inst of instruments) {
         const sym = inst.symbol.toUpperCase()
-        const entry = symbols.length === 1 ? (json as { price?: string }) : (json as Record<string, { price?: string }>)[sym]
-        const price = entry?.price ? Number(entry.price) : NaN
+        const entry = symbols.length === 1 ? (json as TdQuote) : (json as Record<string, TdQuote>)[sym]
+        const price = entry?.close ? Number(entry.close) : NaN
         if (Number.isFinite(price)) {
-          out.push({ symbol: sym, asset_class: inst.asset_class, price, currency: 'USD', as_of: now })
+          out.push({ symbol: sym, asset_class: inst.asset_class, price, currency: entry?.currency?.toUpperCase() || 'USD', as_of: now })
         }
       }
       return out
     }
     if (PROVIDER === 'finnhub') {
+      // Finnhub quotes carry no currency field; its coverage is US-listed
+      // symbols, so USD is assumed.
       const results = await Promise.all(
         instruments.map(async (inst) => {
           const sym = inst.symbol.toUpperCase()
-          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${API_KEY}`)
+          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${API_KEY}`)
           if (!res.ok) return null
           const j = (await res.json()) as { c?: number }
           return j.c ? { symbol: sym, asset_class: inst.asset_class, price: j.c, currency: 'USD', as_of: now } : null

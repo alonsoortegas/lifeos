@@ -161,7 +161,26 @@ export function summarizePortfolio(positions: Position[], cash: FinCash[] = []):
   }
 }
 
-/** Build positions from raw rows, attaching the two most-recent prices per instrument. */
+/** Collapse raw price rows to one close per instrument per day — the day's
+ *  last row. Manual intraday syncs would otherwise masquerade as day-over-day
+ *  movement (two syncs an hour apart → "today +0.00%"). Returns ascending. */
+export function dailyCloses(
+  prices: { instrument_id: number; price: number; as_of: string }[],
+): Map<number, { day: string; price: number }[]> {
+  const sorted = prices.slice().sort((a, b) => a.as_of.localeCompare(b.as_of))
+  const out = new Map<number, { day: string; price: number }[]>()
+  for (const p of sorted) {
+    const day = p.as_of.slice(0, 10)
+    const list = out.get(p.instrument_id) ?? []
+    const last = list[list.length - 1]
+    if (last && last.day === day) last.price = p.price // later row wins the day
+    else list.push({ day, price: p.price })
+    out.set(p.instrument_id, list)
+  }
+  return out
+}
+
+/** Build positions from raw rows, attaching latest/previous daily close per instrument. */
 export function buildPositions(
   holdings: FinHolding[],
   instruments: FinInstrument[],
@@ -170,53 +189,39 @@ export function buildPositions(
 ): Position[] {
   const instrumentById = new Map(instruments.map((i) => [i.id, i]))
   const accountById = new Map(accounts.map((a) => [a.id, a]))
-
-  // Latest two prices per instrument (prices assumed ordered however; we sort).
-  const byInstrument = new Map<number, { price: number; as_of: string }[]>()
-  for (const p of prices) {
-    const list = byInstrument.get(p.instrument_id) ?? []
-    list.push(p)
-    byInstrument.set(p.instrument_id, list)
-  }
+  const closesByInstrument = dailyCloses(prices)
 
   const positions: Position[] = []
   for (const holding of holdings) {
     const instrument = instrumentById.get(holding.instrument_id)
     if (!instrument) continue
-    // Descending by as_of for latest/prev; ascending copy for the trend series.
-    const sorted = (byInstrument.get(holding.instrument_id) ?? [])
-      .slice()
-      .sort((a, b) => b.as_of.localeCompare(a.as_of))
+    const closes = closesByInstrument.get(holding.instrument_id) ?? []
     positions.push({
       holding,
       instrument,
       account: accountById.get(holding.account_id) ?? null,
-      price: sorted[0]?.price ?? null,
-      prevPrice: sorted[1]?.price ?? null,
-      series: sorted.map((p) => p.price).reverse(),
+      price: closes[closes.length - 1]?.price ?? null,
+      prevPrice: closes[closes.length - 2]?.price ?? null,
+      series: closes.map((c) => c.price),
     })
   }
   return positions
 }
 
-/** Net-worth time series: value current holdings at each day's closing price.
- *  Assumes constant holdings (a trend of today's portfolio, not a back-test). */
+/** Net-worth time series: value current holdings at each day's closing price,
+ *  plus cash/fixed balances valued at that date, so the chart's latest point
+ *  matches the net-worth stat. Assumes constant holdings (a trend of today's
+ *  portfolio, not a back-test). */
 export function portfolioHistory(
   holdings: FinHolding[],
   instruments: FinInstrument[],
   prices: { instrument_id: number; price: number; as_of: string }[],
+  cash: FinCash[] = [],
 ): { date: string; value: number }[] {
   void instruments // signature kept symmetric with buildPositions
   if (prices.length === 0) return []
 
-  const byInstrument = new Map<number, { price: number; day: string }[]>()
-  for (const p of prices) {
-    const list = byInstrument.get(p.instrument_id) ?? []
-    list.push({ price: p.price, day: p.as_of.slice(0, 10) })
-    byInstrument.set(p.instrument_id, list)
-  }
-  for (const list of byInstrument.values()) list.sort((a, b) => a.day.localeCompare(b.day))
-
+  const byInstrument = dailyCloses(prices)
   const days = [...new Set(prices.map((p) => p.as_of.slice(0, 10)))].sort()
   return days.map((day) => {
     let value = 0
@@ -230,14 +235,22 @@ export function portfolioHistory(
       }
       if (price != null) value += price * h.quantity
     }
+    const at = new Date(`${day}T23:59:59Z`)
+    for (const c of cash) value += valueCash(c, at).value
     return { date: day, value }
   })
 }
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
+const CURRENCY_SYMBOL: Record<string, string> = { EUR: '€', USD: '$', MXN: 'MX$', GBP: '£' }
+
+function currencySymbol(currency: string): string {
+  return CURRENCY_SYMBOL[currency] ?? `${currency} `
+}
+
 export function formatMoney(value: number, currency = 'EUR'): string {
-  const symbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : ''
+  const symbol = currencySymbol(currency)
   const abs = Math.abs(value)
   const formatted = abs.toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -248,12 +261,18 @@ export function formatMoney(value: number, currency = 'EUR'): string {
 
 /** Compact money for chart axes — €1.2k, €3.4M. */
 export function formatMoneyCompact(value: number, currency = 'EUR'): string {
-  const symbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : ''
+  const symbol = currencySymbol(currency)
   const abs = Math.abs(value)
   const sign = value < 0 ? '-' : ''
   if (abs >= 1_000_000) return `${sign}${symbol}${(abs / 1_000_000).toFixed(1)}M`
   if (abs >= 1_000) return `${sign}${symbol}${(abs / 1_000).toFixed(1)}k`
   return `${sign}${symbol}${Math.round(abs)}`
+}
+
+/** Share/coin quantity — trims float noise, keeps precision for sub-1 crypto amounts. */
+export function formatQuantity(q: number): string {
+  const abs = Math.abs(q)
+  return q.toLocaleString('en-US', { maximumFractionDigits: abs !== 0 && abs < 1 ? 8 : 4 })
 }
 
 export function formatSignedPct(pct: number | null): string {
@@ -304,6 +323,30 @@ export async function fetchFxRate(from: string, to: string): Promise<number | nu
   } catch {
     return null
   }
+}
+
+// ── Realized P/L ─────────────────────────────────────────────────────────────
+// Sells record their realized P/L (vs the avg cost at sale time) in the
+// transaction's `notes`, because the basis isn't recoverable later — the
+// holding row shrinks or disappears once the sale is applied.
+
+export function encodeRealizedNote(realized: number): string {
+  return `realized:${realized.toFixed(2)}`
+}
+
+export function parseRealizedNote(notes: string | null | undefined): number | null {
+  const m = notes?.match(/realized:(-?\d+(?:\.\d+)?)/)
+  return m ? Number(m[1]) : null
+}
+
+/** Sum of realized P/L across sell transactions that recorded one. */
+export function totalRealizedPL(txns: { type: string; notes: string | null }[]): number {
+  let sum = 0
+  for (const t of txns) {
+    if (t.type !== 'sell') continue
+    sum += parseRealizedNote(t.notes) ?? 0
+  }
+  return sum
 }
 
 /** Roll a list of buy/sell transactions up into net holdings per symbol.

@@ -46,17 +46,21 @@ async function fetchEquities(instruments: Instrument[], provider: string, key: s
     )
     return rows.filter((r): r is PriceRow => r != null)
   }
-  // Default: Twelve Data batch quote.
+  // Default: Twelve Data batch /quote — unlike /price it reports the listing
+  // currency, so EUR-quoted ETFs aren't mistaken for USD and FX'd twice.
   const symbols = instruments.map((i) => i.symbol.toUpperCase())
-  const res = await fetch(`https://api.twelvedata.com/price?symbol=${symbols.join(',')}&apikey=${key}`)
+  const res = await fetch(`https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbols.join(','))}&apikey=${key}`)
   if (!res.ok) return []
-  const json2 = (await res.json()) as Record<string, { price?: string }> | { price?: string }
+  type TdQuote = { close?: string; currency?: string }
+  const json2 = (await res.json()) as Record<string, TdQuote> | TdQuote
   return instruments
     .map((i) => {
       const sym = i.symbol.toUpperCase()
-      const entry = symbols.length === 1 ? (json2 as { price?: string }) : (json2 as Record<string, { price?: string }>)[sym]
-      const price = entry?.price ? Number(entry.price) : NaN
-      return Number.isFinite(price) ? { instrument_id: i.id, price, currency: 'USD', as_of: asOf, source: 'twelvedata' } : null
+      const entry = symbols.length === 1 ? (json2 as TdQuote) : (json2 as Record<string, TdQuote>)[sym]
+      const price = entry?.close ? Number(entry.close) : NaN
+      return Number.isFinite(price)
+        ? { instrument_id: i.id, price, currency: entry?.currency?.toUpperCase() || 'USD', as_of: asOf, source: 'twelvedata' }
+        : null
     })
     .filter((r): r is PriceRow => r != null)
 }

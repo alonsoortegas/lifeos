@@ -5,7 +5,9 @@ import { createClient } from '@/lib/supabase'
 import {
   BASE_CURRENCY,
   buildPositions,
+  encodeRealizedNote,
   fetchFxRate,
+  parseRealizedNote,
   portfolioHistory,
   rollupHoldings,
   summarizePortfolio,
@@ -21,6 +23,10 @@ import type {
   FinPrice,
   FinTransaction,
 } from '@/lib/types'
+
+/** What the portfolio math needs from a price row — served by the
+ *  fin_daily_closes view (preferred) or raw fin_prices (fallback). */
+type PriceRow = Pick<FinPrice, 'instrument_id' | 'price' | 'currency' | 'as_of'>
 import type { ParsedTxn, ParseResult } from '@/lib/finance/import'
 
 const supabase = createClient()
@@ -30,6 +36,24 @@ const SOURCE_ACCOUNT: Record<string, { name: string; kind: FinAccount['kind'] }>
   csv_revolut: { name: 'Revolut', kind: 'broker' },
   csv_crypto: { name: 'Crypto Wallet', kind: 'wallet' },
   manual: { name: 'Manual', kind: 'manual' },
+}
+
+/** Daily closes per instrument — the view collapses intraday syncs to one row
+ *  per day, so a fixed row limit spans years instead of weeks. Falls back to
+ *  raw fin_prices while the fin_daily_closes migration isn't applied yet. */
+async function loadPrices(): Promise<{ data: PriceRow[]; error: boolean }> {
+  const view = await supabase
+    .from('fin_daily_closes')
+    .select('instrument_id,price,currency,as_of')
+    .order('as_of', { ascending: false })
+    .limit(3000)
+  if (!view.error) return { data: (view.data ?? []) as PriceRow[], error: false }
+  const raw = await supabase
+    .from('fin_prices')
+    .select('instrument_id,price,currency,as_of')
+    .order('as_of', { ascending: false })
+    .limit(1000)
+  return { data: (raw.data ?? []) as PriceRow[], error: !!raw.error }
 }
 
 export interface AddHoldingInput {
@@ -58,18 +82,32 @@ export interface AddCashInput {
   startedAt?: string
 }
 
+export interface SellHoldingInput {
+  holding: FinHolding
+  quantity: number
+  /** Sale price per unit, in `currency`; converted to BASE_CURRENCY on save. */
+  price: number
+  currency?: string
+}
+
 export interface UseFinance {
   loading: boolean
   refreshing: boolean
   error: string | null
+  /** Non-error feedback (e.g. price-sync note when no market-data key is set). */
+  notice: string | null
   accounts: FinAccount[]
   instruments: FinInstrument[]
   transactions: FinTransaction[]
   summary: PortfolioSummary
   history: { date: string; value: number }[]
+  /** Timestamp of the freshest synced price, or null before the first sync. */
+  pricesAsOf: string | null
   refreshPrices: () => Promise<void>
   addHolding: (input: AddHoldingInput) => Promise<boolean>
   addCash: (input: AddCashInput) => Promise<boolean>
+  updateCash: (id: number, amount: number, currency?: string) => Promise<boolean>
+  sellHolding: (input: SellHoldingInput) => Promise<boolean>
   importTransactions: (source: string, parsed: ParseResult) => Promise<{ inserted: number; skipped: number } | null>
   deleteHolding: (id: number) => Promise<void>
   deleteCash: (id: number) => Promise<void>
@@ -80,16 +118,22 @@ export function useFinance(): UseFinance {
   const [accounts, setAccounts] = useState<FinAccount[]>([])
   const [instruments, setInstruments] = useState<FinInstrument[]>([])
   const [holdings, setHoldings] = useState<FinHolding[]>([])
-  const [prices, setPrices] = useState<FinPrice[]>([])
+  const [prices, setPrices] = useState<PriceRow[]>([])
   const [transactions, setTransactions] = useState<FinTransaction[]>([])
   const [cash, setCash] = useState<FinCash[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const flashError = (msg: string) => {
     setError(msg)
     setTimeout(() => setError(null), 4000)
+  }
+
+  const flashNotice = (msg: string) => {
+    setNotice(msg)
+    setTimeout(() => setNotice(null), 6000)
   }
 
   const load = useCallback(async () => {
@@ -97,8 +141,7 @@ export function useFinance(): UseFinance {
       supabase.from('fin_accounts').select('*').order('name'),
       supabase.from('fin_instruments').select('*').order('symbol'),
       supabase.from('fin_holdings').select('*'),
-      // Enough history for value, day-change, and the net-worth trend.
-      supabase.from('fin_prices').select('*').order('as_of', { ascending: false }).limit(1000),
+      loadPrices(),
       supabase.from('fin_transactions').select('*').order('traded_at', { ascending: false }).limit(200),
       supabase.from('fin_cash').select('*').order('updated_at', { ascending: false }),
     ])
@@ -108,7 +151,7 @@ export function useFinance(): UseFinance {
     setAccounts((acc.data ?? []) as FinAccount[])
     setInstruments((inst.data ?? []) as FinInstrument[])
     setHoldings((hold.data ?? []) as FinHolding[])
-    setPrices((price.data ?? []) as FinPrice[])
+    setPrices(price.data)
     setTransactions((txn.data ?? []) as FinTransaction[])
     setCash((csh.data ?? []) as FinCash[])
     setLoading(false)
@@ -139,9 +182,15 @@ export function useFinance(): UseFinance {
   )
 
   const history = useMemo(
-    () => portfolioHistory(holdings, instruments, prices),
-    [holdings, instruments, prices],
+    () => portfolioHistory(holdings, instruments, prices, cash),
+    [holdings, instruments, prices, cash],
   )
+
+  const pricesAsOf = useMemo(() => {
+    let max: string | null = null
+    for (const p of prices) if (max == null || p.as_of > max) max = p.as_of
+    return max
+  }, [prices])
 
   const ensureAccount = useCallback(async (name: string, kind: FinAccount['kind']): Promise<FinAccount | null> => {
     const existing = accounts.find((a) => a.name === name)
@@ -173,13 +222,20 @@ export function useFinance(): UseFinance {
     if (instruments.length === 0) return
     setRefreshing(true)
     try {
-      await fetch('/api/finance/prices', {
+      const res = await fetch('/api/finance/prices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           instruments: instruments.map((i) => ({ id: i.id, symbol: i.symbol, asset_class: i.asset_class })),
         }),
       })
+      if (!res.ok) {
+        flashError('price refresh failed')
+        return
+      }
+      const json = (await res.json()) as { quotes?: unknown[]; note?: string }
+      if (json.note) flashNotice(json.note)
+      else if ((json.quotes ?? []).length === 0) flashNotice('no quotes returned')
       await load()
     } catch {
       flashError('price refresh failed')
@@ -240,6 +296,66 @@ export function useFinance(): UseFinance {
     await load()
     return true
   }, [ensureAccount, load])
+
+  /** Correct a cash/fixed balance in place (delete + re-add would lose the accrual anchor). */
+  const updateCash = useCallback(async (id: number, amount: number, currency?: string): Promise<boolean> => {
+    let value = amount
+    if (currency && currency !== BASE_CURRENCY) {
+      const rate = await fetchFxRate(currency, BASE_CURRENCY)
+      if (rate == null) { flashError(`couldn't convert ${currency}→${BASE_CURRENCY}`); return false }
+      value = amount * rate
+    }
+    const { error: e } = await supabase
+      .from('fin_cash')
+      .update({ amount: value, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (e) { flashError('couldn\'t update balance'); return false }
+    await load()
+    return true
+  }, [load])
+
+  /** Sell part (or all) of a position: records a sell transaction — with the
+   *  realized P/L vs avg cost while the basis is still known — and shrinks or
+   *  removes the holding. avg_cost stays untouched; sells don't change basis. */
+  const sellHolding = useCallback(async (input: SellHoldingInput): Promise<boolean> => {
+    const { holding } = input
+    const qty = Math.min(input.quantity, holding.quantity)
+    if (qty <= 0) return false
+
+    let price = input.price
+    if (input.currency && input.currency !== BASE_CURRENCY) {
+      const rate = await fetchFxRate(input.currency, BASE_CURRENCY)
+      if (rate == null) { flashError(`couldn't convert ${input.currency}→${BASE_CURRENCY}`); return false }
+      price = price * rate
+    }
+
+    const realized = holding.avg_cost != null ? (price - holding.avg_cost) * qty : null
+    const { error: txnError } = await supabase.from('fin_transactions').insert({
+      account_id: holding.account_id,
+      instrument_id: holding.instrument_id,
+      type: 'sell',
+      quantity: qty,
+      price,
+      amount: qty * price,
+      currency: BASE_CURRENCY,
+      traded_at: new Date().toISOString(),
+      source: 'manual',
+      notes: realized != null ? encodeRealizedNote(realized) : null,
+    })
+    if (txnError) { flashError('couldn\'t record sale'); return false }
+
+    const remaining = holding.quantity - qty
+    const { error: holdError } = remaining > 1e-9
+      ? await supabase
+          .from('fin_holdings')
+          .update({ quantity: remaining, updated_at: new Date().toISOString() })
+          .eq('id', holding.id)
+      : await supabase.from('fin_holdings').delete().eq('id', holding.id)
+    if (holdError) { flashError('couldn\'t update holding'); return false }
+
+    await load()
+    return true
+  }, [load])
 
   const importTransactions = useCallback(async (
     source: string, parsed: ParseResult,
@@ -324,9 +440,12 @@ export function useFinance(): UseFinance {
     await load()
   }, [load])
 
-  /** Recompute a holding's quantity + avg_cost from the transactions that
-   *  remain for its account/instrument (used after a transaction is deleted). */
-  const recomputeHolding = useCallback(async (accountId: number, instrumentId: number) => {
+  /** Reconcile a holding after `deleted` was removed. When buy transactions
+   *  exist (imported/transaction-built positions), recompute quantity + basis
+   *  from what remains. Without buys the holding was added manually — a naive
+   *  recompute would wipe it — so instead undo the deleted sell by restoring
+   *  its quantity (and, if the holding is gone, its basis from the realized note). */
+  const recomputeHolding = useCallback(async (accountId: number, instrumentId: number, deleted: FinTransaction) => {
     const { data } = await supabase
       .from('fin_transactions')
       .select('type,quantity,price')
@@ -340,12 +459,44 @@ export function useFinance(): UseFinance {
       if (r.type === 'buy') { qtyBuy += q; costBuy += q * (r.price ?? 0) }
       else if (r.type === 'sell') { qtySell += q }
     }
+
+    if (qtyBuy <= 0) {
+      if (deleted.type !== 'sell' || !deleted.quantity) return
+      const { data: h } = await supabase
+        .from('fin_holdings')
+        .select('*')
+        .eq('account_id', accountId)
+        .eq('instrument_id', instrumentId)
+        .maybeSingle()
+      const existing = h as FinHolding | null
+      if (existing) {
+        await supabase
+          .from('fin_holdings')
+          .update({ quantity: existing.quantity + deleted.quantity, updated_at: new Date().toISOString() })
+          .eq('id', existing.id)
+      } else {
+        // Fully-sold holding: recover the basis the sale recorded.
+        const realized = parseRealizedNote(deleted.notes)
+        const avgCost = deleted.price != null && realized != null
+          ? deleted.price - realized / deleted.quantity
+          : null
+        await supabase.from('fin_holdings').insert({
+          account_id: accountId,
+          instrument_id: instrumentId,
+          quantity: deleted.quantity,
+          avg_cost: avgCost,
+          updated_at: new Date().toISOString(),
+        })
+      }
+      return
+    }
+
     const quantity = qtyBuy - qtySell
     if (quantity <= 0) {
       await supabase.from('fin_holdings').delete().eq('account_id', accountId).eq('instrument_id', instrumentId)
     } else {
       await supabase.from('fin_holdings').upsert(
-        { account_id: accountId, instrument_id: instrumentId, quantity, avg_cost: qtyBuy > 0 ? costBuy / qtyBuy : null, updated_at: new Date().toISOString() },
+        { account_id: accountId, instrument_id: instrumentId, quantity, avg_cost: costBuy / qtyBuy, updated_at: new Date().toISOString() },
         { onConflict: 'account_id,instrument_id' },
       )
     }
@@ -355,13 +506,14 @@ export function useFinance(): UseFinance {
     const { error: e } = await supabase.from('fin_transactions').delete().eq('id', txn.id)
     if (e) { flashError('couldn\'t remove transaction'); return }
     if (txn.account_id != null && txn.instrument_id != null) {
-      await recomputeHolding(txn.account_id, txn.instrument_id)
+      await recomputeHolding(txn.account_id, txn.instrument_id, txn)
     }
     await load()
   }, [load, recomputeHolding])
 
   return {
-    loading, refreshing, error, accounts, instruments, transactions, summary, history,
-    refreshPrices, addHolding, addCash, importTransactions, deleteHolding, deleteCash, deleteTransaction,
+    loading, refreshing, error, notice, accounts, instruments, transactions, summary, history, pricesAsOf,
+    refreshPrices, addHolding, addCash, updateCash, sellHolding, importTransactions,
+    deleteHolding, deleteCash, deleteTransaction,
   }
 }

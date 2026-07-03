@@ -118,7 +118,7 @@ components/
     WorkoutTab.tsx        # Interactive — plan from DB, set logging, progressive overload suggestions
     NutritionTab.tsx      # Interactive — normalized nutrition plan from DB, meal logging
     WhoopTab.tsx          # Live — reads whoop_snapshots + whoop_workouts, connect/sync controls
-    FinanceTab.tsx        # Interactive — investments (ETF/stocks/crypto): net worth, allocation, holdings, P/L; add holding + CSV import; sync prices
+    FinanceTab.tsx        # Interactive — investments (ETF/stocks/crypto) + cash/fixed savings: net worth, allocation, holdings, P/L (incl. realized); add holding/cash, partial sell, edit balances; swipe-left rows for sell/edit/remove (components/finance/SwipeRow.tsx); sync prices
 
 lib/
   supabase.ts             # Browser client (createBrowserClient)
@@ -174,6 +174,7 @@ All tables have RLS enabled. Policies require `auth.role() = 'authenticated'` �
 | `fin_holdings` | Current positions — quantity + avg_cost per account/instrument |
 | `fin_transactions` | Buys/sells/dividends/transfers; `external_id` makes CSV re-imports idempotent |
 | `fin_prices` | Latest + historical close per instrument (price-sync Edge Function writes via service role) |
+| `fin_daily_closes` | View — last price per instrument per day; the client reads this (falls back to `fin_prices` if the migration isn't applied) |
 
 Todos reset by querying the local goal day from `lib/goal-dates.ts`. The goal day flips at 6 AM client-side — new day = new `day_date`, old rows stay in DB.
 
@@ -231,7 +232,7 @@ https://lifeos-zeta-three.vercel.app/api/whoop-callback
 | 2 | Workout | No | Interactive — plan from DB, set logging, progressive overload suggestions |
 | 3 | Nutrition | No | Interactive — day type from `nutrition_day_types`, meals from `nutrition_meal_templates` |
 | 4 | Whoop | No | Live — `whoop_snapshots` + `whoop_workouts`, realtime, connect/sync controls |
-| 5 | Money | No | Interactive — investments from `fin_*` tables: net worth, allocation, holdings, P/L; add holding + CSV import; `/api/finance/prices` sync |
+| 5 | Money | No | Interactive — investments from `fin_*` tables: net worth, allocation, holdings, P/L; add holding/cash, partial sell (realized P/L stored in txn notes), swipe-row actions; `/api/finance/prices` sync |
 
 ## Navigation
 
