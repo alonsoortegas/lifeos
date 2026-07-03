@@ -161,7 +161,7 @@ export default function FinanceTab() {
             label="Invested"
             value={formatMoney(summary.totalCost)}
             color="#38bdf8"
-            sub={`${summary.positions.length} positions`}
+            sub={`${summary.positions.length} position${summary.positions.length === 1 ? '' : 's'}`}
           />
         </div>
       )}
@@ -674,7 +674,7 @@ function AddHoldingForm({ onAdd }: { onAdd: (input: AddHoldingInput) => void }) 
           <input
             value={avgCost}
             onChange={(e) => setAvgCost(e.target.value)}
-            inputMode="decimal" type="text" placeholder="Avg cost"
+            inputMode="decimal" type="text" placeholder="Avg cost / unit"
             className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 py-2 text-sm text-[var(--text)]"
           />
           <select
@@ -688,9 +688,11 @@ function AddHoldingForm({ onAdd }: { onAdd: (input: AddHoldingInput) => void }) 
           </select>
         </div>
       </div>
-      {cost != null && costCurrency !== 'EUR' && (
+      {/* Live cost-basis readout — catches "typed the total into avg cost" mistakes. */}
+      {cost != null && qty != null && qty > 0 && (
         <p className="text-[11px] text-[var(--text-faint)]" style={MONO}>
-          converted to EUR at today&apos;s rate on save
+          cost basis {formatMoney(cost * qty, costCurrency)} ({formatQuantity(qty)} × {formatMoney(cost, costCurrency)})
+          {costCurrency !== 'EUR' && ' · converted to EUR on save'}
         </p>
       )}
       <input

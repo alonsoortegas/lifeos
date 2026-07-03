@@ -29,6 +29,10 @@ export default function StatCard({
   delta,
 }: StatCardProps) {
   const channel = color ?? '#00d26a'
+  // Long money strings ("-€6,679.80") must neither wrap (a hyphen is a break
+  // opportunity) nor overflow a half-width card — step the size down instead.
+  const len = String(value).length
+  const sizeClass = len > 13 ? 'text-[21px]' : len > 9 ? 'text-[25px]' : 'text-[30px]'
   return (
     <div className={`panel relative overflow-hidden rounded-2xl p-4 ${accent ? 'ticks' : ''}`}>
       {/* Soft channel aura in the corner */}
@@ -55,7 +59,7 @@ export default function StatCard({
             fontVariantNumeric: 'tabular-nums',
             textShadow: accent ? `0 0 18px ${channel}55` : undefined,
           }}
-          className="text-[30px] font-bold leading-none"
+          className={`${sizeClass} whitespace-nowrap font-bold leading-none`}
         >
           {value}
         </span>
