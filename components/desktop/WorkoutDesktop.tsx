@@ -47,13 +47,28 @@ function parseWeightInput(raw: string): number | null {
 
 const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10]
 
+const DEFAULT_REST_S: Record<string, number> = {
+  strength: 90, carry: 90, bodyweight: 60, isometric: 60, erg: 120,
+}
+
+const ISOMETRIC_PRESETS = [20, 30, 45, 60, 90, 120]
+
+interface RestTimer {
+  exerciseName: string
+  setNum: number
+  secondsLeft: number
+  total: number
+}
+
 interface ExerciseState {
   expanded: boolean
   weight: number
   weightText: string
   selectedReps: number
   selectedRpe: number
-  loggedSets: { id?: number; setNum: number; weight: number; reps: number; rpe: number }[]
+  selectedDistance: number
+  selectedDuration: number
+  loggedSets: { id?: number; setNum: number; weight: number; reps: number; rpe: number; distance_m?: number; duration_s?: number }[]
 }
 
 function todayRange() {
@@ -85,6 +100,18 @@ export default function WorkoutDesktop({
   const [loading, setLoading] = useState(true)
   const [snapshots, setSnapshots] = useState<WhoopSnapshot[]>([])
   const [shareState, setShareState] = useState<'idle' | 'shared' | 'copied'>('idle')
+  const [restTimer, setRestTimer] = useState<RestTimer | null>(null)
+
+  useEffect(() => {
+    if (!restTimer || restTimer.secondsLeft <= 0) {
+      if (restTimer?.secondsLeft === 0) setRestTimer(null)
+      return
+    }
+    const id = window.setTimeout(() => {
+      setRestTimer(prev => prev ? { ...prev, secondsLeft: prev.secondsLeft - 1 } : null)
+    }, 1000)
+    return () => window.clearTimeout(id)
+  }, [restTimer])
 
   async function shareWorkout() {
     if (!session) return
@@ -142,14 +169,17 @@ export default function WorkoutDesktop({
       }
       setExerciseStates(exList.map(ex => {
         const initWeight = ex.prescribed_weight ?? last[ex.exercise_name]?.weight_lbs ?? 0
+        const defaultDuration = ex.modality === 'isometric' ? 30 : 120
         return {
           expanded: false,
           weight: initWeight,
           weightText: String(initWeight),
           selectedReps: parseReps(ex.prescribed_reps),
           selectedRpe: parseRpe(ex.target_rpe),
+          selectedDistance: last[ex.exercise_name]?.distance_m ?? 500,
+          selectedDuration: last[ex.exercise_name]?.duration_s ?? defaultDuration,
           loggedSets: scopedLogs.filter(log => log.workout_exercise_id === ex.id || (!log.workout_exercise_id && log.exercise_name === ex.exercise_name))
-            .map((log, idx) => ({ id: log.id, setNum: log.set_number ?? idx + 1, weight: log.weight_lbs ?? 0, reps: log.reps ?? 0, rpe: log.rpe ?? 0 })),
+            .map((log, idx) => ({ id: log.id, setNum: log.set_number ?? idx + 1, weight: log.weight_lbs ?? 0, reps: log.reps ?? 0, rpe: log.rpe ?? 0, distance_m: log.distance_m ?? undefined, duration_s: log.duration_s ?? undefined })),
         }
       }))
     }
@@ -179,7 +209,15 @@ export default function WorkoutDesktop({
   const logSet = (i: number) => {
     if (!session) return
     const s = exerciseStates[i]; const ex = exercises[i]; const setNum = s.loggedSets.length + 1
-    const payload = { workout_session_id: session.id, workout_exercise_id: ex.id, exercise_name: ex.exercise_name, set_number: setNum, weight_lbs: s.weight, weight_unit: 'kg', reps: s.selectedReps, rpe: s.selectedRpe }
+    const modality = ex.modality ?? 'strength'
+    const isIsometric = modality === 'isometric'
+    const payload = {
+      workout_session_id: session.id, workout_exercise_id: ex.id, exercise_name: ex.exercise_name, set_number: setNum,
+      weight_lbs: (modality === 'bodyweight' || isIsometric) ? 0 : s.weight, weight_unit: 'kg',
+      reps: (modality === 'erg' || isIsometric) ? null : s.selectedReps, rpe: s.selectedRpe,
+      distance_m: modality === 'erg' || modality === 'carry' ? s.selectedDistance : null,
+      duration_s: (modality === 'erg' || isIsometric) ? s.selectedDuration : null,
+    }
     supabase.from('workout_logs').insert(payload).select('*').single().then(async ({ data, error }) => {
       if (error && error.message.includes('workout_session_id')) {
         const { workout_session_id, workout_exercise_id, ...legacyPayload } = payload
@@ -189,13 +227,36 @@ export default function WorkoutDesktop({
       }
       if (error) { console.error('workout log insert failed:', error.message); return }
       const log = data as WorkoutLog
-      updateState(i, { loggedSets: [...s.loggedSets, { id: log.id, setNum: log.set_number ?? setNum, weight: log.weight_lbs ?? s.weight, reps: log.reps ?? s.selectedReps, rpe: log.rpe ?? s.selectedRpe }] })
+      const newEntry = { id: log.id, setNum: log.set_number ?? setNum, weight: log.weight_lbs ?? s.weight, reps: log.reps ?? s.selectedReps, rpe: log.rpe ?? s.selectedRpe, distance_m: log.distance_m ?? undefined, duration_s: log.duration_s ?? undefined }
       setLastSets(prev => ({ ...prev, [ex.exercise_name]: log }))
-      // Auto-advance to next exercise if target sets reached
-      const target = ex.prescribed_sets ?? 0
-      if (target > 0 && (s.loggedSets.length + 1) >= target) {
-        const nextIncomplete = exercises.findIndex((e, idx) => idx > i && (exerciseStates[idx]?.loggedSets.length ?? 0) < (e.prescribed_sets ?? 0))
-        if (nextIncomplete !== -1) setActiveExIdx(nextIncomplete)
+
+      const restSeconds = ex.rest_s ?? DEFAULT_REST_S[modality] ?? 90
+
+      if (ex.superset_group) {
+        const groupIndices = exercises.map((e, idx) => ({ e, idx })).filter(({ e }) => e.superset_group === ex.superset_group)
+        const myPos = groupIndices.findIndex(({ idx }) => idx === i)
+        const nextInGroup = groupIndices[myPos + 1]
+        if (nextInGroup) {
+          setExerciseStates(prev => prev.map((st, idx) => {
+            if (idx === i) return { ...st, loggedSets: [...st.loggedSets, newEntry] }
+            return st
+          }))
+          setActiveExIdx(nextInGroup.idx)
+        } else {
+          const firstInGroup = groupIndices[0]
+          setExerciseStates(prev => prev.map((st, idx) => idx !== i ? st : { ...st, loggedSets: [...st.loggedSets, newEntry] }))
+          setRestTimer({ exerciseName: ex.exercise_name, setNum, secondsLeft: restSeconds, total: restSeconds })
+          if (firstInGroup) setActiveExIdx(firstInGroup.idx)
+        }
+      } else {
+        setExerciseStates(prev => prev.map((st, idx) => idx !== i ? st : { ...st, loggedSets: [...st.loggedSets, newEntry] }))
+        setRestTimer({ exerciseName: ex.exercise_name, setNum, secondsLeft: restSeconds, total: restSeconds })
+        // Auto-advance to next exercise if target sets reached
+        const target = ex.prescribed_sets ?? 0
+        if (target > 0 && (s.loggedSets.length + 1) >= target) {
+          const nextIncomplete = exercises.findIndex((e, idx) => idx > i && (exerciseStates[idx]?.loggedSets.length ?? 0) < (e.prescribed_sets ?? 0))
+          if (nextIncomplete !== -1) setActiveExIdx(nextIncomplete)
+        }
       }
     })
   }
@@ -318,15 +379,23 @@ export default function WorkoutDesktop({
                       style={{
                         background: isActive ? 'rgba(0,210,106,0.05)' : 'var(--surface)',
                         border: `1px solid ${isActive ? '#00d26a' : 'var(--border)'}`,
+                        borderLeft: ex.superset_group ? `3px solid #38bdf8` : `1px solid ${isActive ? '#00d26a' : 'var(--border)'}`,
                         borderRadius: 10, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 10,
                         cursor: 'pointer', opacity: isDone ? 0.7 : 1, textAlign: 'left',
                       }}
                     >
                       <span style={{ width: 8, height: 8, borderRadius: 999, background: isDone ? 'var(--text-faint)' : isActive ? '#00d26a' : 'transparent', border: !isDone && !isActive ? '1px solid var(--border-hi)' : 'none', flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: isActive ? 600 : 500, textDecoration: isDone ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.exercise_name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          {ex.superset_group && (
+                            <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, padding: '1px 4px', borderRadius: 4, background: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.3)', flexShrink: 0 }}>
+                              SS-{ex.superset_group}
+                            </span>
+                          )}
+                          <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: isActive ? 600 : 500, textDecoration: isDone ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.exercise_name}</span>
+                        </div>
                         <div style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)', marginTop: 1 }}>
-                          {ex.prescribed_sets}×{ex.prescribed_reps}{ex.prescribed_weight ? ` · ${ex.prescribed_weight}kg` : ''}{ex.target_rpe ? ` · RPE ${ex.target_rpe}` : ''}
+                          {ex.modality === 'isometric' ? `${ex.prescribed_sets ?? '?'}×hold` : `${ex.prescribed_sets}×${ex.prescribed_reps}`}{ex.prescribed_weight ? ` · ${ex.prescribed_weight}kg` : ''}{ex.target_rpe ? ` · RPE ${ex.target_rpe}` : ''}
                         </div>
                       </div>
                       <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: isDone ? 'var(--text-faint)' : isActive ? '#00d26a' : 'var(--text-dim)', flexShrink: 0 }}>
@@ -385,9 +454,11 @@ export default function WorkoutDesktop({
                   )}
                 </div>
 
-                {/* Weight + Reps */}
+                {/* Weight + Reps — hidden for isometric */}
+                {activeEx.modality !== 'isometric' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 14, flexShrink: 0 }}>
-                  {/* Weight stepper */}
+                  {/* Weight stepper — strength/carry only */}
+                  {(activeEx.modality === 'strength' || activeEx.modality === 'carry' || !activeEx.modality) && (
                   <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>Weight</span>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -412,8 +483,9 @@ export default function WorkoutDesktop({
                       <button onClick={() => { const next = activeState.weight + 2.5; updateState(activeExIdx, { weight: next, weightText: String(next) }) }} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-dim)', fontSize: 18, cursor: 'pointer' }}>+</button>
                     </div>
                   </div>
+                  )}
                   {/* Reps grid */}
-                  <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8, gridColumn: (activeEx.modality === 'strength' || activeEx.modality === 'carry' || !activeEx.modality) ? 'auto' : '1 / -1' }}>
                     <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>Reps</span>
                     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                       {[3, 4, 5, 6, 7, 8, 9, 10, 12, 15].map(r => (
@@ -433,6 +505,37 @@ export default function WorkoutDesktop({
                     </div>
                   </div>
                 </div>
+                )}
+
+                {/* Isometric — duration picker */}
+                {activeEx.modality === 'isometric' && (
+                <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
+                  <span style={{ fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>Hold Duration</span>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {ISOMETRIC_PRESETS.map(sec => (
+                      <button
+                        key={sec}
+                        onClick={() => updateState(activeExIdx, { selectedDuration: sec })}
+                        style={{
+                          minWidth: 48, height: 34, padding: '0 10px', borderRadius: 999, cursor: 'pointer',
+                          background: activeState.selectedDuration === sec ? 'linear-gradient(180deg, #2ee6a8, #00d26a)' : 'var(--ink-04)',
+                          border: `1px solid ${activeState.selectedDuration === sec ? 'transparent' : 'var(--border)'}`,
+                          boxShadow: activeState.selectedDuration === sec ? 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(0,210,106,0.3)' : 'none',
+                          color: activeState.selectedDuration === sec ? '#062514' : 'var(--text-dim)',
+                          fontFamily: mono, fontSize: 12, fontWeight: activeState.selectedDuration === sec ? 700 : 500,
+                        }}
+                      >{sec < 60 ? `${sec}s` : `${sec / 60}m`}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                    <button onClick={() => updateState(activeExIdx, { selectedDuration: Math.max(5, activeState.selectedDuration - 5) })} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-dim)', fontSize: 16, cursor: 'pointer' }}>−</button>
+                    <span style={{ fontFamily: mono, fontSize: 28, fontWeight: 800, color: 'var(--text)', minWidth: 72, textAlign: 'center' }}>
+                      {activeState.selectedDuration < 60 ? `${activeState.selectedDuration}s` : `${Math.floor(activeState.selectedDuration / 60)}:${String(activeState.selectedDuration % 60).padStart(2, '0')}`}
+                    </span>
+                    <button onClick={() => updateState(activeExIdx, { selectedDuration: activeState.selectedDuration + 5 })} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border-hi)', background: 'transparent', color: 'var(--text-dim)', fontSize: 16, cursor: 'pointer' }}>+</button>
+                  </div>
+                </div>
+                )}
 
                 {/* RPE */}
                 <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
@@ -474,7 +577,10 @@ export default function WorkoutDesktop({
                   className="btn-accent"
                   style={{ border: 'none', padding: '13px 0', fontFamily: sans, fontSize: 14, fontWeight: 700, borderRadius: 12, cursor: 'pointer', flexShrink: 0 }}
                 >
-                  Log set {activeState.loggedSets.length + 1}{activeEx.prescribed_sets ? ` of ${activeEx.prescribed_sets}` : ''} · {activeState.weight}kg × {activeState.selectedReps} @ {activeState.selectedRpe}  →
+                  {activeEx.modality === 'isometric'
+                    ? `Log ${activeState.selectedDuration < 60 ? `${activeState.selectedDuration}s` : `${Math.floor(activeState.selectedDuration / 60)}:${String(activeState.selectedDuration % 60).padStart(2, '0')}`} hold${activeEx.prescribed_sets ? ` (${activeState.loggedSets.length + 1}/${activeEx.prescribed_sets})` : ''} →`
+                    : `Log set ${activeState.loggedSets.length + 1}${activeEx.prescribed_sets ? ` of ${activeEx.prescribed_sets}` : ''} · ${activeState.weight}kg × ${activeState.selectedReps} @ ${activeState.selectedRpe} →`
+                  }
                 </button>
 
                 {/* Logged sets */}
@@ -489,7 +595,14 @@ export default function WorkoutDesktop({
                           padding: '9px 12px', borderBottom: i < activeState.loggedSets.length - 1 ? '1px solid var(--border)' : 'none',
                         }}>
                           <span style={{ color: 'var(--text-faint)' }}>{ls.setNum}</span>
-                          <span>{ls.weight}kg × {ls.reps}</span>
+                          <span>
+                            {ls.duration_s != null && ls.distance_m == null
+                              ? `${ls.duration_s < 60 ? `${ls.duration_s}s` : `${Math.floor(ls.duration_s / 60)}:${String(ls.duration_s % 60).padStart(2, '0')}`} hold`
+                              : ls.distance_m != null
+                              ? `${ls.distance_m}m`
+                              : `${ls.weight}kg × ${ls.reps}`
+                            }
+                          </span>
                           <span style={{ textAlign: 'right' }}>{ls.rpe}</span>
                           <span style={{ textAlign: 'right', color: 'var(--text-faint)' }}>done</span>
                         </div>
@@ -507,6 +620,38 @@ export default function WorkoutDesktop({
             )}
           </div>
         </>
+      )}
+
+      {/* Rest timer overlay */}
+      {restTimer && (
+        <div style={{ position: 'fixed', bottom: 24, right: 28, zIndex: 50 }}>
+          <div className="glass-thick" style={{ border: '1px solid var(--border-hi)', borderRadius: 16, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.45)', minWidth: 240 }}>
+            <svg width="44" height="44" viewBox="0 0 44 44" style={{ flexShrink: 0 }}>
+              <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" strokeWidth="3" />
+              <circle
+                cx="22" cy="22" r="18"
+                fill="none" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round"
+                strokeDasharray="113.1"
+                strokeDashoffset={113.1 * (1 - restTimer.secondsLeft / restTimer.total)}
+                transform="rotate(-90 22 22)"
+                style={{ transition: 'stroke-dashoffset 1s linear' }}
+              />
+              <text x="22" y="27" textAnchor="middle" style={{ fill: 'var(--text)', fontSize: '12px', fontWeight: 'bold', fontFamily: mono }}>
+                {restTimer.secondsLeft}
+              </text>
+            </svg>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Rest</div>
+              <div style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>after {restTimer.exerciseName}</div>
+            </div>
+            <button
+              onClick={() => setRestTimer(null)}
+              style={{ fontFamily: mono, fontSize: 10, fontWeight: 600, color: 'var(--text-dim)', border: '1px solid var(--border)', borderRadius: 999, padding: '5px 12px', background: 'var(--ink-04)', cursor: 'pointer' }}
+            >
+              Skip
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

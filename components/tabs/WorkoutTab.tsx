@@ -12,13 +12,6 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 )
 
-// Normalise a weight string typed by the user — accept both "," and "." as decimal separator
-function parseWeightInput(raw: string): number | null {
-  const normalized = raw.replace(',', '.')
-  const val = parseFloat(normalized)
-  return Number.isFinite(val) && val >= 0 ? val : null
-}
-
 // Returns the upper bound of a prescribed_reps string ("4-5" → 5, "8/leg" → 8, "5" → 5)
 function parseTopReps(r: string | null): number | null {
   if (!r) return null
@@ -55,7 +48,6 @@ const RPE_OPTIONS = [6, 7, 7.5, 8, 8.5, 9, 9.5, 10]
 interface ExerciseState {
   expanded: boolean
   weight: number
-  weightText: string
   selectedReps: number
   selectedRpe: number
   selectedDistance: number
@@ -70,6 +62,9 @@ interface ExerciseFormState {
   weight: string
   rpe: string
   notes: string
+  modality: string
+  restSeconds: string
+  supersetGroup: string
 }
 
 const EMPTY_EXERCISE_FORM: ExerciseFormState = {
@@ -79,7 +74,27 @@ const EMPTY_EXERCISE_FORM: ExerciseFormState = {
   weight: '',
   rpe: '',
   notes: '',
+  modality: 'strength',
+  restSeconds: '',
+  supersetGroup: '',
 }
+
+interface RestTimer {
+  exerciseName: string
+  setNum: number
+  secondsLeft: number
+  total: number
+}
+
+const DEFAULT_REST_S: Record<string, number> = {
+  strength: 90,
+  carry: 90,
+  bodyweight: 60,
+  isometric: 60,
+  erg: 120,
+}
+
+const ISOMETRIC_PRESETS = [20, 30, 45, 60, 90, 120]
 
 function todayRange() {
   const start = new Date()
@@ -106,6 +121,18 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
   const [logError, setLogError] = useState<string | null>(null)
   const [exerciseForm, setExerciseForm] = useState<ExerciseFormState>(EMPTY_EXERCISE_FORM)
   const [shareState, setShareState] = useState<'idle' | 'shared' | 'copied'>('idle')
+  const [restTimer, setRestTimer] = useState<RestTimer | null>(null)
+
+  useEffect(() => {
+    if (!restTimer || restTimer.secondsLeft <= 0) {
+      if (restTimer?.secondsLeft === 0) setRestTimer(null)
+      return
+    }
+    const id = window.setTimeout(() => {
+      setRestTimer(prev => prev ? { ...prev, secondsLeft: prev.secondsLeft - 1 } : null)
+    }, 1000)
+    return () => window.clearTimeout(id)
+  }, [restTimer])
 
   async function shareWorkout() {
     if (!session) return
@@ -209,27 +236,28 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
       setExerciseStates(exList.map(ex => {
         const initWeight = ex.prescribed_weight ?? last[ex.exercise_name]?.weight_lbs ?? 0
+        const defaultDuration = ex.modality === 'isometric' ? 30 : 120
         return {
-        expanded: false,
-        weight: initWeight,
-        weightText: String(initWeight),
-        selectedReps: parseReps(ex.prescribed_reps),
-        selectedRpe: parseRpe(ex.target_rpe),
-        selectedDistance: last[ex.exercise_name]?.distance_m ?? 500,
-        selectedDuration: last[ex.exercise_name]?.duration_s ?? 120,
-        loggedSets: scopedLogs
-          .filter(log => log.workout_exercise_id === ex.id || (!log.workout_exercise_id && log.exercise_name === ex.exercise_name))
-          .map((log, idx) => ({
-            id: log.id,
-            setNum: log.set_number ?? idx + 1,
-            weight: log.weight_lbs ?? 0,
-            reps: log.reps ?? 0,
-            rpe: log.rpe ?? 0,
-            distance_m: log.distance_m ?? undefined,
-            duration_s: log.duration_s ?? undefined,
-            loggedAt: log.logged_at,
-          })),
-      }
+          expanded: false,
+          weight: initWeight,
+          weightText: String(initWeight),
+          selectedReps: parseReps(ex.prescribed_reps),
+          selectedRpe: parseRpe(ex.target_rpe),
+          selectedDistance: last[ex.exercise_name]?.distance_m ?? 500,
+          selectedDuration: last[ex.exercise_name]?.duration_s ?? defaultDuration,
+          loggedSets: scopedLogs
+            .filter(log => log.workout_exercise_id === ex.id || (!log.workout_exercise_id && log.exercise_name === ex.exercise_name))
+            .map((log, idx) => ({
+              id: log.id,
+              setNum: log.set_number ?? idx + 1,
+              weight: log.weight_lbs ?? 0,
+              reps: log.reps ?? 0,
+              rpe: log.rpe ?? 0,
+              distance_m: log.distance_m ?? undefined,
+              duration_s: log.duration_s ?? undefined,
+              loggedAt: log.logged_at,
+            })),
+        }
       }))
     }
 
@@ -266,7 +294,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
     }
 
     const parsedSets = exerciseForm.sets ? Number.parseInt(exerciseForm.sets, 10) : Number.NaN
-    const parsedWeight = exerciseForm.weight ? Number.parseFloat(exerciseForm.weight) : Number.NaN
+    const parsedWeight = exerciseForm.weight ? Number.parseFloat(exerciseForm.weight.replace(',', '.')) : Number.NaN
+    const parsedRest = exerciseForm.restSeconds ? Number.parseInt(exerciseForm.restSeconds, 10) : Number.NaN
     const orderIndex = exercises.reduce((max, ex) => Math.max(max, ex.order_index), -1) + 1
 
     setAddSaving(true)
@@ -307,6 +336,9 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
       weight_unit: 'kg',
       target_rpe: exerciseForm.rpe.trim() || null,
       notes: exerciseForm.notes.trim() || null,
+      modality: exerciseForm.modality || 'strength',
+      rest_s: Number.isFinite(parsedRest) && parsedRest > 0 ? parsedRest : null,
+      superset_group: exerciseForm.supersetGroup.trim().toUpperCase() || null,
     }
 
     const { data, error } = await supabase
@@ -324,21 +356,18 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
     const exercise = data as WorkoutExercise
     setExercises(prev => [...prev, exercise])
-    setExerciseStates(prev => {
-      const initWeight = exercise.prescribed_weight ?? 0
-      return [
+    setExerciseStates(prev => [
       ...prev,
       {
         expanded: true,
-        weight: initWeight,
-        weightText: String(initWeight),
+        weight: exercise.prescribed_weight ?? 0,
         selectedReps: parseReps(exercise.prescribed_reps),
         selectedRpe: parseRpe(exercise.target_rpe),
         selectedDistance: 500,
         selectedDuration: 120,
         loggedSets: [],
       },
-    ]})
+    ])
     setExerciseForm(EMPTY_EXERCISE_FORM)
     setAddOpen(false)
   }
@@ -349,17 +378,18 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
     const ex = exercises[i]
     const setNum = s.loggedSets.length + 1
     const modality = ex.modality ?? 'strength'
+    const isIsometric = modality === 'isometric'
     const payload = {
       workout_session_id: session.id,
       workout_exercise_id: ex.id,
       exercise_name: ex.exercise_name,
       set_number: setNum,
-      weight_lbs: modality === 'bodyweight' ? 0 : s.weight,
+      weight_lbs: (modality === 'bodyweight' || isIsometric) ? 0 : s.weight,
       weight_unit: 'kg',
-      reps: modality === 'erg' ? null : s.selectedReps,
+      reps: (modality === 'erg' || isIsometric) ? null : s.selectedReps,
       rpe: s.selectedRpe,
       distance_m: modality === 'erg' || modality === 'carry' ? s.selectedDistance : null,
-      duration_s: modality === 'erg' ? s.selectedDuration : null,
+      duration_s: (modality === 'erg' || isIsometric) ? s.selectedDuration : null,
     }
 
     supabase.from('workout_logs').insert(payload).select('*').single().then(async ({ data, error }) => {
@@ -380,22 +410,48 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
       }
 
       const log = data as WorkoutLog
-      updateState(i, {
-        loggedSets: [
-          ...s.loggedSets,
-          {
-            id: log.id,
-            setNum: log.set_number ?? setNum,
-            weight: log.weight_lbs ?? s.weight,
-            reps: log.reps ?? s.selectedReps,
-            rpe: log.rpe ?? s.selectedRpe,
-            distance_m: log.distance_m ?? undefined,
-            duration_s: log.duration_s ?? undefined,
-            loggedAt: log.logged_at,
-          },
-        ],
-      })
+      const newEntry = {
+        id: log.id,
+        setNum: log.set_number ?? setNum,
+        weight: log.weight_lbs ?? s.weight,
+        reps: log.reps ?? s.selectedReps,
+        rpe: log.rpe ?? s.selectedRpe,
+        distance_m: log.distance_m ?? undefined,
+        duration_s: log.duration_s ?? undefined,
+        loggedAt: log.logged_at,
+      }
       setLastSets(prev => ({ ...prev, [ex.exercise_name]: log }))
+
+      const restSeconds = ex.rest_s ?? DEFAULT_REST_S[modality] ?? 90
+
+      if (ex.superset_group) {
+        const groupIndices = exercises
+          .map((e, idx) => ({ e, idx }))
+          .filter(({ e }) => e.superset_group === ex.superset_group)
+        const myPos = groupIndices.findIndex(({ idx }) => idx === i)
+        const nextInGroup = groupIndices[myPos + 1]
+
+        if (nextInGroup) {
+          setExerciseStates(prev => prev.map((st, idx) => {
+            if (idx === i) return { ...st, loggedSets: [...st.loggedSets, newEntry], expanded: false }
+            if (idx === nextInGroup.idx) return { ...st, expanded: true }
+            return st
+          }))
+        } else {
+          const firstInGroup = groupIndices[0]
+          setExerciseStates(prev => prev.map((st, idx) => {
+            if (idx === i) return { ...st, loggedSets: [...st.loggedSets, newEntry] }
+            if (firstInGroup && idx === firstInGroup.idx && firstInGroup.idx !== i) return { ...st, expanded: true }
+            return st
+          }))
+          setRestTimer({ exerciseName: ex.exercise_name, setNum, secondsLeft: restSeconds, total: restSeconds })
+        }
+      } else {
+        setExerciseStates(prev => prev.map((st, idx) =>
+          idx !== i ? st : { ...st, loggedSets: [...st.loggedSets, newEntry] }
+        ))
+        setRestTimer({ exerciseName: ex.exercise_name, setNum, secondsLeft: restSeconds, total: restSeconds })
+      }
     })
   }
 
@@ -641,6 +697,55 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                   </div>
                 </div>
 
+                <div>
+                  <label className="text-[var(--text-dim)] text-xs uppercase tracking-wider" htmlFor="exercise-modality">
+                    Type
+                  </label>
+                  <select
+                    id="exercise-modality"
+                    value={exerciseForm.modality}
+                    onChange={event => updateExerciseForm({ modality: event.target.value })}
+                    className="mt-2 w-full h-11 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
+                  >
+                    <option value="strength">Strength</option>
+                    <option value="bodyweight">Bodyweight</option>
+                    <option value="isometric">Isometric</option>
+                    <option value="erg">Erg / Row</option>
+                    <option value="carry">Carry</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[var(--text-dim)] text-xs uppercase tracking-wider" htmlFor="exercise-rest">
+                      Rest (s)
+                    </label>
+                    <input
+                      id="exercise-rest"
+                      inputMode="numeric"
+                      type="number"
+                      min="0"
+                      placeholder={String(DEFAULT_REST_S[exerciseForm.modality] ?? 90)}
+                      value={exerciseForm.restSeconds}
+                      onChange={event => updateExerciseForm({ restSeconds: event.target.value })}
+                      className="mt-2 w-full h-11 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-[var(--text)] outline-none focus:border-[#00d26a]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[var(--text-dim)] text-xs uppercase tracking-wider" htmlFor="exercise-superset">
+                      Superset
+                    </label>
+                    <input
+                      id="exercise-superset"
+                      maxLength={2}
+                      placeholder="A, B…"
+                      value={exerciseForm.supersetGroup}
+                      onChange={event => updateExerciseForm({ supersetGroup: event.target.value })}
+                      className="mt-2 w-full h-11 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-3 text-[var(--text)] outline-none focus:border-[#38bdf8] uppercase"
+                    />
+                  </div>
+                </div>
+
                 {addError && (
                   <div className="text-[#ff6b6b] text-[11px]" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
                     {addError}
@@ -677,19 +782,45 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
             const last = lastSets[ex.exercise_name]
             const setsTarget = ex.prescribed_sets ?? 0
             const suggestion = getProgressionSuggestion(ex, last)
+            const inSuperset = !!ex.superset_group
+            const nextSharedGroup = exercises[i + 1]?.superset_group === ex.superset_group && inSuperset
+
+            const prescriptionText = ex.modality === 'isometric'
+              ? [
+                  ex.prescribed_sets ? `${ex.prescribed_sets}×hold` : '',
+                  ex.prescribed_reps ?? '',
+                ].filter(Boolean).join(' ')
+              : [
+                  ex.prescribed_sets && ex.prescribed_reps ? `${ex.prescribed_sets}×${ex.prescribed_reps}` : '',
+                  ex.prescribed_weight ? `${ex.prescribed_weight}${ex.weight_unit}` : '',
+                  ex.target_rpe ? `RPE ${ex.target_rpe}` : '',
+                ].filter(Boolean).join(' · ')
 
             return (
-              <Card key={ex.id} className="overflow-hidden">
+              <div key={ex.id} className="relative">
+                {inSuperset && (
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-[3px] rounded-full z-10"
+                    style={{ background: '#38bdf8', opacity: 0.85 }}
+                  />
+                )}
+                <Card className={`overflow-hidden ${inSuperset ? 'ml-2' : ''}`}>
                 <button
                   onClick={() => updateState(i, { expanded: !s.expanded })}
                   className="w-full flex items-center justify-between px-4 py-4 min-h-[56px]"
                 >
                   <div className="text-left flex-1 min-w-0 pr-3">
-                    <div className="text-[var(--text)] text-sm font-medium">{ex.exercise_name}</div>
+                    <div className="text-[var(--text)] text-sm font-medium flex items-center gap-2 flex-wrap">
+                      {inSuperset && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.3)', lineHeight: 1.4 }}>
+                          SS-{ex.superset_group}
+                        </span>
+                      )}
+                      {ex.exercise_name}
+                    </div>
                     <div className="text-[var(--text-faint)] text-[11px] mt-0.5" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-                      {ex.prescribed_sets && ex.prescribed_reps ? `${ex.prescribed_sets}×${ex.prescribed_reps}` : ''}
-                      {ex.prescribed_weight ? ` · ${ex.prescribed_weight}${ex.weight_unit}` : ''}
-                      {ex.target_rpe ? ` · RPE ${ex.target_rpe}` : ''}
+                      {prescriptionText}
+                      {ex.rest_s ? ` · ${ex.rest_s}s rest` : ''}
                     </div>
                     {last && (
                       <div className="text-[10px] mt-0.5 flex items-center gap-2" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
@@ -717,38 +848,11 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       <div className="flex items-center justify-between">
                         <span className="text-[var(--text-dim)] text-xs uppercase tracking-wider">Weight</span>
                         <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => {
-                              const next = Math.max(0, s.weight - 2.5)
-                              updateState(i, { weight: next, weightText: String(next) })
-                            }}
-                            className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]"
-                          >−</button>
-                          <div className="flex items-baseline min-w-[64px] justify-center">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={s.weightText}
-                              onChange={e => {
-                                const raw = e.target.value
-                                const parsed = parseWeightInput(raw)
-                                updateState(i, { weightText: raw, ...(parsed !== null ? { weight: parsed } : {}) })
-                              }}
-                              onFocus={e => e.target.select()}
-                              onBlur={() => updateState(i, { weightText: String(s.weight) })}
-                              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
-                              className="text-[var(--text)] text-2xl font-bold w-[56px] text-center bg-transparent outline-none border-b border-[var(--border)] focus:border-[#00d26a] transition-colors"
-                              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-                            />
-                            <span className="text-[var(--text-faint)] text-sm ml-0.5">kg</span>
-                          </div>
-                          <button
-                            onClick={() => {
-                              const next = s.weight + 2.5
-                              updateState(i, { weight: next, weightText: String(next) })
-                            }}
-                            className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]"
-                          >+</button>
+                          <button onClick={() => updateState(i, { weight: Math.max(0, s.weight - 2.5) })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">−</button>
+                          <span className="text-[var(--text)] text-2xl font-bold min-w-[64px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                            {s.weight}<span className="text-[var(--text-faint)] text-sm ml-0.5">kg</span>
+                          </span>
+                          <button onClick={() => updateState(i, { weight: s.weight + 2.5 })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">+</button>
                         </div>
                       </div>
                     )}
@@ -781,8 +885,43 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       </div>
                     )}
 
-                    {/* Reps — strength + bodyweight + carry */}
-                    {ex.modality !== 'erg' && (
+                    {/* Isometric — hold duration presets + stepper */}
+                    {ex.modality === 'isometric' && (
+                      <div>
+                        <div className="text-[var(--text-dim)] text-xs uppercase tracking-wider mb-2">Hold Duration</div>
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {ISOMETRIC_PRESETS.map(sec => (
+                            <button
+                              key={sec}
+                              onClick={() => updateState(i, { selectedDuration: sec })}
+                              className={`min-w-[48px] h-9 px-3 rounded-full text-sm border transition-all active:scale-[0.92] ${
+                                s.selectedDuration === sec ? 'border-transparent font-bold' : 'bg-[var(--ink-04)] border-[var(--border)] text-[var(--text-dim)]'
+                              }`}
+                              style={{
+                                fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                                ...(s.selectedDuration === sec ? {
+                                  background: 'linear-gradient(180deg, #2ee6a8, #00d26a)',
+                                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(0,210,106,0.3)',
+                                  color: '#062514',
+                                } : {}),
+                              }}
+                            >
+                              {sec < 60 ? `${sec}s` : `${sec / 60}m`}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-3 justify-center">
+                          <button onClick={() => updateState(i, { selectedDuration: Math.max(5, s.selectedDuration - 5) })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">−</button>
+                          <span className="text-[var(--text)] text-2xl font-bold min-w-[64px] text-center" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                            {s.selectedDuration < 60 ? `${s.selectedDuration}s` : `${Math.floor(s.selectedDuration / 60)}:${String(s.selectedDuration % 60).padStart(2, '0')}`}
+                          </span>
+                          <button onClick={() => updateState(i, { selectedDuration: s.selectedDuration + 5 })} className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--ink-04)] text-[var(--text-dim)] text-lg flex items-center justify-center transition-transform active:scale-[0.88]">+</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Reps — strength + bodyweight + carry (not erg, not isometric) */}
+                    {ex.modality !== 'erg' && ex.modality !== 'isometric' && (
                       <div>
                         <div className="text-[var(--text-dim)] text-xs uppercase tracking-wider mb-2">Reps</div>
                         <div className="flex flex-wrap gap-2">
@@ -854,7 +993,10 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                       onClick={() => logSet(i)}
                       className="btn-accent w-full rounded-xl py-3 text-sm font-bold min-h-[44px]"
                     >
-                      Log set {s.loggedSets.length + 1}{setsTarget > 0 ? ` of ${setsTarget}` : ''} →
+                      {ex.modality === 'isometric'
+                        ? `Log ${s.selectedDuration < 60 ? `${s.selectedDuration}s` : `${Math.floor(s.selectedDuration / 60)}:${String(s.selectedDuration % 60).padStart(2, '0')}`} hold →`
+                        : `Log set ${s.loggedSets.length + 1}${setsTarget > 0 ? ` of ${setsTarget}` : ''} →`
+                      }
                     </button>
 
                     {logError && (
@@ -872,6 +1014,8 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                             <span>Set {ls.setNum}</span>
                             {ls.distance_m != null
                               ? <span>{ls.distance_m}m{ls.duration_s != null ? ` · ${Math.floor(ls.duration_s / 60)}:${String(ls.duration_s % 60).padStart(2, '0')}` : ''}</span>
+                              : ex.modality === 'isometric'
+                              ? <span>{ls.duration_s != null ? (ls.duration_s < 60 ? `${ls.duration_s}s hold` : `${Math.floor(ls.duration_s / 60)}:${String(ls.duration_s % 60).padStart(2, '0')} hold`) : '—'}</span>
                               : <span>{ex.modality !== 'bodyweight' ? `${ls.weight}kg × ` : ''}{ls.reps}</span>
                             }
                             <span>RPE {ls.rpe}</span>
@@ -881,11 +1025,53 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
                     )}
                   </div>
                 )}
-              </Card>
+                </Card>
+                {nextSharedGroup && (
+                  <div className="ml-[11px] w-0.5 h-3 bg-[#38bdf8] opacity-40 rounded-full" />
+                )}
+              </div>
             )
       })}
 
       <div className="h-4" />
+
+      {/* Rest timer — fixed glass pill above TabBar */}
+      {restTimer && (
+        <div className="fixed bottom-[72px] inset-x-0 px-4 z-50 flex justify-center">
+          <div className="glass-thick border border-[var(--border-hi)] rounded-2xl px-4 py-3 flex items-center gap-3 max-w-sm w-full" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.45)' }}>
+            <svg width="44" height="44" viewBox="0 0 44 44" style={{ flexShrink: 0 }}>
+              <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" strokeWidth="3" />
+              <circle
+                cx="22" cy="22" r="18"
+                fill="none"
+                stroke="#38bdf8"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray="113.1"
+                strokeDashoffset={113.1 * (1 - restTimer.secondsLeft / restTimer.total)}
+                transform="rotate(-90 22 22)"
+                style={{ transition: 'stroke-dashoffset 1s linear' }}
+              />
+              <text x="22" y="27" textAnchor="middle" style={{ fill: 'var(--text)', fontSize: '12px', fontWeight: 'bold', fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                {restTimer.secondsLeft}
+              </text>
+            </svg>
+            <div className="flex-1 min-w-0">
+              <div className="text-[var(--text)] text-sm font-semibold">Rest</div>
+              <div className="text-[var(--text-faint)] text-[11px] truncate" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                after {restTimer.exerciseName}
+              </div>
+            </div>
+            <button
+              onClick={() => setRestTimer(null)}
+              className="text-[var(--text-dim)] text-xs font-semibold border border-[var(--border)] rounded-full px-3 h-8 bg-[var(--ink-04)] transition-all active:scale-[0.95]"
+              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

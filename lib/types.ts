@@ -74,7 +74,7 @@ export interface WorkoutSession {
   notes: string | null
 }
 
-export type ExerciseModality = 'strength' | 'erg' | 'carry' | 'bodyweight'
+export type ExerciseModality = 'strength' | 'erg' | 'carry' | 'bodyweight' | 'isometric'
 
 export interface WorkoutExercise {
   id: number
@@ -88,6 +88,8 @@ export interface WorkoutExercise {
   target_rpe: string | null
   notes: string | null
   modality: ExerciseModality
+  rest_s: number | null
+  superset_group: string | null
 }
 
 export interface NutritionLog {
