@@ -225,7 +225,9 @@ body::after {
 }
 
 .boot > * {
-  animation: boot-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* backwards, not both: a retained end-state transform would make .boot
+     children the containing block for position:fixed descendants */
+  animation: boot-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 .boot > *:nth-child(1) { animation-delay: 0.02s; }
 .boot > *:nth-child(2) { animation-delay: 0.07s; }

@@ -62,6 +62,14 @@ describe('bulk meal templates', () => {
     expect(totals.fat).toBeGreaterThanOrEqual(75)
     expect(totals.fat).toBeLessThanOrEqual(85)
   })
+
+  it('shows pasta and potato equivalents for the dinner starchy carb block', () => {
+    const dinner = generateDefaultMeals('hard').find((meal) => meal.name === 'dinner')
+    const starchyCarb = dinner?.items.find((item) => item.substitutionGroup === 'carb_70g_starchy')
+
+    expect(starchyCarb?.label).toMatch(/pasta/i)
+    expect(starchyCarb?.label).toMatch(/potatoes/i)
+  })
 })
 
 function cycle(daysAgo: number, calories: number, completed = true) {

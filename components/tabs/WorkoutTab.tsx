@@ -374,6 +374,9 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
   const logSet = (i: number) => {
     if (!session) return
+    // Dismiss the iOS keyboard — with an input focused, position:fixed elements
+    // (rest pill, TabBar) detach from the visual viewport and drift on scroll.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     const s = exerciseStates[i]
     const ex = exercises[i]
     const setNum = s.loggedSets.length + 1
@@ -1037,7 +1040,10 @@ export default function WorkoutTab({ canAddExercises = false }: { canAddExercise
 
       {/* Rest timer — fixed glass pill above TabBar */}
       {restTimer && (
-        <div className="fixed bottom-[72px] inset-x-0 px-4 z-50 flex justify-center">
+        <div
+          className="fixed inset-x-0 px-4 z-50 flex justify-center"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 90px)' }}
+        >
           <div className="glass-thick border border-[var(--border-hi)] rounded-2xl px-4 py-3 flex items-center gap-3 max-w-sm w-full" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.45)' }}>
             <svg width="44" height="44" viewBox="0 0 44 44" style={{ flexShrink: 0 }}>
               <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" strokeWidth="3" />
