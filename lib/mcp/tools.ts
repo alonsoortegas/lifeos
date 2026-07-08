@@ -374,7 +374,15 @@ export function registerTools(server: McpServer) {
 
     const { data: item, error: itemErr } = await db
       .from('meal_log_item')
-      .insert({ meal_log_id: mealLog!.id, food_item_id: 0, quantity, ...macros })
+      .insert({
+        meal_log_id: mealLog!.id,
+        food_item_id: null,
+        custom_food_name: p.label,
+        source: 'custom',
+        quantity,
+        ...macros,
+        substitution_group: food_key,
+      })
       .select()
       .single()
     if (itemErr) return err(itemErr.message)

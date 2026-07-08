@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import MealTextLogger from '@/components/nutrition/MealTextLogger'
+import GenericFoodAdder from '@/components/nutrition/GenericFoodAdder'
 import { createClient } from '@/lib/supabase'
 import {
   calculateConsumed,
@@ -12,6 +12,7 @@ import {
   getSubstitutions,
   loadNutritionTargetPlan,
   MEAL_LABELS,
+  loggedMealItemLabel,
   normalizedNutritionKey,
   nutritionDayPayload,
   scaleFood,
@@ -19,6 +20,7 @@ import {
   targetMapFromRows,
   type DefaultMealItem,
   type MacroTotals,
+  type ParsedGenericFood,
   type WhoopEnergyCalibration,
 } from '@/lib/nutrition'
 import type {
@@ -26,7 +28,6 @@ import type {
   FoodSubstitutionGroup,
   FoodSubstitutionGroupItem,
   MealLog,
-  MealLogItem,
   MealTemplateName,
   NutritionDay,
   NutritionDayType,
@@ -52,12 +53,6 @@ type PortionDraft = {
 
 function todayISO(): string { return new Date().toISOString().slice(0, 10) }
 function macroVal(v: number): string { return `${Math.round(v)}` }
-function quantityVal(v: number): string { return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/\.?0+$/, '') }
-function loggedFoodLabel(item: MealLogItem): string {
-  const foodName = item.food_item?.name ?? 'food'
-  const quantity = Number(item.quantity) || 0
-  return quantity > 0 ? `${foodName} x${quantityVal(quantity)}` : foodName
-}
 function foodKey(mealName: MealTemplateName, foodItemId: number, label: string): string {
   return `${mealName}:${foodItemId}:${label}`
 }
@@ -235,6 +230,35 @@ export default function NutritionDesktop({
     await loadMealLogs(day.id); setSavingKey(null)
   }
 
+  const logGenericFood = async (mealName: MealTemplateName, food: ParsedGenericFood): Promise<boolean> => {
+    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, STATIC_WHOOP_ENERGY_CALIBRATION)); if (!day) return false
+    const key = `generic:${mealName}`
+    setSavingKey(key)
+
+    let mealLog = mealLogs.find(log => log.meal_name === mealName)
+    if (!mealLog) {
+      const { data, error } = await supabase.from('meal_log').insert({ nutrition_day_id: day.id, meal_name: mealName }).select('*').single()
+      if (error) { console.error('meal log create failed:', error.message); setSavingKey(null); return false }
+      mealLog = { ...(data as MealLog), meal_log_item: [] }
+    }
+
+    const { error } = await supabase.from('meal_log_item').insert({
+      meal_log_id: mealLog.id,
+      food_item_id: null,
+      custom_food_name: food.name,
+      source: 'custom',
+      quantity: 1,
+      calories: food.calories,
+      protein_g: food.protein_g,
+      carbs_g: food.carbs_g,
+      fat_g: food.fat_g,
+      substitution_group: 'custom',
+    })
+    if (error) { console.error('generic food insert failed:', error.message); setSavingKey(null); return false }
+
+    await loadMealLogs(day.id); setSavingKey(null); return true
+  }
+
   const removeLoggedItem = async (itemId: number) => {
     if (!nutritionDay) return
     setSavingKey(`remove:${itemId}`)
@@ -273,10 +297,6 @@ export default function NutritionDesktop({
 
         {/* LEFT — macros + consumed */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, overflow: 'auto' }}>
-          <MealTextLogger onApplied={async () => {
-            if (nutritionDay) await loadMealLogs(nutritionDay.id)
-          }} />
-
           {/* Macros label */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '1px solid var(--border)', paddingBottom: 6, flexShrink: 0 }}>
             <span style={{ fontFamily: mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--text-faint)', textTransform: 'uppercase' }}>Macros · today</span>
@@ -339,9 +359,17 @@ export default function NutritionDesktop({
                 {mealLogs.flatMap(log => (log.meal_log_item ?? []).map(item => ({
                   mealName: MEAL_LABELS[log.meal_name], item,
                 }))).map(({ mealName, item }) => (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>{mealName} · {loggedFoodLabel(item)}</span>
+                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{mealName} · {loggedMealItemLabel(item)}</span>
                     <span style={{ flexShrink: 0 }}>{macroVal(Number(item.protein_g))}p/{macroVal(Number(item.carbs_g))}c</span>
+                    <button
+                      type="button"
+                      onClick={() => removeLoggedItem(item.id)}
+                      disabled={savingKey === `remove:${item.id}`}
+                      style={{ flexShrink: 0, fontFamily: mono, fontSize: 9, color: 'var(--text-dim)', border: '1px solid var(--border)', background: 'transparent', padding: '2px 7px', borderRadius: 999, cursor: savingKey === `remove:${item.id}` ? 'default' : 'pointer', letterSpacing: '0.12em', textTransform: 'uppercase', opacity: savingKey === `remove:${item.id}` ? 0.55 : 1 }}
+                    >
+                      delete
+                    </button>
                   </div>
                 ))}
               </div>
@@ -393,6 +421,14 @@ export default function NutritionDesktop({
                         onChange={updatePortionDraft}
                         onSubmit={logFoodPortion}
                       />
+
+                      {meal.name === 'snack' && (
+                        <GenericFoodAdder
+                          compact
+                          saving={savingKey === 'generic:snack'}
+                          onSubmit={(food) => logGenericFood('snack', food)}
+                        />
+                      )}
 
                       {meal.items.length === 0 && (
                         <div style={{ padding: '8px 0', fontSize: 12, color: 'var(--text-faint)' }}>No items for this day type.</div>

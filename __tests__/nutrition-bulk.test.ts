@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   applyWhoopAdjustment,
@@ -28,6 +29,12 @@ const FOOD_MACROS: Record<string, { calories: number; protein: number; carbs: nu
   Vollkornbrot: { calories: 75, protein: 3, carbs: 13, fat: 1.5 },
 }
 
+type MacroTotals = { calories: number; protein: number; carbs: number; fat: number }
+
+function macroCalories(macros: Omit<MacroTotals, 'calories'>): number {
+  return (macros.protein * 4) + (macros.carbs * 4) + (macros.fat * 9)
+}
+
 function templateTotals(dayType: NutritionDayType) {
   return generateDefaultMeals(dayType)
     .flatMap((meal) => meal.items)
@@ -51,15 +58,15 @@ describe('bulk meal templates', () => {
     expect(generateDefaultMeals('rest')).toEqual(generateDefaultMeals('hard'))
   })
 
-  it.each(['hard', 'moderate', 'rest'] as const)('%s template approximates the flat daily bulk target', (dayType) => {
+  it.each(['hard', 'moderate', 'rest'] as const)('%s visible template leaves room for ad hoc additions', (dayType) => {
     const totals = templateTotals(dayType)
-    expect(totals.calories).toBeGreaterThanOrEqual(2650)
-    expect(totals.calories).toBeLessThanOrEqual(2750)
-    expect(totals.protein).toBeGreaterThanOrEqual(155)
-    expect(totals.protein).toBeLessThanOrEqual(170)
-    expect(totals.carbs).toBeGreaterThanOrEqual(325)
-    expect(totals.carbs).toBeLessThanOrEqual(345)
-    expect(totals.fat).toBeGreaterThanOrEqual(75)
+    expect(totals.calories).toBeGreaterThanOrEqual(2300)
+    expect(totals.calories).toBeLessThanOrEqual(2375)
+    expect(totals.protein).toBeGreaterThanOrEqual(130)
+    expect(totals.protein).toBeLessThanOrEqual(145)
+    expect(totals.carbs).toBeGreaterThanOrEqual(255)
+    expect(totals.carbs).toBeLessThanOrEqual(275)
+    expect(totals.fat).toBeGreaterThanOrEqual(70)
     expect(totals.fat).toBeLessThanOrEqual(85)
   })
 
@@ -69,6 +76,52 @@ describe('bulk meal templates', () => {
 
     expect(starchyCarb?.label).toMatch(/pasta/i)
     expect(starchyCarb?.label).toMatch(/potatoes/i)
+  })
+
+  it('keeps the DB reference bulk template aligned with the 2700 kcal macro target', () => {
+    const migration = readFileSync(
+      `${process.cwd()}/supabase/migrations/20260706110500_dinner_carb_equivalents.sql`,
+      'utf8',
+    )
+    const portions = new Map<string, Omit<MacroTotals, 'calories'>>()
+    const portionPattern =
+      /\(\s*'([^']+)',\s*'[^']+',\s*'[^']+',\s*[\d.]+,\s*(?:[\d.]+|null),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+),/g
+
+    for (const match of migration.matchAll(portionPattern)) {
+      portions.set(match[1], {
+        protein: Number(match[2]),
+        carbs: Number(match[3]),
+        fat: Number(match[4]),
+      })
+    }
+
+    const templatePattern = /\(\s*'([^']+)',\s*'(\[[\s\S]*?\])'::jsonb,\s*array\[/g
+    const totals: MacroTotals = { calories: 0, protein: 0, carbs: 0, fat: 0 }
+    let templateCount = 0
+
+    for (const match of migration.matchAll(templatePattern)) {
+      templateCount += 1
+      const items = JSON.parse(match[2]) as Array<{ food_key: string; quantity: number }>
+      for (const item of items) {
+        const macros = portions.get(item.food_key)
+        expect(macros, `Missing migration macros for ${item.food_key}`).toBeDefined()
+        totals.protein += macros!.protein * item.quantity
+        totals.carbs += macros!.carbs * item.quantity
+        totals.fat += macros!.fat * item.quantity
+      }
+    }
+
+    totals.calories = macroCalories(totals)
+
+    expect(templateCount).toBe(6)
+    expect(totals.calories).toBeGreaterThanOrEqual(2670)
+    expect(totals.calories).toBeLessThanOrEqual(2730)
+    expect(totals.protein).toBeGreaterThanOrEqual(155)
+    expect(totals.protein).toBeLessThanOrEqual(170)
+    expect(totals.carbs).toBeGreaterThanOrEqual(325)
+    expect(totals.carbs).toBeLessThanOrEqual(345)
+    expect(totals.fat).toBeGreaterThanOrEqual(75)
+    expect(totals.fat).toBeLessThanOrEqual(85)
   })
 })
 

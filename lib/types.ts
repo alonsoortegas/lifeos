@@ -169,14 +169,16 @@ export interface FoodSubstitutionGroupItem {
 export interface MealLogItem {
   id: number
   meal_log_id: number
-  food_item_id: number
+  food_item_id: number | null
   quantity: number
   calories: number
   protein_g: number
   carbs_g: number
   fat_g: number
   substitution_group: string | null
-  food_item?: FoodItem
+  custom_food_name?: string | null
+  source?: 'catalog' | 'custom'
+  food_item?: FoodItem | null
 }
 
 export interface MealLog {

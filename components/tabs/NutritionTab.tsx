@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Card from '@/components/ui/Card'
 import ProgressBar from '@/components/ui/ProgressBar'
-import MealTextLogger from '@/components/nutrition/MealTextLogger'
+import GenericFoodAdder from '@/components/nutrition/GenericFoodAdder'
+import LoggedItemsList from '@/components/nutrition/LoggedItemsList'
 import { createClient } from '@/lib/supabase'
 import {
   calculateConsumed,
@@ -13,7 +14,6 @@ import {
   getDefaultNutritionDayType,
   getSubstitutions,
   loadNutritionTargetPlan,
-  MEAL_LABELS,
   normalizedNutritionKey,
   nutritionDayPayload,
   scaleFood,
@@ -21,6 +21,7 @@ import {
   targetMapFromRows,
   type DefaultMealItem,
   type MacroTotals,
+  type ParsedGenericFood,
   type WhoopEnergyCalibration,
 } from '@/lib/nutrition'
 import type {
@@ -28,7 +29,6 @@ import type {
   FoodSubstitutionGroup,
   FoodSubstitutionGroupItem,
   MealLog,
-  MealLogItem,
   MealTemplateName,
   NutritionDay,
   NutritionDayType,
@@ -51,18 +51,6 @@ function todayISO(): string {
 
 function macroValue(value: number): string {
   return `${Math.round(value)}`
-}
-
-function quantityValue(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, '')
-}
-
-function loggedFoodLabel(item: MealLogItem): string {
-  const foodName = item.food_item?.name ?? 'food'
-  const quantity = Number(item.quantity) || 0
-  if (quantity <= 0) return foodName
-
-  return `${foodName} x${quantityValue(quantity)}`
 }
 
 function foodKey(mealName: MealTemplateName, foodItemId: number, label: string): string {
@@ -296,6 +284,55 @@ export default function NutritionTab() {
     setSavingKey(null)
   }
 
+  const logGenericFood = async (mealName: MealTemplateName, food: ParsedGenericFood): Promise<boolean> => {
+    const day = nutritionDay ?? (await ensureDay(dayType, targetMap, STATIC_WHOOP_ENERGY_CALIBRATION))
+    if (!day) return false
+
+    const key = `generic:${mealName}`
+    setSavingKey(key)
+
+    let mealLog = mealLogs.find((log) => log.meal_name === mealName)
+    if (!mealLog) {
+      const { data, error } = await supabase
+        .from('meal_log')
+        .insert({ nutrition_day_id: day.id, meal_name: mealName })
+        .select('*')
+        .single()
+
+      if (error) {
+        console.error('meal log create failed:', error.message)
+        showMutError('couldn\'t create meal')
+        setSavingKey(null)
+        return false
+      }
+      mealLog = { ...(data as MealLog), meal_log_item: [] }
+    }
+
+    const { error } = await supabase.from('meal_log_item').insert({
+      meal_log_id: mealLog.id,
+      food_item_id: null,
+      custom_food_name: food.name,
+      source: 'custom',
+      quantity: 1,
+      calories: food.calories,
+      protein_g: food.protein_g,
+      carbs_g: food.carbs_g,
+      fat_g: food.fat_g,
+      substitution_group: 'custom',
+    })
+
+    if (error) {
+      console.error('generic food insert failed:', error.message)
+      showMutError('generic food didn\'t save')
+      setSavingKey(null)
+      return false
+    }
+
+    await loadMealLogs(day.id)
+    setSavingKey(null)
+    return true
+  }
+
   const logTemplateItem = async (
     mealName: MealTemplateName,
     item: DefaultMealItem,
@@ -392,10 +429,6 @@ export default function NutritionTab() {
       </Card>
       */}
 
-      <MealTextLogger onApplied={async () => {
-        if (nutritionDay) await loadMealLogs(nutritionDay.id)
-      }} />
-
       <div className="grid grid-cols-2 gap-3">
         {macroCards.map((macro) => (
           <Card key={macro.label} className="p-4 space-y-2">
@@ -464,6 +497,14 @@ export default function NutritionTab() {
                       onChange={updatePortionDraft}
                       onSubmit={logFoodPortion}
                     />
+
+                    {meal.name === 'snack' && (
+                      <GenericFoodAdder
+                        compact
+                        saving={savingKey === 'generic:snack'}
+                        onSubmit={(food) => logGenericFood('snack', food)}
+                      />
+                    )}
 
                     {meal.items.length === 0 && (
                       <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-faint)]">
@@ -545,7 +586,12 @@ export default function NutritionTab() {
         </div>
       )}
 
-      <LoggedSummary mealLogs={mealLogs} totals={consumed} />
+      <LoggedItemsList
+        mealLogs={mealLogs}
+        totals={consumed}
+        savingKey={savingKey}
+        onRemove={removeLoggedItem}
+      />
       <div className="h-4" />
     </div>
   )
@@ -613,44 +659,6 @@ function PortionAdder({
           add
         </button>
       </div>
-    </div>
-  )
-}
-
-function LoggedSummary({ mealLogs, totals }: { mealLogs: MealLog[]; totals: MacroTotals }) {
-  const loggedItems = mealLogs.flatMap((log) =>
-    (log.meal_log_item ?? []).map((item) => ({
-      ...item,
-      mealName: MEAL_LABELS[log.meal_name],
-    }))
-  )
-
-  if (loggedItems.length === 0) return null
-
-  return (
-    <div className="space-y-2">
-      <div className="text-[var(--text-faint)] text-[11px] tracking-widest uppercase" style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
-        · consumed ·
-      </div>
-      <Card className="p-4">
-        <div className="text-sm text-[var(--text)]">
-          {macroValue(totals.calories)}kcal · {macroValue(totals.protein_g)}g protein · {macroValue(totals.carbs_g)}g carbs · {macroValue(totals.fat_g)}g fat
-        </div>
-        <div className="mt-3 space-y-1.5">
-          {loggedItems.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between gap-3 text-[11px] text-[var(--text-faint)]"
-              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-            >
-              <span className="truncate">
-                {item.mealName} · {loggedFoodLabel(item)}
-              </span>
-              <span className="flex-shrink-0">{macroValue(Number(item.protein_g))}p/{macroValue(Number(item.carbs_g))}c</span>
-            </div>
-          ))}
-        </div>
-      </Card>
     </div>
   )
 }

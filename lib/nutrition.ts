@@ -91,6 +91,26 @@ export interface PortionSubstitutionOption {
   fat_g: number
 }
 
+export type GenericFoodDraft = {
+  name: string
+  calories: string
+  protein_g: string
+  carbs_g: string
+  fat_g: string
+}
+
+export type ParsedGenericFood = {
+  name: string
+  calories: number
+  protein_g: number
+  carbs_g: number
+  fat_g: number
+}
+
+export type GenericFoodParseResult =
+  | { ok: true; value: ParsedGenericFood }
+  | { ok: false; error: string }
+
 export const MEAL_LABELS: Record<MealTemplateName, string> = {
   breakfast: 'Breakfast',
   midday: 'Midday',
@@ -251,6 +271,55 @@ export function calculateMacroCalories(macros: Pick<MacroTotals, 'protein_g' | '
   return Math.round((macros.protein_g * 4) + (macros.carbs_g * 4) + (macros.fat_g * 9))
 }
 
+export function loggedMealItemLabel(item: {
+  quantity: number
+  custom_food_name?: string | null
+  food_item?: { name?: string | null } | null
+}): string {
+  const foodName = item.custom_food_name?.trim() || item.food_item?.name || 'food'
+  const quantity = Number(item.quantity) || 0
+  if (quantity <= 0 || quantity === 1) return foodName
+
+  return `${foodName} x${quantityValue(quantity)}`
+}
+
+function parseNonnegativeNumber(value: string): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+  return roundMacro(parsed)
+}
+
+export function parseGenericFoodDraft(draft: GenericFoodDraft): GenericFoodParseResult {
+  const name = draft.name.trim()
+  if (!name) return { ok: false, error: 'name the food' }
+
+  const protein = parseNonnegativeNumber(draft.protein_g)
+  const carbs = parseNonnegativeNumber(draft.carbs_g)
+  const fat = parseNonnegativeNumber(draft.fat_g)
+  if (protein === null || carbs === null || fat === null) {
+    return { ok: false, error: 'macros must be zero or higher' }
+  }
+
+  const calories = draft.calories.trim()
+    ? parseNonnegativeNumber(draft.calories)
+    : calculateMacroCalories({ protein_g: protein, carbs_g: carbs, fat_g: fat })
+  if (calories === null) return { ok: false, error: 'calories must be zero or higher' }
+  if (calories === 0 && protein === 0 && carbs === 0 && fat === 0) {
+    return { ok: false, error: 'enter at least one macro' }
+  }
+
+  return {
+    ok: true,
+    value: {
+      name,
+      calories: Math.round(calories),
+      protein_g: protein,
+      carbs_g: carbs,
+      fat_g: fat,
+    },
+  }
+}
+
 export function calculateConsumed(mealLogs: MealLog[]): MacroTotals {
   return mealLogs.reduce<MacroTotals>(
     (totals, log) => {
@@ -307,30 +376,12 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
       ],
     },
     {
-      name: 'pre_workout',
-      label: MEAL_LABELS.pre_workout,
-      defaultTime: '16:00',
-      items: [
-        { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-        { foodName: 'Rice cakes', quantity: 1, label: '2 rice cakes', substitutionGroup: 'carb_15g' },
-      ],
-    },
-    {
-      name: 'post_workout',
-      label: MEAL_LABELS.post_workout,
-      defaultTime: '18:00',
-      items: [
-        { foodName: 'Protein powder', quantity: 1, label: '1 scoop protein', substitutionGroup: 'protein_25g' },
-        { foodName: 'Banana', quantity: 1, label: '1 banana', substitutionGroup: 'carb_27g' },
-      ],
-    },
-    {
       name: 'dinner',
       label: MEAL_LABELS.dinner,
       defaultTime: '20:00',
       items: [
         commonDinnerProtein,
-        { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice', substitutionGroup: 'carb_70g_starchy' },
+        { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice, 100g dry pasta, or 420g raw potatoes', substitutionGroup: 'carb_70g_starchy' },
         { foodName: 'Vegetables', quantity: 1, label: 'vegetables' },
         { foodName: 'Olive oil', quantity: 1, label: '15ml olive oil' },
       ],
@@ -475,4 +526,8 @@ function dominantMacro(portion: NutritionFoodPortion): 'protein' | 'carbs' | 'fa
 
 function roundMacro(value: number): number {
   return Math.round(value * 10) / 10
+}
+
+function quantityValue(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, '')
 }
