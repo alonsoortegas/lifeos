@@ -498,13 +498,11 @@ export default function NutritionTab() {
                       onSubmit={logFoodPortion}
                     />
 
-                    {meal.name === 'snack' && (
-                      <GenericFoodAdder
-                        compact
-                        saving={savingKey === 'generic:snack'}
-                        onSubmit={(food) => logGenericFood('snack', food)}
-                      />
-                    )}
+                    <GenericFoodAdder
+                      compact
+                      saving={savingKey === `generic:${meal.name}`}
+                      onSubmit={(food) => logGenericFood(meal.name, food)}
+                    />
 
                     {meal.items.length === 0 && (
                       <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-faint)]">

@@ -422,13 +422,11 @@ export default function NutritionDesktop({
                         onSubmit={logFoodPortion}
                       />
 
-                      {meal.name === 'snack' && (
-                        <GenericFoodAdder
-                          compact
-                          saving={savingKey === 'generic:snack'}
-                          onSubmit={(food) => logGenericFood('snack', food)}
-                        />
-                      )}
+                      <GenericFoodAdder
+                        compact
+                        saving={savingKey === `generic:${meal.name}`}
+                        onSubmit={(food) => logGenericFood(meal.name, food)}
+                      />
 
                       {meal.items.length === 0 && (
                         <div style={{ padding: '8px 0', fontSize: 12, color: 'var(--text-faint)' }}>No items for this day type.</div>
