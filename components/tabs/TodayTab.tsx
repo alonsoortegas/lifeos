@@ -11,7 +11,6 @@ import { getDayMeta, getPlanStatus, getTodayKey, type DayMeta } from '@/lib/work
 import { sleepHM } from '@/lib/whoop-utils'
 import { computeReadiness, stateColor, stateLabel, stateTone, type Readiness } from '@/lib/readiness'
 import { formatDayText, shareText } from '@/lib/share'
-import MonthReview from '@/components/review/MonthReview'
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -601,7 +600,6 @@ export default function TodayTab() {
   const [topTodo, setTopTodo] = useState<string | null>(null)
   const [nutritionRemaining, setNutritionRemaining] = useState<NutritionRemaining | null>(null)
   const [dayShared, setDayShared] = useState(false)
-  const [reviewOpen, setReviewOpen] = useState(false)
 
   const snap = snapshots[0] ?? null
   const readiness = snapshots.length >= 3 ? computeReadiness(snapshots) : null
@@ -695,16 +693,12 @@ export default function TodayTab() {
     <div className="boot px-4 space-y-5">
       <div className="pt-2">
         <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => setReviewOpen(true)}
-            aria-label="Open monthly review"
-            className="flicker flex items-center gap-1 text-left text-[var(--text-dim)] uppercase text-[11px] tracking-[0.18em] transition-transform active:scale-[0.97]"
+          <span
+            className="flicker text-[var(--text-dim)] uppercase text-[11px] tracking-[0.18em]"
             style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
           >
             {dayName} · {dateStr}
-            <span className="text-[13px] leading-none text-[var(--text-faint)]">›</span>
-          </button>
+          </span>
           <button
             type="button"
             aria-label="Copy day summary"
@@ -805,7 +799,6 @@ export default function TodayTab() {
 
       <div className="h-4" />
 
-      {reviewOpen && <MonthReview onClose={() => setReviewOpen(false)} />}
     </div>
   )
 }

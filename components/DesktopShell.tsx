@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import ThemeToggle from '@/components/ThemeToggle'
-import MonthReview from '@/components/review/MonthReview'
 import TodayTab from '@/components/tabs/TodayTab'
 import WhoopDesktop from '@/components/desktop/WhoopDesktop'
 import FocusDesktop from '@/components/desktop/FocusDesktop'
@@ -38,7 +37,6 @@ const CMDK_ITEMS = [
   { sec: 'jump',  ic: '~', label: 'Go to Whoop',     kbd: '⌘5', tab: 'whoop',     action: undefined },
   { sec: 'jump',  ic: '∿', label: 'Go to Trends',    kbd: '⌘6', tab: 'trends',    action: undefined },
   { sec: 'jump',  ic: '€', label: 'Go to Finances',  kbd: '⌘7', tab: 'finance',   action: undefined },
-  { sec: 'jump',  ic: '▦', label: 'Monthly review',  kbd: 'R',  tab: 'today',     action: 'review' },
   { sec: 'log',   ic: '+', label: 'Log a meal',      kbd: 'M',  tab: 'nutrition', action: 'log-meal' },
   { sec: 'log',   ic: '+', label: 'Start workout',   kbd: 'W',  tab: 'workout',   action: 'start' },
 ]
@@ -230,7 +228,6 @@ export default function DesktopShell() {
   const [activeTab, setActiveTab] = useState(initialDesktopTab)
   const [tabAction, setTabAction] = useState<string | undefined>(undefined)
   const [cmdkOpen, setCmdkOpen] = useState(false)
-  const [reviewOpen, setReviewOpen] = useState(false)
   const topbarStatus = useTopbarStatus()
   const statusDisplay = formatTopbarStatus(topbarStatus)
 
@@ -350,16 +347,6 @@ export default function DesktopShell() {
             })}
           </nav>
 
-          {/* Monthly review */}
-          <button
-            type="button"
-            onClick={() => setReviewOpen(true)}
-            className="display mt-1 flex items-center gap-2.5 rounded-xl border border-transparent px-3 py-2 text-left text-[13px] font-semibold text-[var(--text-dim)] transition-colors hover:text-[var(--text)]"
-          >
-            <span className="w-4 font-mono text-[13px] text-[var(--text-faint)]">▦</span>
-            <span className="flex-1">Review</span>
-          </button>
-
           <div className="flex-1" />
 
           {/* User */}
@@ -420,13 +407,10 @@ export default function DesktopShell() {
         <CommandPalette
           onClose={() => setCmdkOpen(false)}
           onNav={(tab, action) => {
-            if (action === 'review') { setReviewOpen(true); setCmdkOpen(false); return }
             setActiveTab(tab); setTabAction(action); setCmdkOpen(false)
           }}
         />
       )}
-
-      {reviewOpen && <MonthReview onClose={() => setReviewOpen(false)} />}
     </div>
   )
 }

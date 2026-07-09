@@ -278,6 +278,77 @@ export default function TrendsTab() {
             ) : <EmptyNote>collecting weigh-ins</EmptyNote>}
           </Card>
 
+          {/* Fuel */}
+          <SectionLabel>Fuel</SectionLabel>
+          {(() => {
+            const fuel = metrics.fuel
+            const loggedFuel = fuel.days.filter((d) => d.logged)
+            if (loggedFuel.length < 2) {
+              return <EmptyNote>log meals on 2+ days to see fuel trends</EmptyNote>
+            }
+            const eb = fuel.energyBalance
+            return (
+              <>
+                <Card className="p-4">
+                  <ChartTitle
+                    title="Calories vs Target"
+                    right={eb.avgKcal21d != null
+                      ? <span style={{ fontFamily: mono, fontSize: 10, color: C.faint }}>21d avg {eb.avgKcal21d} kcal</span>
+                      : undefined}
+                  />
+                  <BarChart
+                    data={loggedFuel.map((d) => d.kcal)}
+                    colors={loggedFuel.map((d) =>
+                      d.kcalTarget && Math.abs(d.kcal - d.kcalTarget) <= 0.1 * d.kcalTarget ? MINT : AMBER)}
+                    height={80}
+                  />
+                  <AxisRow first={loggedFuel[0].date} last={loggedFuel[loggedFuel.length - 1].date} />
+                  <ChartKey items={[{ label: 'within ±10%', color: MINT }, { label: 'off target', color: AMBER }]} />
+                </Card>
+                <Card className="p-4">
+                  <ChartTitle
+                    title="Protein"
+                    right={<span style={{ fontFamily: mono, fontSize: 10, color: C.faint }}>
+                      {fuel.proteinPerKg != null ? `${fuel.proteinPerKg} g/kg · ` : ''}
+                      {fuel.adherence.proteinHitPct != null ? `hit ${fuel.adherence.proteinHitPct}%` : ''}
+                    </span>}
+                  />
+                  <BarChart
+                    data={loggedFuel.map((d) => d.protein)}
+                    colors={loggedFuel.map((d) =>
+                      d.proteinTarget && d.protein >= d.proteinTarget ? MINT : CORAL)}
+                    height={80}
+                  />
+                  <AxisRow first={loggedFuel[0].date} last={loggedFuel[loggedFuel.length - 1].date} />
+                  <ChartKey items={[{ label: 'target hit', color: MINT }, { label: 'under', color: CORAL }]} />
+                </Card>
+                <Card className="p-4">
+                  <ChartTitle title="Energy Balance · 21d" />
+                  <div style={{ fontFamily: mono, fontSize: 11, color: C.dim, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <div>
+                      intake Δ vs target{' '}
+                      <span style={{ color: C.text, fontWeight: 700 }}>
+                        {eb.avgDeltaVsTarget21d != null ? `${eb.avgDeltaVsTarget21d >= 0 ? '+' : ''}${eb.avgDeltaVsTarget21d} kcal/d` : '—'}
+                      </span>
+                    </div>
+                    <div>
+                      scale implies{' '}
+                      <span style={{ color: C.text, fontWeight: 700 }}>
+                        {eb.scaleImpliedKcalPerDay != null ? `${eb.scaleImpliedKcalPerDay >= 0 ? '+' : ''}${eb.scaleImpliedKcalPerDay} kcal/d` : '—'}
+                      </span>
+                      <span style={{ color: C.faint }}> surplus</span>
+                    </div>
+                    <div style={{ color: C.faint, fontSize: 10 }}>
+                      logged {fuel.adherence.loggedDays}/{fuel.adherence.totalDays} days
+                      {fuel.adherence.loggedPct != null && ` (${fuel.adherence.loggedPct}%)`}
+                      {fuel.adherence.kcalWithin10Pct != null && ` · kcal on target ${fuel.adherence.kcalWithin10Pct}%`}
+                    </div>
+                  </div>
+                </Card>
+              </>
+            )
+          })()}
+
           {/* Strength */}
           <SectionLabel>Strength</SectionLabel>
           {strength!.exercises.length === 0 ? (

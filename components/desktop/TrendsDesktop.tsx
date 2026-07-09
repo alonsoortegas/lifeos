@@ -13,7 +13,8 @@ import {
   type ChartOptions,
 } from 'chart.js'
 import { useEffect, useState } from 'react'
-import { Line, Bar } from 'react-chartjs-2'
+import { Line, Bar, Chart as MixedChart } from 'react-chartjs-2'
+import type { ChartData } from 'chart.js'
 import { useTrends, type TrendsRange } from '@/lib/useTrends'
 import { shortDate } from '@/lib/whoop-utils'
 import { useThemeColors } from '@/lib/theme-colors'
@@ -417,6 +418,122 @@ export default function TrendsDesktop() {
               ) : <EmptyNote>collecting weigh-ins</EmptyNote>}
             </ChartCard>
           </div>
+
+          {/* Fuel */}
+          <SectionLabel>Fuel</SectionLabel>
+          {(() => {
+            const fuel = metrics.fuel
+            const loggedFuel = fuel.days.filter((d) => d.logged)
+            if (loggedFuel.length < 2) {
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <ChartCard title="Fuel" height={100}><EmptyNote>log meals on 2+ days to see fuel trends</EmptyNote></ChartCard>
+                </div>
+              )
+            }
+            const eb = fuel.energyBalance
+            const labels = loggedFuel.map((d) => shortDate(d.date))
+            // Mixed bar+line: Chart.js accepts heterogeneous datasets; the react
+            // wrapper's ChartData generic doesn't, hence the cast.
+            const kcalData = {
+              labels,
+              datasets: [
+                {
+                  type: 'bar' as const,
+                  label: 'kcal',
+                  data: loggedFuel.map((d) => d.kcal),
+                  backgroundColor: loggedFuel.map((d) =>
+                    d.kcalTarget && Math.abs(d.kcal - d.kcalTarget) <= 0.1 * d.kcalTarget
+                      ? 'rgba(0,210,106,0.55)'
+                      : 'rgba(251,191,36,0.55)'),
+                  borderRadius: 4,
+                  maxBarThickness: 28,
+                },
+                {
+                  type: 'line' as const,
+                  label: 'target',
+                  data: loggedFuel.map((d) => d.kcalTarget),
+                  borderColor: AMBER,
+                  borderDash: [6, 5],
+                  borderWidth: 1.5,
+                  pointRadius: 0,
+                  pointHitRadius: 0,
+                  fill: false,
+                },
+              ],
+            } as unknown as ChartData<'bar'>
+            const proteinData = {
+              labels,
+              datasets: [
+                {
+                  type: 'bar' as const,
+                  label: 'protein (g)',
+                  data: loggedFuel.map((d) => d.protein),
+                  backgroundColor: loggedFuel.map((d) =>
+                    d.proteinTarget && d.protein >= d.proteinTarget
+                      ? 'rgba(0,210,106,0.55)'
+                      : 'rgba(251,113,133,0.55)'),
+                  borderRadius: 4,
+                  maxBarThickness: 28,
+                },
+                {
+                  type: 'line' as const,
+                  label: 'target',
+                  data: loggedFuel.map((d) => d.proteinTarget),
+                  borderColor: AMBER,
+                  borderDash: [6, 5],
+                  borderWidth: 1.5,
+                  pointRadius: 0,
+                  pointHitRadius: 0,
+                  fill: false,
+                },
+              ],
+            } as unknown as ChartData<'bar'>
+            return (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <ChartCard
+                    title="Calories vs Target"
+                    right={<div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <LegendDot color={MINT} label="±10%" />
+                      <LegendDot color={AMBER} label="off" />
+                      <LegendDot color={AMBER} label="target" dashed />
+                    </div>}
+                  >
+                    <MixedChart type="bar" data={kcalData} options={barOpts()} />
+                  </ChartCard>
+                  <ChartCard
+                    title="Protein"
+                    right={<span style={{ fontFamily: mono, fontSize: 10, color: C.faint }}>
+                      {fuel.proteinPerKg != null ? `${fuel.proteinPerKg} g/kg` : ''}
+                      {fuel.adherence.proteinHitPct != null ? ` · hit ${fuel.adherence.proteinHitPct}%` : ''}
+                    </span>}
+                  >
+                    <MixedChart type="bar" data={proteinData} options={barOpts()} />
+                  </ChartCard>
+                </div>
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 18px', marginBottom: 20, display: 'flex', gap: 28, alignItems: 'baseline', fontFamily: mono, fontSize: 11, color: C.dim, flexWrap: 'wrap' }}>
+                  <span>
+                    21d intake Δ vs target{' '}
+                    <span style={{ color: C.text, fontWeight: 700 }}>
+                      {eb.avgDeltaVsTarget21d != null ? `${eb.avgDeltaVsTarget21d >= 0 ? '+' : ''}${eb.avgDeltaVsTarget21d} kcal/d` : '—'}
+                    </span>
+                  </span>
+                  <span>
+                    scale implies{' '}
+                    <span style={{ color: C.text, fontWeight: 700 }}>
+                      {eb.scaleImpliedKcalPerDay != null ? `${eb.scaleImpliedKcalPerDay >= 0 ? '+' : ''}${eb.scaleImpliedKcalPerDay} kcal/d` : '—'}
+                    </span>{' '}surplus
+                  </span>
+                  <span style={{ color: C.faint }}>
+                    logged {fuel.adherence.loggedDays}/{fuel.adherence.totalDays} days
+                    {fuel.adherence.loggedPct != null && ` (${fuel.adherence.loggedPct}%)`}
+                    {fuel.adherence.kcalWithin10Pct != null && ` · kcal on target ${fuel.adherence.kcalWithin10Pct}%`}
+                  </span>
+                </div>
+              </>
+            )
+          })()}
 
           {/* Strength */}
           <SectionLabel>Strength</SectionLabel>

@@ -92,7 +92,7 @@ export function registerTools(server: McpServer) {
   })
 
   server.registerTool('get_trends', {
-    description: 'Get computed training trends for a time range: body weight vs phase target (21-day rate + since-phase-start totals, verdict), strength (e1RM per key lift, weekly tonnage, strength/volume chips), engine (running efficiency and pace per run), and weekly load (training minutes, sessions, strain, training-vs-lifestyle split). Includes the current training phase (bulk/cut/maintenance).',
+    description: 'Get computed training trends for a time range: body weight vs phase target (21-day rate + since-phase-start totals, verdict), strength (e1RM per key lift, weekly tonnage, strength/volume chips), engine (running efficiency and pace per run), weekly load (training minutes, sessions, strain, training-vs-lifestyle split), and fuel (daily kcal/protein vs target, adherence percentages, protein g/kg, 21-day energy balance vs the scale-implied surplus). Includes the current training phase (bulk/cut/maintenance).',
     inputSchema: {
       range: z.enum(['4w', '12w', '6m', 'all']).optional().describe('Lookback window. Default "12w".'),
     },

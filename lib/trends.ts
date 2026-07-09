@@ -368,6 +368,112 @@ export function computeEngineTrends(workouts: ShapedWorkout[]): EngineTrends {
   return { runs, efficiencySlopePctPerWeek }
 }
 
+// ── Fuel (nutrition adherence + energy balance) ──────────────────────────────
+export interface FuelDayRow {
+  date: string
+  calories_target: number | null
+  protein_target: number | null
+  meal_log?: { meal_log_item?: { calories: number | null; protein_g: number | null }[] | null }[] | null
+}
+
+export interface FuelDay {
+  date: string
+  kcal: number
+  kcalTarget: number | null
+  protein: number
+  proteinTarget: number | null
+  logged: boolean
+}
+
+export interface FuelTrends {
+  days: FuelDay[]
+  /** Denominator is the calendar span (first row → today) so days without any
+   *  nutrition_day row still count as unlogged — sparse logging can't
+   *  masquerade as compliance. kcal = ±10% window; protein = floor (≥ target). */
+  adherence: {
+    totalDays: number
+    loggedDays: number
+    loggedPct: number | null
+    kcalWithin10Pct: number | null
+    proteinHitPct: number | null
+  }
+  /** 7-day protein average ÷ current body weight. */
+  proteinPerKg: number | null
+  /** Logged-day averages over the last 21 days, alongside what the scale
+   *  implies (ratePerWeek × 7700 kcal/kg ÷ 7) — the honesty cross-check. */
+  energyBalance: {
+    avgKcal21d: number | null
+    avgDeltaVsTarget21d: number | null
+    scaleImpliedKcalPerDay: number | null
+  }
+}
+
+export function computeFuelTrends(
+  rows: FuelDayRow[],
+  todayKey: string,
+  opts: { actualRatePerWeek?: number | null; latestWeightKg?: number | null } = {},
+): FuelTrends {
+  const days: FuelDay[] = rows
+    .map((r) => {
+      let kcal = 0
+      let protein = 0
+      let items = 0
+      for (const log of r.meal_log ?? []) {
+        for (const item of log.meal_log_item ?? []) {
+          kcal += Number(item.calories) || 0
+          protein += Number(item.protein_g) || 0
+          items++
+        }
+      }
+      return {
+        date: r.date,
+        kcal: Math.round(kcal),
+        kcalTarget: r.calories_target,
+        protein: Math.round(protein),
+        proteinTarget: r.protein_target,
+        logged: items > 0,
+      }
+    })
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  const logged = days.filter((d) => d.logged)
+  const totalDays = days.length ? dayNumber(todayKey) - dayNumber(days[0].date) + 1 : 0
+  const pct = (n: number, of: number) => (of > 0 ? Math.round((n / of) * 100) : null)
+
+  const kcalEligible = logged.filter((d) => (d.kcalTarget ?? 0) > 0)
+  const kcalWithin = kcalEligible.filter((d) => Math.abs(d.kcal - d.kcalTarget!) <= 0.1 * d.kcalTarget!)
+  const proteinEligible = logged.filter((d) => (d.proteinTarget ?? 0) > 0)
+  const proteinHit = proteinEligible.filter((d) => d.protein >= d.proteinTarget!)
+
+  const adherence = {
+    totalDays,
+    loggedDays: logged.length,
+    loggedPct: pct(logged.length, totalDays),
+    kcalWithin10Pct: pct(kcalWithin.length, kcalEligible.length),
+    proteinHitPct: pct(proteinHit.length, proteinEligible.length),
+  }
+
+  const inWindow = (d: FuelDay, windowDays: number) => dayNumber(d.date) > dayNumber(todayKey) - windowDays
+  const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length
+
+  const last7 = logged.filter((d) => inWindow(d, 7))
+  const proteinPerKg = last7.length && opts.latestWeightKg
+    ? Math.round((mean(last7.map((d) => d.protein)) / opts.latestWeightKg) * 100) / 100
+    : null
+
+  const last21 = logged.filter((d) => inWindow(d, 21))
+  const withTarget = last21.filter((d) => (d.kcalTarget ?? 0) > 0)
+  const energyBalance = {
+    avgKcal21d: last21.length ? Math.round(mean(last21.map((d) => d.kcal))) : null,
+    avgDeltaVsTarget21d: withTarget.length ? Math.round(mean(withTarget.map((d) => d.kcal - d.kcalTarget!))) : null,
+    scaleImpliedKcalPerDay: opts.actualRatePerWeek != null
+      ? Math.round((opts.actualRatePerWeek * 7700) / 7)
+      : null,
+  }
+
+  return { days, adherence, proteinPerKg, energyBalance }
+}
+
 // ── Load ──────────────────────────────────────────────────────────────────────
 export interface LoadWeek {
   week: string

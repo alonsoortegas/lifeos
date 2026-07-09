@@ -119,7 +119,7 @@ components/
     WorkoutTab.tsx        # Interactive — plan from DB, set logging, progressive overload suggestions
     NutritionTab.tsx      # Interactive — normalized nutrition plan from DB, meal logging
     WhoopTab.tsx          # Live — reads whoop_snapshots + whoop_workouts, connect/sync controls
-    TrendsTab.tsx         # Interactive — phase-aware trends: weight vs target, e1RM/tonnage, run efficiency, weekly load
+    TrendsTab.tsx         # Interactive — phase-aware trends: weight vs target, fuel adherence/energy balance, e1RM/tonnage, run efficiency, weekly load
     FinanceTab.tsx        # Interactive — investments (ETF/stocks/crypto) + cash/fixed savings: net worth, allocation, holdings, P/L (incl. realized); add holding/cash, partial sell, edit balances; swipe-left rows for sell/edit/remove (components/finance/SwipeRow.tsx); sync prices
 
 lib/
@@ -237,7 +237,7 @@ https://lifeos-zeta-three.vercel.app/api/whoop-callback
 | 2 | Workout | No | Interactive — plan from DB, set logging, progressive overload suggestions |
 | 3 | Nutrition | No | Interactive — day type from `nutrition_day_types`, meals from `nutrition_meal_templates` |
 | 4 | Whoop | No | Live — `whoop_snapshots` + `whoop_workouts`, realtime, connect/sync controls |
-| 5 | Trends | No | Interactive — phase-aware trends: weight vs target rate, e1RM + tonnage, run efficiency, weekly load; phase set via `training_phases` |
+| 5 | Trends | No | Interactive — phase-aware trends: weight vs target rate, fuel (kcal/protein adherence, energy balance), e1RM + tonnage, run efficiency, weekly load; phase set via `training_phases` |
 | 6 | Money | No | Interactive — investments from `fin_*` tables: net worth, allocation, holdings, P/L; add holding/cash, partial sell (realized P/L stored in txn notes), swipe-row actions; `/api/finance/prices` sync |
 
 ## Navigation

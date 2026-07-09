@@ -3,8 +3,8 @@ import { getCurrentGoalDateInTimeZone } from '@/lib/goal-dates'
 import { getPlanStatus, getTodayKey, getDayMeta } from '@/lib/workout'
 import {
   shapeWorkout, berlinDateKey,
-  computeBodyTrend, computeStrengthTrends, computeEngineTrends, computeLoadTrends,
-  type WorkoutCategory, type RawWorkoutRow, type StrengthLogRow,
+  computeBodyTrend, computeStrengthTrends, computeEngineTrends, computeLoadTrends, computeFuelTrends,
+  type WorkoutCategory, type RawWorkoutRow, type StrengthLogRow, type FuelDayRow,
 } from '@/lib/trends'
 import type { TrainingPhase } from '@/lib/types'
 
@@ -182,21 +182,30 @@ export async function fetchTrendsMetrics(db: Db, range: '4w' | '12w' | '6m' | 'a
   if (startIso) logQ = logQ.gte('logged_at', startIso)
   let weightQ = db.from('whoop_body_measurements').select('measured_on,weight_kg').order('measured_on')
   if (weightStart) weightQ = weightQ.gte('measured_on', weightStart)
+  let fuelQ = db.from('nutrition_day')
+    .select('date,calories_target,protein_target,meal_log(meal_log_item(calories,protein_g))')
+    .order('date')
+  if (startDate) fuelQ = fuelQ.gte('date', startDate)
 
-  const [snapRes, wktRes, logRes, weightRes] = await Promise.all([snapQ, wktQ, logQ, weightQ])
+  const [snapRes, wktRes, logRes, weightRes, fuelRes] = await Promise.all([snapQ, wktQ, logQ, weightQ, fuelQ])
 
   const todayKey = berlinDateKey(new Date().toISOString())
   const shaped = ((wktRes.data ?? []) as RawWorkoutRow[]).map(shapeWorkout)
   const snapshots = (snapRes.data ?? []) as { recorded_at: string; recovery_score: number | null; hrv_rmssd: number | null; strain: number | null }[]
+  const body = computeBodyTrend((weightRes.data ?? []) as { measured_on: string; weight_kg: number | null }[], currentPhase, todayKey)
 
   return {
     range,
     currentPhase,
     phases,
-    body: computeBodyTrend((weightRes.data ?? []) as { measured_on: string; weight_kg: number | null }[], currentPhase, todayKey),
+    body,
     strength: computeStrengthTrends((logRes.data ?? []) as StrengthLogRow[], todayKey),
     engine: computeEngineTrends(shaped),
     load: computeLoadTrends(shaped, snapshots),
+    fuel: computeFuelTrends((fuelRes.data ?? []) as FuelDayRow[], todayKey, {
+      actualRatePerWeek: body.ratePerWeek,
+      latestWeightKg: body.rolling7.length ? body.rolling7[body.rolling7.length - 1].value : null,
+    }),
   }
 }
 

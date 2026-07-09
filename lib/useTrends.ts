@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import {
   berlinDateKey, shapeWorkout,
-  computeBodyTrend, computeStrengthTrends, computeEngineTrends, computeLoadTrends,
-  type RawWorkoutRow, type StrengthLogRow,
-  type BodyTrend, type StrengthTrends, type EngineTrends, type LoadTrends,
+  computeBodyTrend, computeStrengthTrends, computeEngineTrends, computeLoadTrends, computeFuelTrends,
+  type RawWorkoutRow, type StrengthLogRow, type FuelDayRow,
+  type BodyTrend, type StrengthTrends, type EngineTrends, type LoadTrends, type FuelTrends,
 } from '@/lib/trends'
 import type { PhaseKind, TrainingPhase } from '@/lib/types'
 
@@ -19,6 +19,7 @@ export interface TrendsMetrics {
   strength: StrengthTrends
   engine: EngineTrends
   load: LoadTrends
+  fuel: FuelTrends
 }
 
 type SnapshotRow = { recorded_at: string; recovery_score: number | null; hrv_rmssd: number | null; strain: number | null }
@@ -38,6 +39,7 @@ export function useTrends() {
   const [workouts, setWorkouts] = useState<RawWorkoutRow[]>([])
   const [logs, setLogs] = useState<StrengthLogRow[]>([])
   const [weights, setWeights] = useState<WeightRow[]>([])
+  const [nutritionDays, setNutritionDays] = useState<FuelDayRow[]>([])
   const [phases, setPhases] = useState<TrainingPhase[]>([])
   const [loaded, setLoaded] = useState(false)
 
@@ -78,8 +80,13 @@ export function useTrends() {
       .select('measured_on,weight_kg').order('measured_on')
     if (weightStart) weightQ = weightQ.gte('measured_on', weightStart)
 
-    const [snapRes, wktRes, logRes, weightRes] = await Promise.all([snapQ, wktQ, logQ, weightQ])
-    const firstError = snapRes.error ?? wktRes.error ?? logRes.error ?? weightRes.error ?? phaseRes.error
+    let fuelQ = supabase.from('nutrition_day')
+      .select('date,calories_target,protein_target,meal_log(meal_log_item(calories,protein_g))')
+      .order('date')
+    if (startDate) fuelQ = fuelQ.gte('date', startDate)
+
+    const [snapRes, wktRes, logRes, weightRes, fuelRes] = await Promise.all([snapQ, wktQ, logQ, weightQ, fuelQ])
+    const firstError = snapRes.error ?? wktRes.error ?? logRes.error ?? weightRes.error ?? fuelRes.error ?? phaseRes.error
     if (firstError) {
       setError(firstError.message)
     } else {
@@ -87,6 +94,7 @@ export function useTrends() {
       setWorkouts((wktRes.data ?? []) as RawWorkoutRow[])
       setLogs((logRes.data ?? []) as StrengthLogRow[])
       setWeights((weightRes.data ?? []) as WeightRow[])
+      setNutritionDays((fuelRes.data ?? []) as FuelDayRow[])
       setPhases((phaseRes.data ?? []) as TrainingPhase[])
       setLoaded(true)
     }
@@ -101,13 +109,18 @@ export function useTrends() {
     if (!loaded) return null
     const todayKey = berlinDateKey(new Date().toISOString())
     const shaped = workouts.map(shapeWorkout)
+    const body = computeBodyTrend(weights, currentPhase, todayKey)
     return {
-      body: computeBodyTrend(weights, currentPhase, todayKey),
+      body,
       strength: computeStrengthTrends(logs, todayKey),
       engine: computeEngineTrends(shaped),
       load: computeLoadTrends(shaped, snapshots),
+      fuel: computeFuelTrends(nutritionDays, todayKey, {
+        actualRatePerWeek: body.ratePerWeek,
+        latestWeightKg: body.rolling7.length ? body.rolling7[body.rolling7.length - 1].value : null,
+      }),
     }
-  }, [loaded, workouts, weights, logs, snapshots, currentPhase])
+  }, [loaded, workouts, weights, logs, snapshots, nutritionDays, currentPhase])
 
   const setPhase = useCallback(async (phase: PhaseKind, startedOn: string, targetRate?: number | null) => {
     const supabase = createClient()
