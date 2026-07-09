@@ -3,7 +3,7 @@ import {
   getDb, getToday,
   fetchLatestRecovery, fetchRecoveryRange, fetchTodosForDate,
   fetchNutritionDay, fetchMealsForNutritionDay, computeMacroTotals,
-  fetchTodayWorkoutSession, fetchWorkoutLogs, fetchCheckin,
+  fetchTodayWorkoutSession, fetchWorkoutLogs, fetchWorkouts, fetchTrendsMetrics, fetchCheckin,
   fetchLatestBrief, fetchBodyTrend, fetchNutritionPlan,
 } from './db'
 
@@ -111,6 +111,45 @@ export function registerResources(server: McpServer) {
       const resolvedDate = date === 'today' ? getToday() : String(date)
       const logs = await fetchWorkoutLogs(db, resolvedDate)
       return json(uri.href, { date: resolvedDate, logs })
+    }
+  )
+
+  // --- Training trends (12-week window) ---
+  server.registerResource(
+    'trends',
+    'lifeos://trends',
+    { description: 'Computed 12-week training trends: current phase, body weight vs target (21d rate + since-start), e1RM per key lift, weekly tonnage, strength/volume chips, running efficiency/pace, weekly load split.' },
+    async (uri) => {
+      const db = await getDb()
+      return json(uri.href, await fetchTrendsMetrics(db, '12w'))
+    }
+  )
+
+  // --- WHOOP workouts, recent (training only) ---
+  server.registerResource(
+    'workouts-recent',
+    'lifeos://workouts/recent',
+    { description: 'Last 30 days of WHOOP-detected training workouts (excludes commuting/walking): sport, strain, HR, duration, distance, pace, energy, HR-zone minutes.' },
+    async (uri) => {
+      const db = await getDb()
+      const end = getToday()
+      const start = new Date()
+      start.setDate(start.getDate() - 30)
+      const data = await fetchWorkouts(db, start.toISOString().slice(0, 10), end, 'training')
+      return json(uri.href, { start: start.toISOString().slice(0, 10), end, count: data.length, workouts: data })
+    }
+  )
+
+  // --- WHOOP workouts by date (template) ---
+  server.registerResource(
+    'workouts-by-date',
+    new ResourceTemplate('lifeos://workouts/{date}', { list: undefined }),
+    { description: 'All WHOOP-detected workouts (all categories) for a specific date (YYYY-MM-DD or "today").' },
+    async (uri, { date }) => {
+      const db = await getDb()
+      const resolvedDate = date === 'today' ? getToday() : String(date)
+      const workouts = await fetchWorkouts(db, resolvedDate, resolvedDate, 'all')
+      return json(uri.href, { date: resolvedDate, count: workouts.length, workouts })
     }
   )
 

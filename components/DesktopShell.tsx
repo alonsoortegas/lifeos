@@ -10,6 +10,7 @@ import FocusDesktop from '@/components/desktop/FocusDesktop'
 import WorkoutDesktop from '@/components/desktop/WorkoutDesktop'
 import NutritionDesktop from '@/components/desktop/NutritionDesktop'
 import FinanceDesktop from '@/components/desktop/FinanceDesktop'
+import TrendsDesktop from '@/components/desktop/TrendsDesktop'
 
 const TABS = [
   { key: 'today',     icon: '◐', label: 'Today',     kbd: '1' },
@@ -17,7 +18,8 @@ const TABS = [
   { key: 'workout',   icon: '⌇', label: 'Workout',   kbd: '3' },
   { key: 'nutrition', icon: '◇', label: 'Nutrition', kbd: '4' },
   { key: 'whoop',     icon: '~', label: 'Whoop',     kbd: '5' },
-  { key: 'finance',   icon: '€', label: 'Finances',  kbd: '6' },
+  { key: 'trends',    icon: '∿', label: 'Trends',    kbd: '6' },
+  { key: 'finance',   icon: '€', label: 'Finances',  kbd: '7' },
 ]
 
 const TAB_KEYS = new Set(TABS.map(t => t.key))
@@ -34,7 +36,8 @@ const CMDK_ITEMS = [
   { sec: 'jump',  ic: '⌇', label: 'Go to Workout',   kbd: '⌘3', tab: 'workout',   action: undefined },
   { sec: 'jump',  ic: '◇', label: 'Go to Nutrition', kbd: '⌘4', tab: 'nutrition', action: undefined },
   { sec: 'jump',  ic: '~', label: 'Go to Whoop',     kbd: '⌘5', tab: 'whoop',     action: undefined },
-  { sec: 'jump',  ic: '€', label: 'Go to Finances',  kbd: '⌘6', tab: 'finance',   action: undefined },
+  { sec: 'jump',  ic: '∿', label: 'Go to Trends',    kbd: '⌘6', tab: 'trends',    action: undefined },
+  { sec: 'jump',  ic: '€', label: 'Go to Finances',  kbd: '⌘7', tab: 'finance',   action: undefined },
   { sec: 'jump',  ic: '▦', label: 'Monthly review',  kbd: 'R',  tab: 'today',     action: 'review' },
   { sec: 'log',   ic: '+', label: 'Log a meal',      kbd: 'M',  tab: 'nutrition', action: 'log-meal' },
   { sec: 'log',   ic: '+', label: 'Start workout',   kbd: 'W',  tab: 'workout',   action: 'start' },
@@ -243,7 +246,8 @@ export default function DesktopShell() {
       if (mod && e.key === '3') { e.preventDefault(); setActiveTab('workout') }
       if (mod && e.key === '4') { e.preventDefault(); setActiveTab('nutrition') }
       if (mod && e.key === '5') { e.preventDefault(); setActiveTab('whoop') }
-      if (mod && e.key === '6') { e.preventDefault(); setActiveTab('finance') }
+      if (mod && e.key === '6') { e.preventDefault(); setActiveTab('trends') }
+      if (mod && e.key === '7') { e.preventDefault(); setActiveTab('finance') }
     }
     const escHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setCmdkOpen(false)
@@ -263,6 +267,7 @@ export default function DesktopShell() {
       case 'workout':   return <WorkoutDesktop initialAction={tabAction} onInitialActionConsumed={() => setTabAction(undefined)} />
       case 'nutrition': return <NutritionDesktop initialAction={tabAction} onInitialActionConsumed={() => setTabAction(undefined)} />
       case 'whoop':     return <WhoopDesktop />
+      case 'trends':    return <TrendsDesktop />
       case 'finance':   return <FinanceDesktop />
       default:          return <TodayTab />
     }

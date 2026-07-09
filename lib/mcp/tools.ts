@@ -4,7 +4,7 @@ import {
   getDb, getToday,
   fetchRecoveryRange, fetchTodosForDate,
   fetchNutritionDay, fetchMealsForNutritionDay, computeMacroTotals,
-  fetchTodayWorkoutSession, fetchWorkoutLogs, fetchCheckin,
+  fetchTodayWorkoutSession, fetchWorkoutLogs, fetchWorkouts, fetchTrendsMetrics, fetchCheckin,
   fetchLatestBrief, fetchBodyTrend, fetchNutritionPlan,
   ensureNutritionDay,
   fetchFinanceData, ensureFinAccount, ensureFinInstrument,
@@ -73,6 +73,32 @@ export function registerTools(server: McpServer) {
     const db = await getDb()
     const resolved = date === 'today' ? getToday() : date
     return ok({ date: resolved, logs: await fetchWorkoutLogs(db, resolved) })
+  })
+
+  server.registerTool('get_workouts', {
+    description: 'Get WHOOP-detected workouts (runs, rides, lifts, etc.) for a date range. Distinct from get_workout_logs, which returns manually logged strength sets. Each workout includes sport, strain, avg/max HR, duration, distance, pace, energy (kcal), and HR-zone minutes. Use category to filter out lifestyle movement (commuting/walking).',
+    inputSchema: {
+      start_date: z.string().describe('Start date YYYY-MM-DD (or "today")'),
+      end_date: z.string().describe('End date YYYY-MM-DD (or "today")'),
+      category: z.enum(['all', 'training', 'lifestyle']).optional().describe('Filter: "training" excludes commuting/walking, "lifestyle" keeps only those. Default "all".'),
+    },
+  }, async ({ start_date, end_date, category }) => {
+    const db = await getDb()
+    const today = getToday()
+    const start = start_date === 'today' ? today : start_date
+    const end = end_date === 'today' ? today : end_date
+    const workouts = await fetchWorkouts(db, start, end, category ?? 'all')
+    return ok({ start, end, category: category ?? 'all', count: workouts.length, workouts })
+  })
+
+  server.registerTool('get_trends', {
+    description: 'Get computed training trends for a time range: body weight vs phase target (21-day rate + since-phase-start totals, verdict), strength (e1RM per key lift, weekly tonnage, strength/volume chips), engine (running efficiency and pace per run), and weekly load (training minutes, sessions, strain, training-vs-lifestyle split). Includes the current training phase (bulk/cut/maintenance).',
+    inputSchema: {
+      range: z.enum(['4w', '12w', '6m', 'all']).optional().describe('Lookback window. Default "12w".'),
+    },
+  }, async ({ range }) => {
+    const db = await getDb()
+    return ok(await fetchTrendsMetrics(db, range ?? '12w'))
   })
 
   server.registerTool('get_nutrition_day', {
@@ -437,6 +463,30 @@ export function registerTools(server: McpServer) {
     const { error } = await db.from('todos').delete().eq('id', todo_id)
     if (error) return err(error.message)
     return ok({ deleted: true, todo_id })
+  })
+
+  server.registerTool('set_training_phase', {
+    description: 'Declare a new training phase (bulk / cut / maintenance) starting on a date. History is preserved; the row with the latest start date becomes the current phase. Default target rates: bulk +0.25 kg/wk, cut -0.50 kg/wk, maintenance ±0.15 kg/wk band.',
+    inputSchema: {
+      phase: z.enum(['bulk', 'cut', 'maintenance']).describe('The phase to start'),
+      started_on: z.string().optional().describe('Start date YYYY-MM-DD. Defaults to today.'),
+      target_rate_kg_per_week: z.number().optional().describe('Override the default weekly weight-change target (kg/week; negative for a cut, band half-width for maintenance).'),
+      notes: z.string().optional().describe('Optional note, e.g. the goal of the phase'),
+    },
+  }, async ({ phase, started_on, target_rate_kg_per_week, notes }) => {
+    const db = await getDb()
+    const { data, error } = await db
+      .from('training_phases')
+      .insert({
+        phase,
+        started_on: started_on ?? getToday(),
+        target_rate_kg_per_week: target_rate_kg_per_week ?? null,
+        notes: notes ?? null,
+      })
+      .select()
+      .single()
+    if (error) return err(error.message)
+    return ok(data)
   })
 
   server.registerTool('save_checkin', {

@@ -105,9 +105,10 @@ app/
 
 components/
   Shell.tsx               # Tab state (default = 0 / Today), keyboard shortcuts (1–5), swipe navigation
-  TabBar.tsx              # Fixed bottom nav — ◐ TODAY · ◆ FOCUS · ▲ WORKOUT · ○ NUTRITION · ~ WHOOP · € MONEY
+  TabBar.tsx              # Fixed bottom nav — ◐ TODAY · ◆ FOCUS · ▲ WORKOUT · ○ NUTRITION · ~ WHOOP · ∿ TRENDS · € MONEY
   ui/
     Card.tsx              # #1a1a1a bg, #2a2a2a border, rounded-xl wrapper
+    charts.tsx            # Shared chart primitives — ChartTitle, AxisRow, BigSpark, DualSpark, BarChart, Legend
     Ring.tsx              # SVG recovery ring (0–100%, configurable size/thickness)
     StatCard.tsx          # Label + big mono number + unit + subtext
     Sparkline.tsx         # SVG polyline from number[]
@@ -118,10 +119,13 @@ components/
     WorkoutTab.tsx        # Interactive — plan from DB, set logging, progressive overload suggestions
     NutritionTab.tsx      # Interactive — normalized nutrition plan from DB, meal logging
     WhoopTab.tsx          # Live — reads whoop_snapshots + whoop_workouts, connect/sync controls
+    TrendsTab.tsx         # Interactive — phase-aware trends: weight vs target, e1RM/tonnage, run efficiency, weekly load
     FinanceTab.tsx        # Interactive — investments (ETF/stocks/crypto) + cash/fixed savings: net worth, allocation, holdings, P/L (incl. realized); add holding/cash, partial sell, edit balances; swipe-left rows for sell/edit/remove (components/finance/SwipeRow.tsx); sync prices
 
 lib/
   supabase.ts             # Browser client (createBrowserClient)
+  trends.ts               # Pure trend math — classify/shape workouts, e1RM, tonnage, run efficiency, weight rate vs phase target
+  useTrends.ts            # Client hook — loads trend sources per range, memoizes computed metrics, setPhase
   finance.ts              # Pure portfolio math — buildPositions, summarizePortfolio, valuation, allocation, rollupHoldings, formatting
   finance/import.ts       # Tolerant CSV parsers (Trade Republic / Revolut / crypto) → normalized ParsedTxn[]
   finance/useFinance.ts   # Client hook — loads fin_* tables, computes summary; addHolding / importTransactions / refreshPrices
@@ -164,6 +168,7 @@ All tables have RLS enabled. Policies require `auth.role() = 'authenticated'` �
 | `nutrition_meal_templates` | Meal structure per day type — ordered meals with default items |
 | `meal_logs` | Per-meal logs linked to a nutrition day |
 | `meal_log_items` | Individual food items logged within a meal |
+| `training_phases` | Phase declarations (bulk/cut/maintenance) — start date + optional target kg/week; latest row = current phase |
 | `todos` | Daily goals — text, done flag, `day_date` for daily grouping, `sort_order` for manual reorder |
 | `daily_checkins` | Subjective soreness, motivation, energy, mood, symptoms, and notes |
 | `ai_briefs` | Replayable context and validated output for each Daily Brief generation |
@@ -232,12 +237,13 @@ https://lifeos-zeta-three.vercel.app/api/whoop-callback
 | 2 | Workout | No | Interactive — plan from DB, set logging, progressive overload suggestions |
 | 3 | Nutrition | No | Interactive — day type from `nutrition_day_types`, meals from `nutrition_meal_templates` |
 | 4 | Whoop | No | Live — `whoop_snapshots` + `whoop_workouts`, realtime, connect/sync controls |
-| 5 | Money | No | Interactive — investments from `fin_*` tables: net worth, allocation, holdings, P/L; add holding/cash, partial sell (realized P/L stored in txn notes), swipe-row actions; `/api/finance/prices` sync |
+| 5 | Trends | No | Interactive — phase-aware trends: weight vs target rate, e1RM + tonnage, run efficiency, weekly load; phase set via `training_phases` |
+| 6 | Money | No | Interactive — investments from `fin_*` tables: net worth, allocation, holdings, P/L; add holding/cash, partial sell (realized P/L stored in txn notes), swipe-row actions; `/api/finance/prices` sync |
 
 ## Navigation
 
 - **Mobile:** swipe left/right to change tabs (threshold 50px, only fires if horizontal > vertical delta)
-- **Desktop:** keys `1–6` switch tabs (suppressed when focus is inside an input)
+- **Desktop:** keys `1–7` switch tabs (suppressed when focus is inside an input)
 
 ---
 

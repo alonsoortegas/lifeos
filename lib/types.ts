@@ -33,7 +33,7 @@ export interface WhoopBodyMeasurement {
 
 export interface WhoopWorkout {
   id: number
-  workout_id: number
+  workout_id: string
   cycle_id: number | null
   started_at: string
   sport_name: string | null
@@ -46,6 +46,17 @@ export interface WhoopWorkout {
   zone3_min: number | null
   zone4_min: number | null
   zone5_min: number | null
+}
+
+export type PhaseKind = 'bulk' | 'cut' | 'maintenance'
+
+export interface TrainingPhase {
+  id: number
+  phase: PhaseKind
+  started_on: string
+  target_rate_kg_per_week: number | null
+  notes: string | null
+  created_at?: string
 }
 
 export interface WorkoutLog {

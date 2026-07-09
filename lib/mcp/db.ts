@@ -1,6 +1,14 @@
 import { createBriefServerClient } from '@/lib/supabase-server'
 import { getCurrentGoalDateInTimeZone } from '@/lib/goal-dates'
 import { getPlanStatus, getTodayKey, getDayMeta } from '@/lib/workout'
+import {
+  shapeWorkout, berlinDateKey,
+  computeBodyTrend, computeStrengthTrends, computeEngineTrends, computeLoadTrends,
+  type WorkoutCategory, type RawWorkoutRow, type StrengthLogRow,
+} from '@/lib/trends'
+import type { TrainingPhase } from '@/lib/types'
+
+export { classifyWorkout, type WorkoutCategory } from '@/lib/trends'
 
 const TZ = process.env.LIFEOS_TIME_ZONE ?? 'Europe/Berlin'
 
@@ -123,6 +131,73 @@ export async function fetchWorkoutLogs(db: Db, date: string) {
     .lt('logged_at', `${date}T23:59:59`)
     .order('logged_at')
   return data ?? []
+}
+
+// WHOOP-detected workouts (whoop_workouts) are a separate stream from the manually
+// logged strength sets (workout_logs). Commuting/walking are lifestyle movement, not
+// training — we store everything but let callers filter. Classification and shaping
+// live in lib/trends.ts so the Trends tab and this MCP layer share one implementation.
+
+export async function fetchWorkouts(
+  db: Db,
+  startDate: string,
+  endDate: string,
+  category: WorkoutCategory | 'all' = 'all',
+) {
+  const { data } = await db
+    .from('whoop_workouts')
+    .select('workout_id,cycle_id,started_at,sport_name,strain,avg_hr,max_hr,zone0_min,zone1_min,zone2_min,zone3_min,zone4_min,zone5_min,raw_json')
+    .gte('started_at', `${startDate}T00:00:00`)
+    .lte('started_at', `${endDate}T23:59:59`)
+    .order('started_at', { ascending: false })
+  const shaped = ((data ?? []) as RawWorkoutRow[]).map(shapeWorkout)
+  return category === 'all' ? shaped : shaped.filter((w) => w.category === category)
+}
+
+// Mirrors lib/useTrends.ts: same queries, same pure functions — one source of
+// truth for metric definitions, exposed to both the dashboard and MCP clients.
+export const TRENDS_RANGE_DAYS: Record<string, number | null> = { '4w': 28, '12w': 84, '6m': 183, all: null }
+
+export async function fetchTrendsMetrics(db: Db, range: '4w' | '12w' | '6m' | 'all' = '12w') {
+  const days = TRENDS_RANGE_DAYS[range]
+  const startIso = days != null ? new Date(Date.now() - days * 86400000).toISOString() : null
+  const startDate = startIso?.slice(0, 10) ?? null
+
+  // Phases load first: the weight series must reach back to the current phase
+  // start (since-start totals, target anchor) even when the range is shorter.
+  const { data: phaseRows } = await db.from('training_phases').select('*').order('started_on', { ascending: false })
+  const phases = (phaseRows ?? []) as TrainingPhase[]
+  const currentPhase = phases[0] ?? null
+  const weightStart = startDate && currentPhase && currentPhase.started_on < startDate
+    ? currentPhase.started_on
+    : startDate
+
+  let snapQ = db.from('whoop_snapshots').select('recorded_at,recovery_score,hrv_rmssd,strain').order('recorded_at')
+  if (startIso) snapQ = snapQ.gte('recorded_at', startIso)
+  let wktQ = db.from('whoop_workouts')
+    .select('workout_id,cycle_id,started_at,sport_name,strain,avg_hr,max_hr,zone0_min,zone1_min,zone2_min,zone3_min,zone4_min,zone5_min,raw_json')
+    .order('started_at')
+  if (startIso) wktQ = wktQ.gte('started_at', startIso)
+  let logQ = db.from('workout_logs').select('logged_at,exercise_name,weight_lbs,weight_unit,reps').order('logged_at')
+  if (startIso) logQ = logQ.gte('logged_at', startIso)
+  let weightQ = db.from('whoop_body_measurements').select('measured_on,weight_kg').order('measured_on')
+  if (weightStart) weightQ = weightQ.gte('measured_on', weightStart)
+
+  const [snapRes, wktRes, logRes, weightRes] = await Promise.all([snapQ, wktQ, logQ, weightQ])
+
+  const todayKey = berlinDateKey(new Date().toISOString())
+  const shaped = ((wktRes.data ?? []) as RawWorkoutRow[]).map(shapeWorkout)
+  const snapshots = (snapRes.data ?? []) as { recorded_at: string; recovery_score: number | null; hrv_rmssd: number | null; strain: number | null }[]
+
+  return {
+    range,
+    currentPhase,
+    phases,
+    body: computeBodyTrend((weightRes.data ?? []) as { measured_on: string; weight_kg: number | null }[], currentPhase, todayKey),
+    strength: computeStrengthTrends((logRes.data ?? []) as StrengthLogRow[], todayKey),
+    engine: computeEngineTrends(shaped),
+    load: computeLoadTrends(shaped, snapshots),
+  }
 }
 
 export async function fetchCheckin(db: Db, date: string) {

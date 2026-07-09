@@ -8,6 +8,7 @@ const TABS = [
   { icon: '▲', label: 'Workout' },
   { icon: '○', label: 'Fuel' },
   { icon: '~', label: 'Whoop' },
+  { icon: '∿', label: 'Trends' },
   { icon: '€', label: 'Money' },
 ]
 
@@ -30,7 +31,15 @@ interface TabBarProps {
 export default function TabBar({ activeTab, onTabChange }: TabBarProps) {
   const barRef = useRef<HTMLDivElement>(null)
   // Continuous pill position (0…TABS.length-1) while dragging, else null.
-  const [dragPos, setDragPos] = useState<number | null>(null)
+  // Mirrored in a ref so event handlers can read the latest value without
+  // resorting to setState updaters — updaters run during render and must stay
+  // pure (calling onTabChange from one triggers React's setState-in-render error).
+  const [dragPos, setDragPosState] = useState<number | null>(null)
+  const dragPosRef = useRef<number | null>(null)
+  const setDragPos = (pos: number | null) => {
+    dragPosRef.current = pos
+    setDragPosState(pos)
+  }
   const dragging = dragPos != null
 
   function positionFromPointer(clientX: number): number | null {
@@ -67,12 +76,9 @@ export default function TabBar({ activeTab, onTabChange }: TabBarProps) {
       if (pos != null) setDragPos(pos)
     }
     const settle = (e: PointerEvent) => {
-      const pos = positionFromPointer(e.clientX)
-      setDragPos((current) => {
-        const final = pos ?? current
-        if (final != null) onTabChange(Math.round(final))
-        return null
-      })
+      const final = positionFromPointer(e.clientX) ?? dragPosRef.current
+      setDragPos(null)
+      if (final != null) onTabChange(Math.round(final))
     }
 
     window.addEventListener('pointermove', move)

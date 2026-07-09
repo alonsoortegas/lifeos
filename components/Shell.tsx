@@ -8,10 +8,11 @@ import FocusTab from '@/components/tabs/FocusTab'
 import WorkoutTab from '@/components/tabs/WorkoutTab'
 import NutritionTab from '@/components/tabs/NutritionTab'
 import WhoopTab from '@/components/tabs/WhoopTab'
+import TrendsTab from '@/components/tabs/TrendsTab'
 import FinanceTab from '@/components/tabs/FinanceTab'
 import DesktopShell from '@/components/DesktopShell'
 
-const TAB_LABELS = ['Today', 'Focus', 'Workout', 'Fuel', 'Whoop', 'Money']
+const TAB_LABELS = ['Today', 'Focus', 'Workout', 'Fuel', 'Whoop', 'Trends', 'Money']
 const LAST_TAB = TAB_LABELS.length - 1
 const DESKTOP_QUERY = '(min-width: 1024px)'
 const TAB_QUERY_INDEX: Record<string, number> = {
@@ -20,7 +21,8 @@ const TAB_QUERY_INDEX: Record<string, number> = {
   workout: 2,
   nutrition: 3,
   whoop: 4,
-  finance: 5,
+  trends: 5,
+  finance: 6,
 }
 
 function initialMobileTab() {
@@ -64,7 +66,8 @@ function MobileShell() {
       case 2: return <WorkoutTab canAddExercises />
       case 3: return <NutritionTab />
       case 4: return <WhoopTab />
-      case 5: return <FinanceTab />
+      case 5: return <TrendsTab />
+      case 6: return <FinanceTab />
       default: return <TodayTab />
     }
   }

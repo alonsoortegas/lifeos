@@ -46,6 +46,11 @@ export const viewport: Viewport = {
   ],
   width: 'device-width',
   initialScale: 1,
+  // iOS auto-zooms when focusing inputs with font-size < 16px, and the zoom
+  // persists after the keyboard closes — which detaches position:fixed
+  // elements (TabBar, rest timer) from the screen while scrolling.
+  // maximumScale: 1 disables that auto-zoom; manual pinch-zoom still works.
+  maximumScale: 1,
   viewportFit: 'cover',
 }
 
