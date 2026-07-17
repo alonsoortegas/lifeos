@@ -23,6 +23,13 @@ import {
   type ParsedGenericFood,
   type WhoopEnergyCalibration,
 } from '@/lib/nutrition'
+import {
+  buildPortionOptions,
+  portionMealLogItemPayload,
+  savedFoodPortionPayload,
+  scalePortionOption,
+  type PortionOption,
+} from '@/lib/nutrition-portions'
 import type {
   FoodItem,
   FoodSubstitutionGroup,
@@ -31,6 +38,7 @@ import type {
   MealTemplateName,
   NutritionDay,
   NutritionDayType,
+  SavedFoodPortion,
 } from '@/lib/types'
 
 const supabase = createClient()
@@ -47,7 +55,7 @@ interface SubstitutionRow extends FoodSubstitutionGroupItem {
 }
 
 type PortionDraft = {
-  foodItemId: string
+  portionKey: string
   quantity: string
 }
 
@@ -74,6 +82,7 @@ export default function NutritionDesktop({
   const dayType = getDefaultNutritionDayType()
   const [nutritionDay, setNutritionDay] = useState<NutritionDay | null>(null)
   const [foods, setFoods] = useState<FoodItem[]>([])
+  const [savedPortions, setSavedPortions] = useState<SavedFoodPortion[]>([])
   const [substitutionRows, setSubstitutionRows] = useState<SubstitutionRow[]>([])
   const [mealLogs, setMealLogs] = useState<MealLog[]>([])
   const [expandedMeals, setExpandedMeals] = useState<Set<MealTemplateName>>(new Set(['breakfast']))
@@ -94,6 +103,10 @@ export default function NutritionDesktop({
   const defaultMeals = useMemo(() => generateDefaultMeals(dayType), [dayType])
   const consumed = useMemo(() => calculateConsumed(mealLogs), [mealLogs])
   const remaining = useMemo(() => calculateRemaining(targets, consumed), [targets, consumed])
+  const portionOptions = useMemo(
+    () => buildPortionOptions(foods, savedPortions),
+    [foods, savedPortions],
+  )
 
   const foodsByName = useMemo(() => {
     const map = new Map<string, FoodItem>()
@@ -109,6 +122,12 @@ export default function NutritionDesktop({
     const { data, error } = await supabase.from('meal_log').select('*, meal_log_item(*, food_item(*))').eq('nutrition_day_id', dayId).order('logged_at', { ascending: true })
     if (error) { console.error('nutrition meal log load failed:', error.message); return }
     setMealLogs((data ?? []) as MealLog[])
+  }, [])
+
+  const loadSavedPortions = useCallback(async () => {
+    const { data, error } = await supabase.from('saved_food_portion').select('*').order('name')
+    if (error) { console.error('saved nutrition portion load failed:', error.message); return }
+    setSavedPortions((data ?? []) as SavedFoodPortion[])
   }, [])
 
   const ensureDay = useCallback(async (
@@ -143,8 +162,9 @@ export default function NutritionDesktop({
     let cancelled = false
     async function load() {
       setLoading(true)
-      const [foodResult, subResult, targetPlan] = await Promise.all([
+      const [foodResult, savedPortionResult, subResult, targetPlan] = await Promise.all([
         supabase.from('food_item').select('*').order('category').order('name'),
+        supabase.from('saved_food_portion').select('*').order('name'),
         supabase.from('food_substitution_group_item').select('*, food_substitution_group(*)').order('label'),
         loadNutritionTargetPlan(supabase),
       ])
@@ -153,6 +173,8 @@ export default function NutritionDesktop({
       setTargetMap(loadedTargets)
       const day = await ensureDay(dayType, loadedTargets, targetPlan.calibration)
       setFoods((foodResult.data ?? []) as FoodItem[])
+      if (savedPortionResult.error) console.error('saved nutrition portion load failed:', savedPortionResult.error.message)
+      setSavedPortions((savedPortionResult.data ?? []) as SavedFoodPortion[])
       setSubstitutionRows((subResult.data ?? []) as SubstitutionRow[])
       if (day) await loadMealLogs(day.id)
       setLoading(false)
@@ -194,7 +216,7 @@ export default function NutritionDesktop({
     setPortionDrafts(prev => ({
       ...prev,
       [mealName]: {
-        foodItemId: prev[mealName]?.foodItemId ?? '',
+        portionKey: prev[mealName]?.portionKey ?? '',
         quantity: prev[mealName]?.quantity ?? '1',
         ...patch,
       },
@@ -202,18 +224,18 @@ export default function NutritionDesktop({
   }
 
   const getPortionDraft = (mealName: MealTemplateName): PortionDraft => ({
-    foodItemId: portionDrafts[mealName]?.foodItemId ?? '',
+    portionKey: portionDrafts[mealName]?.portionKey ?? '',
     quantity: portionDrafts[mealName]?.quantity ?? '1',
   })
 
   const logFoodPortion = async (mealName: MealTemplateName) => {
     const day = nutritionDay ?? (await ensureDay(dayType, targetMap, STATIC_WHOOP_ENERGY_CALIBRATION)); if (!day) return
     const draft = getPortionDraft(mealName)
-    const food = foods.find(candidate => candidate.id === Number(draft.foodItemId))
+    const option = portionOptions.find(candidate => candidate.key === draft.portionKey)
     const quantity = Number(draft.quantity)
-    if (!food || !Number.isFinite(quantity) || quantity <= 0) return
+    if (!option || !Number.isFinite(quantity) || quantity <= 0) return
 
-    const key = `portion:${mealName}:${food.id}`
+    const key = `portion:${mealName}:${option.key}`
     setSavingKey(key)
 
     let mealLog = mealLogs.find(log => log.meal_name === mealName)
@@ -223,17 +245,37 @@ export default function NutritionDesktop({
       mealLog = { ...(data as MealLog), meal_log_item: [] }
     }
 
-    const scaled = scaleFood(food, quantity)
-    const { error } = await supabase.from('meal_log_item').insert({ meal_log_id: mealLog.id, food_item_id: food.id, quantity: scaled.quantity, calories: scaled.calories, protein_g: scaled.protein_g, carbs_g: scaled.carbs_g, fat_g: scaled.fat_g, substitution_group: `extra:${food.name}` })
+    const { error } = await supabase.from('meal_log_item').insert({
+      meal_log_id: mealLog.id,
+      ...portionMealLogItemPayload(option, quantity),
+    })
     if (error) console.error('meal portion insert failed:', error.message)
     else updatePortionDraft(mealName, { quantity: '1' })
     await loadMealLogs(day.id); setSavingKey(null)
   }
 
-  const logGenericFood = async (mealName: MealTemplateName, food: ParsedGenericFood): Promise<boolean> => {
+  const logGenericFood = async (
+    mealName: MealTemplateName,
+    food: ParsedGenericFood,
+    saveAsPortion = false,
+  ): Promise<boolean> => {
     const day = nutritionDay ?? (await ensureDay(dayType, targetMap, STATIC_WHOOP_ENERGY_CALIBRATION)); if (!day) return false
-    const key = `generic:${mealName}`
+    const key = `${saveAsPortion ? 'generic-save' : 'generic'}:${mealName}`
     setSavingKey(key)
+
+    if (saveAsPortion) {
+      const { error } = await supabase
+        .from('saved_food_portion')
+        .upsert(savedFoodPortionPayload(food), { onConflict: 'normalized_name' })
+
+      if (error) {
+        console.error('saved nutrition portion upsert failed:', error.message)
+        setSavingKey(null)
+        return false
+      }
+
+      await loadSavedPortions()
+    }
 
     let mealLog = mealLogs.find(log => log.meal_name === mealName)
     if (!mealLog) {
@@ -415,7 +457,7 @@ export default function NutritionDesktop({
                     <div style={{ borderTop: '1px solid var(--border)', padding: '8px 14px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <PortionAdder
                         mealName={meal.name}
-                        foods={foods}
+                        options={portionOptions}
                         draft={getPortionDraft(meal.name)}
                         savingKey={savingKey}
                         onChange={updatePortionDraft}
@@ -424,8 +466,12 @@ export default function NutritionDesktop({
 
                       <GenericFoodAdder
                         compact
-                        saving={savingKey === `generic:${meal.name}`}
+                        saving={
+                          savingKey === `generic:${meal.name}` ||
+                          savingKey === `generic-save:${meal.name}`
+                        }
                         onSubmit={(food) => logGenericFood(meal.name, food)}
+                        onSaveAndSubmit={(food) => logGenericFood(meal.name, food, true)}
                       />
 
                       {meal.items.length === 0 && (
@@ -482,34 +528,38 @@ export default function NutritionDesktop({
 
 function PortionAdder({
   mealName,
-  foods,
+  options,
   draft,
   savingKey,
   onChange,
   onSubmit,
 }: {
   mealName: MealTemplateName
-  foods: FoodItem[]
+  options: PortionOption[]
   draft: PortionDraft
   savingKey: string | null
   onChange: (mealName: MealTemplateName, patch: Partial<PortionDraft>) => void
   onSubmit: (mealName: MealTemplateName) => void
 }) {
-  const selectedFood = foods.find(food => food.id === Number(draft.foodItemId))
+  const selectedOption = options.find(option => option.key === draft.portionKey)
   const quantity = Number(draft.quantity)
-  const scaled = selectedFood && Number.isFinite(quantity) && quantity > 0 ? scaleFood(selectedFood, quantity) : null
-  const isSaving = selectedFood ? savingKey === `portion:${mealName}:${selectedFood.id}` : false
+  const scaled = selectedOption && Number.isFinite(quantity) && quantity > 0
+    ? scalePortionOption(selectedOption, quantity)
+    : null
+  const isSaving = selectedOption
+    ? savingKey === `portion:${mealName}:${selectedOption.key}`
+    : false
 
   return (
     <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, display: 'grid', gridTemplateColumns: '1fr 90px auto', gap: 8, alignItems: 'center' }}>
       <select
-        value={draft.foodItemId}
-        onChange={event => onChange(mealName, { foodItemId: event.target.value })}
+        value={draft.portionKey}
+        onChange={event => onChange(mealName, { portionKey: event.target.value })}
         style={{ minWidth: 0, height: 32, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)', padding: '0 9px', fontSize: 12, fontFamily: sans }}
       >
         <option value="">Add portion</option>
-        {foods.map(food => (
-          <option key={food.id} value={food.id}>{food.name} · {food.portion_label}</option>
+        {options.map(option => (
+          <option key={option.key} value={option.key}>{option.name} · {option.portionLabel}</option>
         ))}
       </select>
       <input
@@ -523,9 +573,9 @@ function PortionAdder({
       />
       <button
         onClick={() => onSubmit(mealName)}
-        disabled={!selectedFood || isSaving}
+        disabled={!selectedOption || isSaving}
         className="btn-accent"
-        style={{ height: 32, border: 'none', borderRadius: 999, padding: '0 12px', fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', cursor: selectedFood ? 'pointer' : 'default' }}
+        style={{ height: 32, border: 'none', borderRadius: 999, padding: '0 12px', fontFamily: mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', cursor: selectedOption ? 'pointer' : 'default' }}
       >
         add
       </button>
