@@ -90,4 +90,12 @@ describe('generateDefaultMeals', () => {
       'snack',
     ])
   })
+
+  it('shows a 125g dry pasta option at dinner', () => {
+    const dinner = generateDefaultMeals('hard').find((meal) => meal.name === 'dinner')
+
+    expect(dinner?.items).toContainEqual(expect.objectContaining({
+      label: '1/2 cup dry rice, 125g dry pasta, or 420g raw potatoes',
+    }))
+  })
 })

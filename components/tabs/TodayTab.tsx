@@ -2,14 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import DailyBriefCard from '@/components/brief/DailyBriefCard'
 import Ring from '@/components/ui/Ring'
 import StatCard from '@/components/ui/StatCard'
 import type { WhoopSnapshot, Todo } from '@/lib/types'
 import { getCurrentGoalDate, getMillisecondsUntilNextGoalReset } from '@/lib/goal-dates'
-import { getDayMeta, getPlanStatus, getTodayKey, type DayMeta } from '@/lib/workout'
+import { getDayMeta, getPlanStatus, getTodayKey } from '@/lib/workout'
 import { sleepHM } from '@/lib/whoop-utils'
-import { computeReadiness, stateColor, stateLabel, stateTone, type Readiness } from '@/lib/readiness'
+import { computeReadiness } from '@/lib/readiness'
 import { formatDayText, shareText } from '@/lib/share'
 
 const supabase = createBrowserClient(
@@ -289,302 +288,77 @@ function DayRing() {
 }
 
 // ---------------------------------------------------------------------------
-// DayModeCard
+// MacroRing — kcal progress ring, arc segmented by macro (protein/carbs/fat)
 // ---------------------------------------------------------------------------
 
-interface NutritionRemaining { calories: number; protein_g: number }
+interface MacroTotals { calories: number; protein_g: number; carbs_g: number; fat_g: number }
 
-function getTrainingAdvice(readiness: Readiness, todayMeta: DayMeta): string {
-  if (!todayMeta.dbKey) {
-    if (readiness.state === 'hardNo') return 'Keep it restorative. Skip intensity.'
-    if (readiness.state === 'recover') return 'Easy movement only. Treat this as recovery.'
-    return todayMeta.restSub
+const MACRO_COLORS = { protein: '#2dd4bf', carbs: '#f59e0b', fat: '#a78bfa' }
+
+function MacroRing({ macros }: { macros: { targets: MacroTotals; consumed: MacroTotals } | null }) {
+  const C = 2 * Math.PI * 50
+  const consumed = macros?.consumed ?? { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }
+  const targetCalories = macros?.targets.calories ?? 0
+  const progress = targetCalories > 0 ? Math.min(1, consumed.calories / targetCalories) : 0
+  const totalArc = C * progress
+
+  const kcalByMacro = {
+    protein: consumed.protein_g * 4,
+    carbs: consumed.carbs_g * 4,
+    fat: consumed.fat_g * 9,
+  }
+  const kcalSum = kcalByMacro.protein + kcalByMacro.carbs + kcalByMacro.fat
+
+  const segments: { color: string; length: number }[] = []
+  if (kcalSum > 0) {
+    for (const key of ['protein', 'carbs', 'fat'] as const) {
+      segments.push({ color: MACRO_COLORS[key], length: totalArc * (kcalByMacro[key] / kcalSum) })
+    }
   }
 
-  if (readiness.state === 'green') return 'Run the programmed session.'
-  if (readiness.state === 'controlled') return `Train, but cap effort at RPE ${readiness.rpeCap}.`
-  if (readiness.state === 'recover') return 'Reduce to technique work or Z2.'
-  return 'No training load today.'
-}
-
-function getNutritionAdvice(readiness: Readiness, remaining: NutritionRemaining | null): string {
-  if (remaining) {
-    const kcal = Math.round(remaining.calories)
-    const prot = Math.round(remaining.protein_g)
-    if (kcal <= 0 && prot <= 0) return 'Targets hit. Stay hydrated.'
-    if (prot > 0 && kcal > 0) return `+${prot}g protein · ${kcal} kcal left`
-    if (prot > 0) return `+${prot}g protein left`
-    if (kcal > 0) return `${kcal} kcal left`
-  }
-  if (readiness.state === 'green') return 'Fuel normally. Keep protein high and place carbs near training.'
-  if (readiness.state === 'controlled') return 'Do not under-eat. Protein first, then steady carbs.'
-  if (readiness.state === 'recover') return 'Use simpler meals. Hydrate and keep protein floor intact.'
-  return 'Easy food, hydration, and an earlier night.'
-}
-
-function getRecoveryAdvice(readiness: Readiness): string {
-  if (readiness.state === 'green') return 'Sleep and HRV support a normal day.'
-  if (readiness.state === 'controlled') return 'Useful day, but leave margin.'
-  if (readiness.state === 'recover') return 'Recovery has priority over output.'
-  return 'Protect sleep. No extra stressors.'
-}
-
-function DayModeCard({
-  readiness,
-  todayMeta,
-  topTodo,
-  nutritionRemaining,
-}: {
-  readiness: Readiness
-  todayMeta: DayMeta
-  topTodo: string | null
-  nutritionRemaining: NutritionRemaining | null
-}) {
-  const c = stateColor(readiness.state)
-  const tone = stateTone(readiness.state)
-  const toneColor = tone === 'good' ? '#00d26a' : tone === 'warn' ? '#f59e0b' : '#ef4444'
-  const focusValue = topTodo ? `Top goal: ${topTodo}` : 'Clear the top goal before adding more.'
-  const rows = [
-    { label: 'Focus', value: focusValue },
-    { label: 'Training', value: getTrainingAdvice(readiness, todayMeta) },
-    { label: 'Nutrition', value: getNutritionAdvice(readiness, nutritionRemaining) },
-    { label: 'Recovery', value: getRecoveryAdvice(readiness) },
-  ]
+  let cumulative = 0
 
   return (
-    <div
-      style={{
-        background: 'var(--surface)',
-        border: `1px solid ${c}55`,
-        borderLeft: `3px solid ${c}`,
-        borderRadius: 14,
-        padding: '14px 14px 12px',
-      }}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <span
-          className="text-[9px] font-bold tracking-[0.2em] uppercase"
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: 'var(--text-faint)' }}
-          >
-          DAY MODE
-        </span>
-        <span
-          className="text-[9px] font-bold tracking-[0.14em] uppercase px-[7px] py-[3px] rounded-full"
-          style={{
-            fontFamily: 'var(--font-jetbrains-mono, monospace)',
-            color: toneColor,
-            border: `1px solid ${toneColor}55`,
-            background: `${toneColor}10`,
-          }}
-        >
-          {stateLabel(readiness.state)}
-        </span>
-      </div>
-
-      <div className="text-[18px] font-semibold leading-[1.25] text-[var(--text)] mb-2" style={{ letterSpacing: '-0.01em' }}>
-        {readiness.headline}
-      </div>
-
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {readiness.rationale.slice(0, 3).map((r) => (
-          <span
-            key={r}
-            className="text-[10px] px-[7px] py-[3px] rounded-full"
-            style={{
-              fontFamily: 'var(--font-jetbrains-mono, monospace)',
-              color: 'var(--text-dim)',
-              background: 'var(--ink-04)',
-              border: '1px solid var(--border)',
-            }}
-          >
-            {r}
-          </span>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-1.5 pt-3 border-t border-[var(--border)]">
-        {rows.map((row) => (
-          <div
-            key={row.label}
-            className="grid grid-cols-[82px_1fr] gap-2 rounded-lg px-2.5 py-2"
-            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-          >
-            <span
-              className="text-[9px] font-bold tracking-[0.16em] uppercase"
-              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: 'var(--text-faint)' }}
-            >
-              {row.label}
-            </span>
-            <span className="text-[12px] leading-[1.3] text-[var(--text)]">{row.value}</span>
-          </div>
-        ))}
-      </div>
-
-      {readiness.rpeCap != null && readiness.rpeCap > 0 && (
-        <div
-          className="flex items-center justify-between pt-2 mt-2 border-t border-[var(--border)]"
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-        >
-          <span className="text-[10px] text-[var(--text-faint)]">RPE cap → Workout</span>
-          <span className="text-[10px] font-bold" style={{ color: toneColor }}>RPE ≤ {readiness.rpeCap}</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// DayScheduleCard
-// ---------------------------------------------------------------------------
-
-interface ScheduleBlock {
-  start: string  // "HH:MM"
-  end: string
-  label: string
-  desc: string
-  color: string
-}
-
-const SCHEDULE: ScheduleBlock[] = [
-  { start: '06:30', end: '07:00', label: 'Wake up',           desc: 'No phone for 15 min. Outside immediately — morning light for circadian reset.',             color: '#fbbf24' },
-  { start: '07:00', end: '07:45', label: 'Walk #1',           desc: '20-30 min easy pace. Digestion anchor — same as you\'ve been doing.',                       color: '#00d26a' },
-  { start: '07:45', end: '08:30', label: 'Breakfast',         desc: 'Shower, scalp routine.',                                                                    color: '#f97316' },
-  { start: '08:30', end: '12:30', label: 'Deep work',         desc: 'embee-tech or Movu — harder deadline first. Phone away.',                                   color: '#38bdf8' },
-  { start: '12:30', end: '13:30', label: 'Lunch',             desc: 'Outside if possible. Not at the desk.',                                                     color: '#00d26a' },
-  { start: '13:30', end: '17:30', label: 'Work block 2',      desc: 'Second project or split. Walking meeting if you have calls.',                               color: '#38bdf8' },
-  { start: '17:30', end: '18:30', label: 'Movement',          desc: 'Light mobility + stretching. Gradual ramp — no heavy sweating yet unless cleared.',         color: '#a78bfa' },
-  { start: '18:30', end: '19:30', label: 'Dinner',            desc: 'Not in front of a screen.',                                                                 color: '#f97316' },
-  { start: '19:30', end: '21:30', label: 'Social / low-key',  desc: 'Call a friend, short walk, read. Cap screen time — don\'t let it slide to bed.',            color: '#a78bfa' },
-  { start: '21:30', end: '22:00', label: 'Wind-down',         desc: 'No screens. The actual lever for your HRV/RHR trend.',                                      color: '#fb7185' },
-  { start: '22:00', end: '22:30', label: 'Lights out',        desc: 'Sleep.',                                                                                    color: '#5b6473' },
-]
-
-function toMinutes(time: string): number {
-  const [h, m] = time.split(':').map(Number)
-  return h * 60 + m
-}
-
-function getBlockState(block: ScheduleBlock, nowMin: number): 'past' | 'active' | 'future' {
-  const start = toMinutes(block.start)
-  const end = toMinutes(block.end)
-  if (nowMin >= end) return 'past'
-  if (nowMin >= start) return 'active'
-  return 'future'
-}
-
-function getActiveProgress(block: ScheduleBlock, nowMin: number): number {
-  const start = toMinutes(block.start)
-  const end = toMinutes(block.end)
-  return Math.min(1, Math.max(0, (nowMin - start) / (end - start)))
-}
-
-function DayScheduleCard({ now }: { now: Date | null }) {
-  const nowMin = now ? now.getHours() * 60 + now.getMinutes() : -1
-  const activeIdx = SCHEDULE.findIndex((b) => getBlockState(b, nowMin) === 'active')
-
-  return (
-    <div className="panel rounded-2xl p-4">
-      <div
-        className="text-[9px] font-bold tracking-[0.2em] uppercase mb-3"
-        style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: 'var(--text-faint)' }}
-      >
-        DAY SCHEDULE
-      </div>
-
-      <div className="relative">
-        {/* Vertical spine */}
-        <div
-          className="absolute left-[39px] top-0 bottom-0 w-px"
-          style={{ background: 'var(--border)' }}
-        />
-
-        <div className="flex flex-col gap-0">
-          {SCHEDULE.map((block, i) => {
-            const state = getBlockState(block, nowMin)
-            const progress = state === 'active' ? getActiveProgress(block, nowMin) : 0
-            const isActive = state === 'active'
-            const isPast = state === 'past'
-
+    <div className="flex flex-col items-center gap-[6px]">
+      <div className="relative" style={{ width: 140, height: 140 }}>
+        <svg width="140" height="140" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="50" fill="none" strokeWidth="8" style={{ stroke: 'var(--ring-track)' }} />
+          {segments.map((seg, i) => {
+            const offset = -cumulative
+            cumulative += seg.length
             return (
-              <div key={block.start} className="relative flex items-start gap-3">
-                {/* Time */}
-                <div
-                  className="w-[39px] flex-shrink-0 pt-[10px] text-right text-[9px] leading-none tabular-nums"
-                  style={{
-                    fontFamily: 'var(--font-jetbrains-mono, monospace)',
-                    color: isActive ? block.color : isPast ? 'var(--text-faint)' : 'var(--text-dim)',
-                    opacity: isPast ? 0.45 : 1,
-                  }}
-                >
-                  {block.start}
-                </div>
-
-                {/* Dot on spine */}
-                <div className="flex-shrink-0 relative z-10 mt-[8px]">
-                  <div
-                    className="w-[9px] h-[9px] rounded-full border-2 transition-all duration-500"
-                    style={{
-                      borderColor: isActive ? block.color : isPast ? 'var(--border-hi)' : 'var(--border)',
-                      background: isActive ? block.color : isPast ? 'var(--surface-2)' : 'var(--surface)',
-                      boxShadow: isActive ? `0 0 8px ${block.color}88` : 'none',
-                    }}
-                  />
-                </div>
-
-                {/* Content */}
-                <div
-                  className={`flex-1 rounded-xl px-3 py-[9px] mb-[5px] overflow-hidden transition-all duration-300 ${isActive ? 'border' : ''}`}
-                  style={{
-                    background: isActive ? `${block.color}0f` : 'transparent',
-                    borderColor: isActive ? `${block.color}40` : 'transparent',
-                    opacity: isPast ? 0.4 : 1,
-                  }}
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span
-                      className="text-[13px] font-semibold leading-tight"
-                      style={{ color: isActive ? block.color : 'var(--text)' }}
-                    >
-                      {block.label}
-                    </span>
-                    <span
-                      className="text-[9px] tabular-nums flex-shrink-0"
-                      style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', color: 'var(--text-faint)' }}
-                    >
-                      {block.end}
-                    </span>
-                  </div>
-
-                  {block.desc && (
-                    <p
-                      className="text-[11px] leading-[1.4] mt-[3px]"
-                      style={{ color: isActive ? 'var(--text-dim)' : 'var(--text-faint)' }}
-                    >
-                      {block.desc}
-                    </p>
-                  )}
-
-                  {/* Progress bar for active block */}
-                  {isActive && (
-                    <div
-                      className="mt-[7px] h-[2px] rounded-full overflow-hidden"
-                      style={{ background: `${block.color}25` }}
-                    >
-                      <div
-                        className="h-full rounded-full transition-all duration-[60s]"
-                        style={{
-                          width: `${progress * 100}%`,
-                          background: block.color,
-                          boxShadow: `0 0 4px ${block.color}`,
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
+              <circle
+                key={i}
+                cx="60" cy="60" r="50" fill="none"
+                strokeWidth="8" strokeLinecap="butt"
+                strokeDasharray={`${seg.length} ${C - seg.length}`}
+                strokeDashoffset={offset}
+                transform="rotate(-90 60 60)"
+                style={{ stroke: seg.color, transition: 'stroke-dasharray 0.7s cubic-bezier(0.22,1,0.36,1)' }}
+              />
             )
           })}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span
+            className="text-[22px] font-extrabold leading-none tracking-[-0.03em] tabular-nums text-[var(--text)]"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            {Math.round(consumed.calories)}
+          </span>
+          <span
+            className="text-[9px] tracking-[0.08em] tabular-nums text-[var(--text-faint)] mt-[3px]"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            / {Math.round(targetCalories)} kcal
+          </span>
         </div>
+      </div>
+      <div
+        className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-faint)]"
+        style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+      >
+        Macros
       </div>
     </div>
   )
@@ -598,7 +372,7 @@ export default function TodayTab() {
   const [reauthRequired, setReauthRequired] = useState(false)
   const [now, setNow] = useState<Date | null>(null)
   const [topTodo, setTopTodo] = useState<string | null>(null)
-  const [nutritionRemaining, setNutritionRemaining] = useState<NutritionRemaining | null>(null)
+  const [macroProgress, setMacroProgress] = useState<{ targets: MacroTotals; consumed: MacroTotals } | null>(null)
   const [dayShared, setDayShared] = useState(false)
 
   const snap = snapshots[0] ?? null
@@ -645,24 +419,33 @@ export default function TodayTab() {
     })()
   }, [])
 
-  // Best-effort: nutrition remaining (calories + protein)
+  // Best-effort: today's macro progress (consumed vs target, for the Macros ring)
   useEffect(() => {
     const today = new Date().toISOString().slice(0, 10)
     void (async () => {
       try {
         const { data } = await supabase
           .from('nutrition_day')
-          .select('calories_target, protein_target, meal_log(meal_log_item(calories, protein_g))')
+          .select('calories_target, protein_target, carbs_target, fat_target, meal_log(meal_log_item(calories, protein_g, carbs_g, fat_g))')
           .eq('date', today)
           .single()
         if (!data) return
-        const items = (data.meal_log as { meal_log_item: { calories: number; protein_g: number }[] }[] ?? [])
+        const items = (data.meal_log as { meal_log_item: { calories: number; protein_g: number; carbs_g: number; fat_g: number }[] }[] ?? [])
           .flatMap(log => log.meal_log_item ?? [])
-        const consumedCal = items.reduce((s, i) => s + (Number(i.calories) || 0), 0)
-        const consumedProt = items.reduce((s, i) => s + (Number(i.protein_g) || 0), 0)
-        setNutritionRemaining({
-          calories: (data.calories_target ?? 0) - consumedCal,
-          protein_g: (data.protein_target ?? 0) - consumedProt,
+        const consumed = items.reduce<MacroTotals>((totals, i) => ({
+          calories: totals.calories + (Number(i.calories) || 0),
+          protein_g: totals.protein_g + (Number(i.protein_g) || 0),
+          carbs_g: totals.carbs_g + (Number(i.carbs_g) || 0),
+          fat_g: totals.fat_g + (Number(i.fat_g) || 0),
+        }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 })
+        setMacroProgress({
+          targets: {
+            calories: data.calories_target ?? 0,
+            protein_g: data.protein_target ?? 0,
+            carbs_g: data.carbs_target ?? 0,
+            fat_g: data.fat_target ?? 0,
+          },
+          consumed,
         })
       } catch { /* non-critical */ }
     })()
@@ -688,6 +471,9 @@ export default function TodayTab() {
 
   const recovery = snap?.recovery_score ?? 0
   const ringColor = recovery >= 67 ? '#00d26a' : recovery >= 34 ? '#f59e0b' : '#ef4444'
+  const nutritionRemaining = macroProgress
+    ? { calories: macroProgress.targets.calories - macroProgress.consumed.calories, protein_g: macroProgress.targets.protein_g - macroProgress.consumed.protein_g }
+    : null
 
   return (
     <div className="boot px-4 space-y-5">
@@ -732,8 +518,6 @@ export default function TodayTab() {
         </div>
       </div>
 
-      <DailyBriefCard />
-
       <GoalTicker />
 
       <div className="flex flex-col items-center py-4 gap-2">
@@ -744,6 +528,7 @@ export default function TodayTab() {
               Recovery Score
             </div>
           </div>
+          <MacroRing macros={macroProgress} />
           <DayRing />
         </div>
       </div>
@@ -782,10 +567,6 @@ export default function TodayTab() {
           delta={readiness?.signals.sleepScore}
         />
       </div>
-
-      <DayScheduleCard now={now} />
-
-      {readiness && <DayModeCard readiness={readiness} todayMeta={todayMeta} topTodo={topTodo} nutritionRemaining={nutritionRemaining} />}
 
       {reauthRequired && (
         <a

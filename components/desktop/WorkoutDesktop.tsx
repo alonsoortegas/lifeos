@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import type { WorkoutSession, WorkoutExercise, WorkoutLog, WhoopSnapshot } from '@/lib/types'
 import { getDayMeta, getPlanStatus, getTodayKey, DAY_ORDER } from '@/lib/workout'
-import { computeReadiness, stateColor, stateLabel } from '@/lib/readiness'
+import { computeReadiness } from '@/lib/readiness'
 import { formatWorkoutText, shareText, type ShareExercise } from '@/lib/share'
 
 const supabase = createBrowserClient(
@@ -405,24 +405,6 @@ export default function WorkoutDesktop({
                   )
                 })}
               </div>
-
-              {/* Readiness banner */}
-              {readiness && readiness.state !== 'green' && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
-                  background: `${stateColor(readiness.state)}08`,
-                  border: `1px solid ${stateColor(readiness.state)}44`,
-                  borderLeft: `3px solid ${stateColor(readiness.state)}`,
-                  borderRadius: 8, flexShrink: 0,
-                }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 999, background: stateColor(readiness.state), flexShrink: 0 }} />
-                  <div style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.5, flex: 1 }}>
-                    <span style={{ color: stateColor(readiness.state), fontWeight: 700, letterSpacing: '0.14em' }}>{stateLabel(readiness.state)} · </span>
-                    {rpeCap != null && rpeCap > 0 ? `cap RPE at ${rpeCap}` : 'full rest today'}
-                  </div>
-                  <span style={{ fontFamily: mono, fontSize: 10, color: 'var(--text-faint)' }}>→ Today</span>
-                </div>
-              )}
             </div>
 
             {/* RIGHT — active logger */}

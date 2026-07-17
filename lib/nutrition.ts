@@ -381,7 +381,7 @@ export function generateDefaultMeals(dayType: NutritionDayType): DefaultMeal[] {
       defaultTime: '20:00',
       items: [
         commonDinnerProtein,
-        { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice, 100g dry pasta, or 420g raw potatoes', substitutionGroup: 'carb_70g_starchy' },
+        { foodName: 'Dry rice 1/2 cup', quantity: 1, label: '1/2 cup dry rice, 125g dry pasta, or 420g raw potatoes', substitutionGroup: 'carb_70g_starchy' },
         { foodName: 'Vegetables', quantity: 1, label: 'vegetables' },
         { foodName: 'Olive oil', quantity: 1, label: '15ml olive oil' },
       ],
