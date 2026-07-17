@@ -161,6 +161,18 @@ export interface FoodItem {
   notes: string | null
 }
 
+export interface SavedFoodPortion {
+  id: number
+  normalized_name: string
+  name: string
+  calories: number
+  protein_g: number
+  carbs_g: number
+  fat_g: number
+  created_at: string
+  updated_at: string
+}
+
 export interface FoodSubstitutionGroup {
   id: number
   name: string
