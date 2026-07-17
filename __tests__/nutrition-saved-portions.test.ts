@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildPortionOptions,
+  mergeSavedFoodPortion,
   normalizeSavedPortionName,
   portionMealLogItemPayload,
+  saveThenLogGenericFood,
   savedFoodPortionPayload,
   scalePortionOption,
 } from '@/lib/nutrition-portions'
@@ -125,5 +127,65 @@ describe('saved nutrition portions', () => {
       fat_g: 1.5,
       substitution_group: 'saved:greek yogurt',
     })
+  })
+
+  it('replaces an updated saved portion and keeps the list sorted', () => {
+    const banana = { ...savedPortion, id: 10, normalized_name: 'banana', name: 'Banana' }
+    const updatedYogurt = { ...savedPortion, calories: 135, updated_at: '2026-07-17T11:00:00Z' }
+
+    expect(mergeSavedFoodPortion([savedPortion, banana], updatedYogurt)).toEqual([
+      banana,
+      updatedYogurt,
+    ])
+  })
+
+  it('does not log when saving the reusable portion fails', async () => {
+    const logFood = vi.fn().mockResolvedValue(true)
+
+    const result = await saveThenLogGenericFood({
+      saveAsPortion: true,
+      savePortion: vi.fn().mockResolvedValue(null),
+      onPortionSaved: vi.fn(),
+      logFood,
+    })
+
+    expect(result).toEqual({ ok: false, stage: 'save' })
+    expect(logFood).not.toHaveBeenCalled()
+  })
+
+  it('publishes a saved portion before reporting a subsequent log failure', async () => {
+    const callOrder: string[] = []
+
+    const result = await saveThenLogGenericFood({
+      saveAsPortion: true,
+      savePortion: async () => {
+        callOrder.push('save')
+        return savedPortion
+      },
+      onPortionSaved: () => { callOrder.push('publish') },
+      logFood: async () => {
+        callOrder.push('log')
+        return false
+      },
+    })
+
+    expect(result).toEqual({ ok: false, stage: 'log' })
+    expect(callOrder).toEqual(['save', 'publish', 'log'])
+  })
+
+  it('keeps log-only submissions out of saved portion persistence', async () => {
+    const savePortion = vi.fn().mockResolvedValue(savedPortion)
+    const logFood = vi.fn().mockResolvedValue(true)
+
+    const result = await saveThenLogGenericFood({
+      saveAsPortion: false,
+      savePortion,
+      onPortionSaved: vi.fn(),
+      logFood,
+    })
+
+    expect(result).toEqual({ ok: true })
+    expect(savePortion).not.toHaveBeenCalled()
+    expect(logFood).toHaveBeenCalledOnce()
   })
 })

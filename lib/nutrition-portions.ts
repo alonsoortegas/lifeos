@@ -89,3 +89,34 @@ export function portionMealLogItemPayload(option: PortionOption, quantity: numbe
       : `saved:${normalizeSavedPortionName(option.name)}`,
   }
 }
+
+export function mergeSavedFoodPortion(
+  portions: SavedFoodPortion[],
+  savedPortion: SavedFoodPortion,
+): SavedFoodPortion[] {
+  return [
+    ...portions.filter((portion) => portion.id !== savedPortion.id),
+    savedPortion,
+  ].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function saveThenLogGenericFood<T>({
+  saveAsPortion,
+  savePortion,
+  onPortionSaved,
+  logFood,
+}: {
+  saveAsPortion: boolean
+  savePortion: () => Promise<T | null>
+  onPortionSaved: (portion: T) => void
+  logFood: () => Promise<boolean>
+}): Promise<{ ok: true } | { ok: false; stage: 'save' | 'log' }> {
+  if (saveAsPortion) {
+    const savedPortion = await savePortion()
+    if (!savedPortion) return { ok: false, stage: 'save' }
+    onPortionSaved(savedPortion)
+  }
+
+  const didLog = await logFood()
+  return didLog ? { ok: true } : { ok: false, stage: 'log' }
+}

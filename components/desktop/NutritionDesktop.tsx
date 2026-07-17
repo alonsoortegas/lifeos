@@ -25,8 +25,10 @@ import {
 } from '@/lib/nutrition'
 import {
   buildPortionOptions,
+  mergeSavedFoodPortion,
   portionMealLogItemPayload,
   savedFoodPortionPayload,
+  saveThenLogGenericFood,
   scalePortionOption,
   type PortionOption,
 } from '@/lib/nutrition-portions'
@@ -122,12 +124,6 @@ export default function NutritionDesktop({
     const { data, error } = await supabase.from('meal_log').select('*, meal_log_item(*, food_item(*))').eq('nutrition_day_id', dayId).order('logged_at', { ascending: true })
     if (error) { console.error('nutrition meal log load failed:', error.message); return }
     setMealLogs((data ?? []) as MealLog[])
-  }, [])
-
-  const loadSavedPortions = useCallback(async () => {
-    const { data, error } = await supabase.from('saved_food_portion').select('*').order('name')
-    if (error) { console.error('saved nutrition portion load failed:', error.message); return }
-    setSavedPortions((data ?? []) as SavedFoodPortion[])
   }, [])
 
   const ensureDay = useCallback(async (
@@ -263,42 +259,54 @@ export default function NutritionDesktop({
     const key = `${saveAsPortion ? 'generic-save' : 'generic'}:${mealName}`
     setSavingKey(key)
 
-    if (saveAsPortion) {
-      const { error } = await supabase
-        .from('saved_food_portion')
-        .upsert(savedFoodPortionPayload(food), { onConflict: 'normalized_name' })
+    const result = await saveThenLogGenericFood<SavedFoodPortion>({
+      saveAsPortion,
+      savePortion: async () => {
+        const { data, error } = await supabase
+          .from('saved_food_portion')
+          .upsert(savedFoodPortionPayload(food), { onConflict: 'normalized_name' })
+          .select('*')
+          .single()
 
-      if (error) {
-        console.error('saved nutrition portion upsert failed:', error.message)
-        setSavingKey(null)
-        return false
-      }
+        if (error) {
+          console.error('saved nutrition portion upsert failed:', error.message)
+          return null
+        }
 
-      await loadSavedPortions()
-    }
+        return data as SavedFoodPortion
+      },
+      onPortionSaved: (savedPortion) => {
+        setSavedPortions((current) => mergeSavedFoodPortion(current, savedPortion))
+      },
+      logFood: async () => {
+        let mealLog = mealLogs.find(log => log.meal_name === mealName)
+        if (!mealLog) {
+          const { data, error } = await supabase.from('meal_log').insert({ nutrition_day_id: day.id, meal_name: mealName }).select('*').single()
+          if (error) { console.error('meal log create failed:', error.message); return false }
+          mealLog = { ...(data as MealLog), meal_log_item: [] }
+        }
 
-    let mealLog = mealLogs.find(log => log.meal_name === mealName)
-    if (!mealLog) {
-      const { data, error } = await supabase.from('meal_log').insert({ nutrition_day_id: day.id, meal_name: mealName }).select('*').single()
-      if (error) { console.error('meal log create failed:', error.message); setSavingKey(null); return false }
-      mealLog = { ...(data as MealLog), meal_log_item: [] }
-    }
+        const { error } = await supabase.from('meal_log_item').insert({
+          meal_log_id: mealLog.id,
+          food_item_id: null,
+          custom_food_name: food.name,
+          source: 'custom',
+          quantity: 1,
+          calories: food.calories,
+          protein_g: food.protein_g,
+          carbs_g: food.carbs_g,
+          fat_g: food.fat_g,
+          substitution_group: 'custom',
+        })
+        if (error) { console.error('generic food insert failed:', error.message); return false }
 
-    const { error } = await supabase.from('meal_log_item').insert({
-      meal_log_id: mealLog.id,
-      food_item_id: null,
-      custom_food_name: food.name,
-      source: 'custom',
-      quantity: 1,
-      calories: food.calories,
-      protein_g: food.protein_g,
-      carbs_g: food.carbs_g,
-      fat_g: food.fat_g,
-      substitution_group: 'custom',
+        await loadMealLogs(day.id)
+        return true
+      },
     })
-    if (error) { console.error('generic food insert failed:', error.message); setSavingKey(null); return false }
 
-    await loadMealLogs(day.id); setSavingKey(null); return true
+    setSavingKey(null)
+    return result.ok
   }
 
   const removeLoggedItem = async (itemId: number) => {
