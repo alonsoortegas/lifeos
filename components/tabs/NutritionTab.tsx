@@ -24,6 +24,13 @@ import {
   type ParsedGenericFood,
   type WhoopEnergyCalibration,
 } from '@/lib/nutrition'
+import {
+  buildPortionOptions,
+  portionMealLogItemPayload,
+  savedFoodPortionPayload,
+  scalePortionOption,
+  type PortionOption,
+} from '@/lib/nutrition-portions'
 import type {
   FoodItem,
   FoodSubstitutionGroup,
@@ -32,6 +39,7 @@ import type {
   MealTemplateName,
   NutritionDay,
   NutritionDayType,
+  SavedFoodPortion,
 } from '@/lib/types'
 
 const supabase = createClient()
@@ -41,7 +49,7 @@ interface SubstitutionRow extends FoodSubstitutionGroupItem {
 }
 
 type PortionDraft = {
-  foodItemId: string
+  portionKey: string
   quantity: string
 }
 
@@ -70,6 +78,7 @@ export default function NutritionTab() {
   const dayType = getDefaultNutritionDayType()
   const [nutritionDay, setNutritionDay] = useState<NutritionDay | null>(null)
   const [foods, setFoods] = useState<FoodItem[]>([])
+  const [savedPortions, setSavedPortions] = useState<SavedFoodPortion[]>([])
   const [substitutionRows, setSubstitutionRows] = useState<SubstitutionRow[]>([])
   const [mealLogs, setMealLogs] = useState<MealLog[]>([])
   const [expandedMeal, setExpandedMeal] = useState<MealTemplateName>('breakfast')
@@ -96,6 +105,10 @@ export default function NutritionTab() {
   const defaultMeals = useMemo(() => generateDefaultMeals(dayType), [dayType])
   const consumed = useMemo(() => calculateConsumed(mealLogs), [mealLogs])
   const remaining = useMemo(() => calculateRemaining(targets, consumed), [targets, consumed])
+  const portionOptions = useMemo(
+    () => buildPortionOptions(foods, savedPortions),
+    [foods, savedPortions],
+  )
 
   const foodsByName = useMemo(() => {
     const map = new Map<string, FoodItem>()
@@ -129,6 +142,20 @@ export default function NutritionTab() {
     }
 
     setMealLogs((data ?? []) as MealLog[])
+  }, [])
+
+  const loadSavedPortions = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('saved_food_portion')
+      .select('*')
+      .order('name')
+
+    if (error) {
+      console.error('saved nutrition portion load failed:', error.message)
+      return
+    }
+
+    setSavedPortions((data ?? []) as SavedFoodPortion[])
   }, [])
 
   const ensureDay = useCallback(async (
@@ -183,8 +210,9 @@ export default function NutritionTab() {
     async function init() {
       setLoading(true)
 
-      const [foodResult, substitutionResult, targetPlan] = await Promise.all([
+      const [foodResult, savedPortionResult, substitutionResult, targetPlan] = await Promise.all([
         supabase.from('food_item').select('*').order('category').order('name'),
+        supabase.from('saved_food_portion').select('*').order('name'),
         supabase.from('food_substitution_group_item').select('*, food_substitution_group(*)').order('label'),
         loadNutritionTargetPlan(supabase),
       ])
@@ -192,9 +220,11 @@ export default function NutritionTab() {
       if (cancelled) return
 
       if (foodResult.error) console.error('nutrition food load failed:', foodResult.error.message)
+      if (savedPortionResult.error) console.error('saved nutrition portion load failed:', savedPortionResult.error.message)
       if (substitutionResult.error) console.error('nutrition substitution load failed:', substitutionResult.error.message)
 
       setFoods((foodResult.data ?? []) as FoodItem[])
+      setSavedPortions((savedPortionResult.data ?? []) as SavedFoodPortion[])
       setSubstitutionRows((substitutionResult.data ?? []) as SubstitutionRow[])
       const loadedTargets = targetPlan.targets
       setTargetMap(loadedTargets)
@@ -217,7 +247,7 @@ export default function NutritionTab() {
     setPortionDrafts((prev) => ({
       ...prev,
       [mealName]: {
-        foodItemId: prev[mealName]?.foodItemId ?? '',
+        portionKey: prev[mealName]?.portionKey ?? '',
         quantity: prev[mealName]?.quantity ?? '1',
         ...patch,
       },
@@ -225,7 +255,7 @@ export default function NutritionTab() {
   }
 
   const getPortionDraft = (mealName: MealTemplateName): PortionDraft => ({
-    foodItemId: portionDrafts[mealName]?.foodItemId ?? '',
+    portionKey: portionDrafts[mealName]?.portionKey ?? '',
     quantity: portionDrafts[mealName]?.quantity ?? '1',
   })
 
@@ -234,15 +264,15 @@ export default function NutritionTab() {
     if (!day) return
 
     const draft = getPortionDraft(mealName)
-    const food = foods.find((candidate) => candidate.id === Number(draft.foodItemId))
+    const option = portionOptions.find((candidate) => candidate.key === draft.portionKey)
     const quantity = Number(draft.quantity)
 
-    if (!food || !Number.isFinite(quantity) || quantity <= 0) {
+    if (!option || !Number.isFinite(quantity) || quantity <= 0) {
       showMutError('choose a food and portion amount')
       return
     }
 
-    const key = `portion:${mealName}:${food.id}`
+    const key = `portion:${mealName}:${option.key}`
     setSavingKey(key)
 
     let mealLog = mealLogs.find((log) => log.meal_name === mealName)
@@ -262,16 +292,9 @@ export default function NutritionTab() {
       mealLog = { ...(data as MealLog), meal_log_item: [] }
     }
 
-    const scaled = scaleFood(food, quantity)
     const { error } = await supabase.from('meal_log_item').insert({
       meal_log_id: mealLog.id,
-      food_item_id: food.id,
-      quantity: scaled.quantity,
-      calories: scaled.calories,
-      protein_g: scaled.protein_g,
-      carbs_g: scaled.carbs_g,
-      fat_g: scaled.fat_g,
-      substitution_group: `extra:${food.name}`,
+      ...portionMealLogItemPayload(option, quantity),
     })
 
     if (error) {
@@ -284,12 +307,31 @@ export default function NutritionTab() {
     setSavingKey(null)
   }
 
-  const logGenericFood = async (mealName: MealTemplateName, food: ParsedGenericFood): Promise<boolean> => {
+  const logGenericFood = async (
+    mealName: MealTemplateName,
+    food: ParsedGenericFood,
+    saveAsPortion = false,
+  ): Promise<boolean> => {
     const day = nutritionDay ?? (await ensureDay(dayType, targetMap, STATIC_WHOOP_ENERGY_CALIBRATION))
     if (!day) return false
 
-    const key = `generic:${mealName}`
+    const key = `${saveAsPortion ? 'generic-save' : 'generic'}:${mealName}`
     setSavingKey(key)
+
+    if (saveAsPortion) {
+      const { error } = await supabase
+        .from('saved_food_portion')
+        .upsert(savedFoodPortionPayload(food), { onConflict: 'normalized_name' })
+
+      if (error) {
+        console.error('saved nutrition portion upsert failed:', error.message)
+        showMutError('portion didn\'t save to your list')
+        setSavingKey(null)
+        return false
+      }
+
+      await loadSavedPortions()
+    }
 
     let mealLog = mealLogs.find((log) => log.meal_name === mealName)
     if (!mealLog) {
@@ -491,7 +533,7 @@ export default function NutritionTab() {
                   <div className="space-y-3 border-t border-[var(--border)] px-4 py-3">
                     <PortionAdder
                       mealName={meal.name}
-                      foods={foods}
+                      options={portionOptions}
                       draft={getPortionDraft(meal.name)}
                       savingKey={savingKey}
                       onChange={updatePortionDraft}
@@ -500,8 +542,12 @@ export default function NutritionTab() {
 
                     <GenericFoodAdder
                       compact
-                      saving={savingKey === `generic:${meal.name}`}
+                      saving={
+                        savingKey === `generic:${meal.name}` ||
+                        savingKey === `generic-save:${meal.name}`
+                      }
                       onSubmit={(food) => logGenericFood(meal.name, food)}
+                      onSaveAndSubmit={(food) => logGenericFood(meal.name, food, true)}
                     />
 
                     {meal.items.length === 0 && (
@@ -597,23 +643,27 @@ export default function NutritionTab() {
 
 function PortionAdder({
   mealName,
-  foods,
+  options,
   draft,
   savingKey,
   onChange,
   onSubmit,
 }: {
   mealName: MealTemplateName
-  foods: FoodItem[]
+  options: PortionOption[]
   draft: PortionDraft
   savingKey: string | null
   onChange: (mealName: MealTemplateName, patch: Partial<PortionDraft>) => void
   onSubmit: (mealName: MealTemplateName) => void
 }) {
-  const selectedFood = foods.find((food) => food.id === Number(draft.foodItemId))
+  const selectedOption = options.find((option) => option.key === draft.portionKey)
   const quantity = Number(draft.quantity)
-  const scaled = selectedFood && Number.isFinite(quantity) && quantity > 0 ? scaleFood(selectedFood, quantity) : null
-  const isSaving = selectedFood ? savingKey === `portion:${mealName}:${selectedFood.id}` : false
+  const scaled = selectedOption && Number.isFinite(quantity) && quantity > 0
+    ? scalePortionOption(selectedOption, quantity)
+    : null
+  const isSaving = selectedOption
+    ? savingKey === `portion:${mealName}:${selectedOption.key}`
+    : false
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--ink-02)] p-3">
@@ -622,14 +672,14 @@ function PortionAdder({
       </div>
       <div className="grid grid-cols-[1fr_86px] gap-2">
         <select
-          value={draft.foodItemId}
-          onChange={(event) => onChange(mealName, { foodItemId: event.target.value })}
+          value={draft.portionKey}
+          onChange={(event) => onChange(mealName, { portionKey: event.target.value })}
           className="min-w-0 rounded-xl border border-[var(--border)] bg-[var(--ink-04)] px-2.5 py-2 text-sm text-[var(--text)]"
         >
           <option value="">Choose food</option>
-          {foods.map((food) => (
-            <option key={food.id} value={food.id}>
-              {food.name} · {food.portion_label}
+          {options.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.name} · {option.portionLabel}
             </option>
           ))}
         </select>
@@ -650,7 +700,7 @@ function PortionAdder({
         </div>
         <button
           onClick={() => onSubmit(mealName)}
-          disabled={!selectedFood || isSaving}
+          disabled={!selectedOption || isSaving}
           className="btn-accent flex-shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest"
           style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
         >

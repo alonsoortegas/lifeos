@@ -75,3 +75,17 @@ export function scalePortionOption(option: PortionOption, quantity: number) {
     fat_g: roundMacro(option.fat_g * quantity),
   }
 }
+
+export function portionMealLogItemPayload(option: PortionOption, quantity: number) {
+  const scaled = scalePortionOption(option, quantity)
+
+  return {
+    food_item_id: option.source === 'catalog' ? option.sourceId : null,
+    custom_food_name: option.source === 'saved' ? option.name : null,
+    source: option.source === 'catalog' ? 'catalog' as const : 'custom' as const,
+    ...scaled,
+    substitution_group: option.source === 'catalog'
+      ? `extra:${option.name}`
+      : `saved:${normalizeSavedPortionName(option.name)}`,
+  }
+}
