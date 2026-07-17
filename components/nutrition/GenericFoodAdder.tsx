@@ -19,10 +19,12 @@ export default function GenericFoodAdder({
   saving,
   compact = false,
   onSubmit,
+  onSaveAndSubmit,
 }: {
   saving: boolean
   compact?: boolean
   onSubmit: (food: ParsedGenericFood) => Promise<boolean> | boolean
+  onSaveAndSubmit?: (food: ParsedGenericFood) => Promise<boolean> | boolean
 }) {
   const [draft, setDraft] = useState<GenericFoodDraft>(emptyDraft)
   const [error, setError] = useState<string | null>(null)
@@ -33,14 +35,14 @@ export default function GenericFoodAdder({
     setError(null)
   }
 
-  async function submit() {
+  async function submit(callback: (food: ParsedGenericFood) => Promise<boolean> | boolean) {
     const result = parseGenericFoodDraft(draft)
     if (!result.ok) {
       setError(result.error)
       return
     }
 
-    const didSave = await onSubmit(result.value)
+    const didSave = await callback(result.value)
     if (didSave) {
       setDraft(emptyDraft)
       setError(null)
@@ -110,15 +112,28 @@ export default function GenericFoodAdder({
           onChange={(event) => updateDraft({ fat_g: event.target.value })}
           className={inputClass}
         />
-        <button
-          type="button"
-          onClick={submit}
-          disabled={saving || !parsed.ok}
-          className="btn-accent rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest disabled:cursor-default disabled:opacity-50"
-          style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
-        >
-          add
-        </button>
+        <div className="col-span-full grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => submit(onSubmit)}
+            disabled={saving || !parsed.ok}
+            className="btn-accent rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest disabled:cursor-default disabled:opacity-50"
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+          >
+            add
+          </button>
+          {onSaveAndSubmit && (
+            <button
+              type="button"
+              onClick={() => submit(onSaveAndSubmit)}
+              disabled={saving || !parsed.ok}
+              className="rounded-full border border-[var(--border-hi)] bg-[var(--ink-04)] px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-[var(--text)] disabled:cursor-default disabled:opacity-50"
+              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)' }}
+            >
+              add &amp; save portion
+            </button>
+          )}
+        </div>
       </div>
       <div
         className="mt-2 min-h-[14px] text-[11px] text-[var(--text-faint)]"
