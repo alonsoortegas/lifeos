@@ -40,7 +40,10 @@ export async function GET(req: NextRequest) {
   const code = searchParams.get('code')
   const error = searchParams.get('error')
 
-  if (error) return html(`<h2>Whoop error</h2><p>${escapeHtml(error)}</p>`, 400)
+  if (error) {
+    const desc = searchParams.get('error_description') ?? ''
+    return html(`<h2>Whoop error</h2><p>${escapeHtml(error)}: ${escapeHtml(desc)}</p>`, 400)
+  }
   if (!code) return html('<h2>Missing code</h2>', 400)
 
   const result = await exchangeWhoopCode(code, getRedirectUri(req))

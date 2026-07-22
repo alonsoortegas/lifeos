@@ -78,16 +78,20 @@ describe('bulk meal templates', () => {
     expect(starchyCarb?.label).toMatch(/potatoes/i)
   })
 
-  it('keeps the DB reference bulk template aligned with the 2700 kcal macro target', () => {
-    const migration = readFileSync(
+  it('keeps the DB reference bulk template aligned with the 2800 kcal macro target', () => {
+    const referenceMigration = readFileSync(
       `${process.cwd()}/supabase/migrations/20260706110500_dinner_carb_equivalents.sql`,
+      'utf8',
+    )
+    const targetMigration = readFileSync(
+      `${process.cwd()}/supabase/migrations/20260722073014_raise_flat_bulk_target_to_2800.sql`,
       'utf8',
     )
     const portions = new Map<string, Omit<MacroTotals, 'calories'>>()
     const portionPattern =
       /\(\s*'([^']+)',\s*'[^']+',\s*'[^']+',\s*[\d.]+,\s*(?:[\d.]+|null),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+),/g
 
-    for (const match of migration.matchAll(portionPattern)) {
+    for (const match of referenceMigration.matchAll(portionPattern)) {
       portions.set(match[1], {
         protein: Number(match[2]),
         carbs: Number(match[3]),
@@ -99,7 +103,7 @@ describe('bulk meal templates', () => {
     const totals: MacroTotals = { calories: 0, protein: 0, carbs: 0, fat: 0 }
     let templateCount = 0
 
-    for (const match of migration.matchAll(templatePattern)) {
+    for (const match of targetMigration.matchAll(templatePattern)) {
       templateCount += 1
       const items = JSON.parse(match[2]) as Array<{ food_key: string; quantity: number }>
       for (const item of items) {
@@ -114,12 +118,12 @@ describe('bulk meal templates', () => {
     totals.calories = macroCalories(totals)
 
     expect(templateCount).toBe(6)
-    expect(totals.calories).toBeGreaterThanOrEqual(2670)
-    expect(totals.calories).toBeLessThanOrEqual(2730)
+    expect(totals.calories).toBeGreaterThanOrEqual(2750)
+    expect(totals.calories).toBeLessThanOrEqual(2850)
     expect(totals.protein).toBeGreaterThanOrEqual(155)
     expect(totals.protein).toBeLessThanOrEqual(170)
-    expect(totals.carbs).toBeGreaterThanOrEqual(325)
-    expect(totals.carbs).toBeLessThanOrEqual(345)
+    expect(totals.carbs).toBeGreaterThanOrEqual(350)
+    expect(totals.carbs).toBeLessThanOrEqual(370)
     expect(totals.fat).toBeGreaterThanOrEqual(75)
     expect(totals.fat).toBeLessThanOrEqual(85)
   })
